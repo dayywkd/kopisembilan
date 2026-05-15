@@ -212,14 +212,26 @@
     min-height: 100vh;
     width: 100%;
   }
+
+  /* Sidebar: ALWAYS fixed overlay — desktop & mobile */
   .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 300;
     width: 240px;
-    flex-shrink: 0;
     background: var(--brown-900);
     display: flex;
     flex-direction: column;
     padding: 24px 0;
-    transition: transform 0.3s;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s ease;
+    box-shadow: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: 6px 0 40px rgba(0,0,0,0.4);
   }
   .sidebar-logo {
     padding: 0 20px 24px;
@@ -310,9 +322,9 @@
   }
   .logout-btn:hover { color: var(--red); }
 
-  /* MAIN CONTENT */
+  /* MAIN CONTENT — always full width since sidebar is overlay */
   .main-content {
-    flex: 1;
+    width: 100%;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -454,23 +466,34 @@
   .table tr:last-child td { border-bottom: none; }
   .table tr:hover td { background: var(--brown-50); }
 
-  /* ─── MOBILE HAMBURGER ─── */
+  /* ─── HAMBURGER (always visible on desktop & mobile) ─── */
   .hamburger {
-    display: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: none;
-    border: none;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    padding: 4px;
-    font-size: 20px;
+    padding: 6px 9px;
+    font-size: 18px;
     color: var(--brown-700);
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .hamburger:hover {
+    background: var(--brown-50);
+    border-color: var(--brown-400);
   }
   .sidebar-overlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 100;
+    background: rgba(0,0,0,0.45);
+    z-index: 200;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
   }
+  .sidebar-overlay.open { display: block; }
 
   /* ─── MODAL ─── */
   .modal-overlay {
@@ -687,27 +710,31 @@
 
   /* ─── PRINT STYLES ─── */
   @media print {
-    .sidebar, .top-bar, .no-print { display: none !important; }
-    .main-content { width: 100%; }
-    .page-content { padding: 0; }
-    .card { border: 1px solid #ccc; box-shadow: none; }
-    body { background: white; }
-    .frame { display: flex !important; }
-    #frame-dashboard, #frame-cashier, #frame-login { display: none !important; }
-    #frame-report.active { display: block !important; }
+    @page { margin: 16mm 14mm; size: A4; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .sidebar, .top-bar, .no-print, .sidebar-overlay, .filter-bar, #guide-fab, .toast-container { display: none !important; }
+    body { background: white !important; font-size: 11px !important; }
+    .main-content { width: 100% !important; background: white !important; }
+    .page-content { padding: 0 !important; background: white !important; }
+    .frame { display: flex !important; background: white !important; }
+    .card { border: 1px solid #ccc !important; box-shadow: none !important; page-break-inside: avoid; }
+    .card-header { background: #4A2C12 !important; color: white !important; padding: 8px 12px !important; }
+    .card-header h3 { color: #F5E6C8 !important; font-size: 12px !important; }
+    .stat-card { border: 1px solid #ccc !important; padding: 10px 12px !important; background: #FEFCF6 !important; }
+    .stat-card .value { font-size: 16px !important; }
+    .stat-card .label { font-size: 9px !important; }
+    .stats-grid { grid-template-columns: repeat(5,1fr) !important; gap: 8px !important; margin-bottom: 12px !important; }
+    .rep-grid { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
+    .table th { background: #F5E6C8 !important; color: #4A2C12 !important; font-size: 9px !important; padding: 6px 8px !important; }
+    .table td { font-size: 10px !important; padding: 5px 8px !important; }
+    .badge { font-size: 9px !important; padding: 2px 6px !important; }
+    .badge-blue { background: #E8F0FA !important; color: #1A4A7A !important; }
+    .badge-green { background: #E8F4E6 !important; color: #2D5A27 !important; }
+    #print-report-header { display: block !important; }
   }
 
   /* ─── RESPONSIVE ─── */
   @media (max-width: 768px) {
-    .sidebar {
-      position: fixed;
-      left: 0; top: 0; bottom: 0;
-      z-index: 150;
-      transform: translateX(-100%);
-    }
-    .sidebar.open { transform: translateX(0); }
-    .sidebar-overlay { display: block; }
-    .hamburger { display: block; }
     .page-content { padding: 16px; }
     .top-bar { padding: 12px 16px; }
     .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -955,7 +982,7 @@
   <main class="main-content">
     <div class="top-bar">
       <div style="display:flex;align-items:center;gap:12px;">
-        <button class="hamburger" onclick="openSidebar()">☰</button>
+        <button class="hamburger" id="hamburger-btn" onclick="toggleSidebar()">☰</button>
         <h2 id="page-title">Dashboard</h2>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
@@ -1262,13 +1289,24 @@ function showPage(page) {
   }
 }
 
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (sidebar.classList.contains('open')) {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+  } else {
+    sidebar.classList.add('open');
+    overlay.classList.add('open');
+  }
+}
 function openSidebar() {
   document.getElementById('sidebar').classList.add('open');
-  document.getElementById('sidebar-overlay').style.display = 'block';
+  document.getElementById('sidebar-overlay').classList.add('open');
 }
 function closeSidebar() {
   document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('sidebar-overlay').style.display = 'none';
+  document.getElementById('sidebar-overlay').classList.remove('open');
 }
 
 // ══════════════════════════════════════════════
@@ -1872,26 +1910,154 @@ function getTopProducts(txns) {
 }
 
 function printReport() {
+  const period = document.getElementById('period-select')?.value || '1bulan';
+  const periodLabels = {
+    '1hari':'1 Hari (Hari Ini)', '1minggu':'1 Minggu',
+    '1bulan':'1 Bulan', '6bulan':'6 Bulan', '1tahun':'1 Tahun'
+  };
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  // inject print header into DOM temporarily
+  const existingHeader = document.getElementById('print-report-header');
+  if (existingHeader) existingHeader.remove();
+  const header = document.createElement('div');
+  header.id = 'print-report-header';
+  header.innerHTML = `
+    <div style="text-align:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #4A2C12;">
+      <div style="font-size:22px;font-weight:700;color:#2D1A0A;font-family:'DM Serif Display',serif;">☕ KopiSembilan</div>
+      <div style="font-size:13px;color:#6B5040;margin-top:2px;">Laporan Keuangan — Periode: ${periodLabels[period]}</div>
+      <div style="font-size:12px;color:#6B5040;">Dicetak: ${dateStr}</div>
+    </div>`;
+  const reportBody = document.getElementById('report-body');
+  if (reportBody) reportBody.insertAdjacentElement('beforebegin', header);
   window.print();
+  setTimeout(() => { const h = document.getElementById('print-report-header'); if(h) h.remove(); }, 1000);
 }
 
 function exportCSV() {
   const period = document.getElementById('period-select')?.value || '1bulan';
   const now = new Date();
+  const periodLabels = {
+    '1hari':'1 Hari (Hari Ini)', '1minggu':'1 Minggu',
+    '1bulan':'1 Bulan', '6bulan':'6 Bulan', '1tahun':'1 Tahun'
+  };
+
+  // ── Filter transactions by period ──
   let filtered;
   if (period === '1hari') filtered = transactions.filter(t => t.date.toDateString() === now.toDateString());
   else if (period === '1minggu') filtered = transactions.filter(t => (now-t.date)/86400000 < 7);
-  else if (period === '1bulan') filtered = transactions.filter(t => t.date.getMonth()===now.getMonth());
+  else if (period === '1bulan') filtered = transactions.filter(t => t.date.getMonth()===now.getMonth() && t.date.getFullYear()===now.getFullYear());
   else if (period === '6bulan') filtered = transactions.filter(t => (now-t.date)/86400000 < 180);
   else filtered = transactions.filter(t => (now-t.date)/86400000 < 365);
-  const rows = [['ID','Tanggal','Jumlah Item','Total','Metode','Kasir']];
-  filtered.forEach(t => rows.push([t.id, t.date.toLocaleDateString('id-ID'), t.items.length, t.total, t.method, t.cashier]));
-  const csv = rows.map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'laporan-kopisembilan.csv'; a.click();
-  showToast('CSV berhasil diexport!', 'success');
+
+  // ── Calculations ──
+  const rev   = filtered.reduce((s,t) => s + t.total, 0);
+  const tax   = filtered.reduce((s,t) => s + Math.round(t.total/1.11*0.11), 0);
+  const net   = rev - tax;
+  const avg   = filtered.length ? Math.round(rev / filtered.length) : 0;
+  const methodMap = {};
+  filtered.forEach(t => { methodMap[t.method] = (methodMap[t.method]||0) + t.total; });
+  const topProds = getTopProducts(filtered);
+
+  // ── CSV helper: escape cells ──
+  const esc = v => {
+    const s = String(v ?? '');
+    return (s.includes(',') || s.includes('"') || s.includes('\n'))
+      ? '"' + s.replace(/"/g, '""') + '"'
+      : s;
+  };
+  const row  = (...cells) => cells.map(esc).join(',');
+  const sep  = () => '';
+  const title = t => row(t);
+  const kv   = (k, v) => row(k, v);
+
+  const fmtDate = d => d.toLocaleDateString('id-ID', {
+    day:'2-digit', month:'long', year:'numeric',
+    hour:'2-digit', minute:'2-digit'
+  });
+  const fmtRp = n => 'Rp ' + Number(n).toLocaleString('id-ID');
+  const exportDate = fmtDate(now);
+
+  // ── Build sections ──
+  const lines = [];
+
+  // === HEADER INFO ===
+  lines.push(title('LAPORAN KEUANGAN - KOPISEMBILAN'));
+  lines.push(kv('Periode', periodLabels[period]));
+  lines.push(kv('Tanggal Export', exportDate));
+  lines.push(kv('Total Transaksi', filtered.length + ' transaksi'));
+  lines.push(sep());
+
+  // === RINGKASAN KEUANGAN ===
+  lines.push(title('=== RINGKASAN KEUANGAN ==='));
+  lines.push(row('Keterangan', 'Nominal'));
+  lines.push(kv('Total Pendapatan Kotor', fmtRp(rev)));
+  lines.push(kv('PPN (11%)', fmtRp(tax)));
+  lines.push(kv('Pendapatan Bersih', fmtRp(net)));
+  lines.push(kv('Jumlah Transaksi', filtered.length));
+  lines.push(kv('Rata-rata per Transaksi', fmtRp(avg)));
+  lines.push(sep());
+
+  // === METODE PEMBAYARAN ===
+  lines.push(title('=== METODE PEMBAYARAN ==='));
+  lines.push(row('Metode', 'Total', 'Persentase'));
+  Object.entries(methodMap).sort((a,b)=>b[1]-a[1]).forEach(([m,v]) => {
+    const pct = rev > 0 ? ((v/rev)*100).toFixed(1) + '%' : '0%';
+    lines.push(row(m.toUpperCase(), fmtRp(v), pct));
+  });
+  lines.push(sep());
+
+  // === PRODUK TERLARIS ===
+  lines.push(title('=== PRODUK TERLARIS ==='));
+  lines.push(row('Peringkat', 'Nama Produk', 'Jumlah Terjual'));
+  topProds.forEach((p,i) => lines.push(row(i+1, p.name, p.qty + ' pcs')));
+  lines.push(sep());
+
+  // === DETAIL TRANSAKSI ===
+  lines.push(title('=== DETAIL TRANSAKSI ==='));
+  lines.push(row('No','ID Transaksi','Tanggal & Waktu','Kasir','Metode Bayar',
+                 'Jumlah Item','Subtotal','PPN (11%)','Total'));
+  filtered.forEach((t, idx) => {
+    const tTax = Math.round(t.total/1.11*0.11);
+    const tSub = t.total - tTax;
+    lines.push(row(
+      idx+1, t.id,
+      fmtDate(t.date),
+      t.cashier,
+      t.method.toUpperCase(),
+      t.items.length,
+      fmtRp(tSub),
+      fmtRp(tTax),
+      fmtRp(t.total)
+    ));
+  });
+  lines.push(sep());
+
+  // === DETAIL ITEM PER TRANSAKSI ===
+  lines.push(title('=== DETAIL ITEM PER TRANSAKSI ==='));
+  lines.push(row('ID Transaksi','Tanggal','Nama Produk','Qty','Harga Satuan','Subtotal Item'));
+  filtered.forEach(t => {
+    t.items.forEach(item => {
+      lines.push(row(
+        t.id,
+        fmtDate(t.date),
+        item.name,
+        item.qty,
+        fmtRp(item.price),
+        fmtRp(item.price * item.qty)
+      ));
+    });
+  });
+
+  // ── Build & download ──
+  const csv = '\uFEFF' + lines.join('\r\n'); // UTF-8 BOM for Excel
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const filename = `laporan-kopisembilan-${period}-${now.toISOString().slice(0,10)}.csv`;
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ CSV berhasil diexport!', 'success');
 }
 
 // ══════════════════════════════════════════════
