@@ -2,12 +2,12 @@
 // STATE & CONFIG
 // ══════════════════════════════════════════════
 let currentUser = null;
-let currentRole = 'admin';
 let cart = [];
 let products = [];
 let transactions = [];
 let selectedProductForVariant = null;
 let editingProductId = null;
+let editingUserId = null;
 let storeInfo = { name: 'KopiSembilan', address: 'Jl. Kopi Nomor 9, Jember, Jawa Timur', phone: '085855180131' };
 
 const DEFAULT_VARIANTS = [
@@ -19,37 +19,37 @@ const DEFAULT_VARIANTS = [
 // ══════════════════════════════════════════════
 // AUTH
 // ══════════════════════════════════════════════
-function switchRole(role) {
-  currentRole = role;
-  document.querySelectorAll('.role-tab').forEach((t, i) => {
-    t.classList.toggle('active', (i === 0 && role === 'admin') || (i === 1 && role === 'kasir'));
-  });
-  const hint = document.getElementById('login-hint');
-  if (role === 'admin') {
-    hint.innerHTML = '<strong>Demo Admin:</strong> admin / admin123';
-    document.getElementById('login-user').value = 'admin';
-    document.getElementById('login-pass').value = 'admin123';
-  } else {
-    hint.innerHTML = '<strong>Demo Kasir:</strong> kasir / kasir123';
-    document.getElementById('login-user').value = 'kasir';
-    document.getElementById('login-pass').value = 'kasir123';
-  }
-}
-
 async function doLogin() {
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value.trim();
   
+  console.log("Attempting login for:", u);
+
   const { data: user, error } = await db
     .from('users')
     .select('*')
     .eq('username', u)
-    .eq('password', p)
     .eq('active', true)
     .single();
 
   if (error || !user) {
-    showToast('Username atau password salah!', 'error');
+    console.error("Login Error:", error);
+    showToast('Username tidak ditemukan!', 'error');
+    return;
+  }
+
+  let isValid = false;
+  try {
+    const storedHash = user.password_hash || user.password;
+    if (storedHash && typeof dcodeIO !== 'undefined') {
+      isValid = dcodeIO.bcrypt.compareSync(p, storedHash);
+    }
+  } catch(e) {
+    console.error("Bcrypt Verification Fail:", e);
+  }
+
+  if (!isValid) {
+    showToast('Password salah!', 'error');
     return;
   }
 
@@ -179,6 +179,7 @@ function showPage(page) {
       report: renderReport, users: renderUsers, settings: renderSettings, manual: renderManual
     };
     if (renders[page]) renders[page](content);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
   closeSidebar();
 }
@@ -205,7 +206,7 @@ function renderCashier(el) {
       <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-brown btn-sm cat-btn active" onclick="filterCat(this,'Semua')">Semua</button>
-          ${['Kopi Panas','Kopi Dingin','Non-Kopi','Makanan','Snack'].map(c =>
+          ${['Specialty Coffee','Regular Coffee','Non-Coffee','Signature'].map(c =>
             `<button class="btn btn-outline btn-sm cat-btn" onclick="filterCat(this,'${c}')">${c}</button>`
           ).join('')}
         </div>
@@ -214,12 +215,15 @@ function renderCashier(el) {
         </div>
       </div>
       <div class="cart-panel">
-        <div class="cart-header">🛒 Keranjang <span id="cart-count" style="font-size:13px;color:var(--text-muted);font-family:'DM Sans';">0 item</span></div>
+        <div class="cart-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;"><i data-lucide="shopping-bag" style="width:18px;height:18px;"></i> Keranjang</div>
+          <span id="cart-count" style="font-size:13px;color:var(--text-muted);font-family:'DM Sans';font-weight:normal;">0 item</span>
+        </div>
         <div class="cart-items" id="cart-items"><div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px;">Pilih produk dari menu</div></div>
         <div class="cart-summary">
           <div class="summary-row total"><span>TOTAL</span><span id="total-val">Rp 0</span></div>
           <button class="pay-btn" id="pay-btn" disabled onclick="openPayment()">BAYAR</button>
-          <button class="btn btn-outline w-full" style="margin-top:8px;" onclick="clearCart()">🗑 Kosongkan</button>
+          <button class="btn btn-outline w-full" style="margin-top:8px;" onclick="clearCart()"><i data-lucide="trash-2" style="width:16px;height:16px;"></i> Kosongkan</button>
         </div>
       </div>
     </div>
@@ -228,11 +232,37 @@ function renderCashier(el) {
 
 function renderMenuItems(cat) {
   if (!products || products.length === 0) return '<div style="text-align:center; padding:20px; color:var(--text-muted);">Belum ada produk.</div>';
+  
+  const getCategoryColor = (category) => {
+    switch(category) {
+      case 'Specialty Coffee': return '#D4A05A'; // Amber
+      case 'Regular Coffee': return '#8B5320'; // Brown
+      case 'Signature': return '#2D5A27'; // Emerald
+      case 'Non-Coffee': return '#C8602A'; // Terracotta
+      default: return '#6B3F1A';
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    switch(category) {
+      case 'Specialty Coffee': return 'coffee';
+      case 'Regular Coffee': return 'coffee';
+      case 'Signature': return 'glass-water';
+      case 'Non-Coffee': return 'cup-soda';
+      default: return 'coffee';
+    }
+  };
+
   return products.map(p => {
     if (cat !== 'Semua' && p.category !== cat) return '';
+    const bgColor = getCategoryColor(p.category);
+    const icon = getCategoryIcon(p.category);
+    
     return `
       <div class="menu-card" onclick="openVariantModal(${p.id})">
-        <span class="emoji">${p.emoji || '☕'}</span>
+        <div class="icon-circle" style="background: ${bgColor}15; color: ${bgColor}; border-color: ${bgColor}30;">
+          <i data-lucide="${icon}" style="width:24px;height:24px;"></i>
+        </div>
         <div class="mname">${p.name}</div>
         <div class="mprice">${fmtRp(p.base_price)}</div>
       </div>
@@ -244,7 +274,10 @@ function filterCat(btn, cat) {
   document.querySelectorAll('.cat-btn').forEach(b => { b.classList.remove('btn-brown'); b.classList.add('btn-outline'); });
   btn.classList.add('btn-brown'); btn.classList.remove('btn-outline');
   const menuGrid = document.getElementById('menu-grid');
-  if (menuGrid) menuGrid.innerHTML = renderMenuItems(cat);
+  if (menuGrid) {
+    menuGrid.innerHTML = renderMenuItems(cat);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
 }
 
 // ─── VARIANTS LOGIC ───
@@ -254,39 +287,24 @@ function openVariantModal(productId) {
   selectedProductForVariant = product;
   
   const title = document.getElementById('variant-product-name');
-  if (title) title.textContent = (product.emoji || '☕') + ' ' + product.name;
+  if (title) title.textContent = product.name;
   
   const body = document.getElementById('variant-modal-body');
   if (!body) return;
   body.innerHTML = '';
 
-  const variantGroups = product.product_variants && product.product_variants.length > 0 
-    ? groupVariants(product.product_variants) 
-    : DEFAULT_VARIANTS;
-
-  variantGroups.forEach(group => {
-    const groupEl = document.createElement('div');
-    groupEl.className = 'variant-group';
-    groupEl.innerHTML = `<label class="variant-group-label">${group.group || group.group_name}</label>`;
-    const optionsEl = document.createElement('div');
-    optionsEl.className = 'variant-options';
-    
-    group.options.forEach((opt, idx) => {
-      const optEl = document.createElement('div');
-      optEl.className = `variant-option ${idx === 0 ? 'selected' : ''}`;
-      optEl.dataset.group = group.group || group.group_name;
-      optEl.dataset.name = opt.name;
-      optEl.dataset.price = opt.price ?? opt.price_modifier ?? 0;
-      optEl.innerHTML = `${opt.name} <span class="price-mod">${(parseInt(optEl.dataset.price)) > 0 ? '+' + fmtRp(optEl.dataset.price) : ''}</span>`;
-      optEl.onclick = () => {
-        groupEl.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
-        optEl.classList.add('selected');
-      };
-      optionsEl.appendChild(optEl);
-    });
-    groupEl.appendChild(optionsEl);
-    body.appendChild(groupEl);
-  });
+  // Render Logic based on Category & Product Name
+  if (product.category === 'Specialty Coffee' && (product.name.includes('Classic') || product.name.includes('Modern'))) {
+    renderSpecialtyVariants(body);
+  } else if (product.name === 'Regular Coffee') {
+    renderRegularVariants(body);
+  } else {
+    // Default variants for other products
+    const variantGroups = product.product_variants && product.product_variants.length > 0 
+      ? groupVariants(product.product_variants) 
+      : [];
+    renderDefaultVariants(body, variantGroups);
+  }
 
   const noteInput = document.getElementById('item-note');
   if (noteInput) noteInput.value = '';
@@ -295,6 +313,135 @@ function openVariantModal(productId) {
   if (confirmBtn) confirmBtn.onclick = () => addToCartConfirmed();
   
   openModal('modal-variant');
+}
+
+function renderSpecialtyVariants(container) {
+  container.innerHTML = `
+    <div class="variant-group">
+      <label class="variant-group-label">Pilih Tipe</label>
+      <div class="variant-options">
+        <div class="variant-option selected" data-group="Type" data-name="Black" data-price="0" onclick="updateSpecialtySub(this, 'black')">BLACK <span class="price-mod"></span></div>
+        <div class="variant-option" data-group="Type" data-name="White" data-price="5000" onclick="updateSpecialtySub(this, 'white')">WHITE <span class="price-mod">+Rp 5.000</span></div>
+      </div>
+    </div>
+    <div id="specialty-sub-group" class="variant-group">
+      <!-- Sub variants will appear here -->
+    </div>
+  `;
+  // Initial render for Black
+  updateSpecialtySub(container.querySelector('.variant-option'), 'black');
+}
+
+function updateSpecialtySub(el, type) {
+  const container = el.closest('.variant-options');
+  container.querySelectorAll('.variant-option').forEach(opt => opt.classList.remove('selected'));
+  el.classList.add('selected');
+
+  const subGroup = document.getElementById('specialty-sub-group');
+  if (type === 'black') {
+    subGroup.innerHTML = `
+      <label class="variant-group-label">Varian Black</label>
+      <div class="variant-options">
+        <div class="variant-option selected" data-group="Style" data-name="Americano" data-price="0">Americano</div>
+        <div class="variant-option" data-group="Style" data-name="Espresso" data-price="0">Espresso</div>
+      </div>
+    `;
+  } else {
+    subGroup.innerHTML = `
+      <label class="variant-group-label">Varian White</label>
+      <div class="variant-options">
+        <div class="variant-option selected" data-group="Style" data-name="Latte" data-price="0">Latte</div>
+        <div class="variant-option" data-group="Style" data-name="Cappuccino" data-price="0">Cappuccino</div>
+        <div class="variant-option" data-group="Style" data-name="Split" data-price="5000">Split <span class="price-mod">+Rp 5.000</span></div>
+        <div class="variant-option" data-group="Style" data-name="Dirty" data-price="5000">Dirty <span class="price-mod">+Rp 5.000</span></div>
+        <div class="variant-option" data-group="Style" data-name="Magic" data-price="5000">Magic <span class="price-mod">+Rp 5.000</span></div>
+      </div>
+    `;
+  }
+  // Re-attach listeners for sub-options
+  subGroup.querySelectorAll('.variant-option').forEach(opt => {
+    opt.onclick = () => {
+      subGroup.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+    };
+  });
+}
+
+function renderRegularVariants(container) {
+  container.innerHTML = `
+    <div class="variant-group">
+      <label class="variant-group-label">Pilih Tipe</label>
+      <div class="variant-options">
+        <div class="variant-option selected" data-group="Type" data-name="Black" data-price="0" onclick="updateRegularSub(this, 'black')">BLACK <span class="price-mod"></span></div>
+        <div class="variant-option" data-group="Type" data-name="White Syrup" data-price="10000" onclick="updateRegularSub(this, 'white')">WHITE SYRUP <span class="price-mod">+Rp 10.000</span></div>
+      </div>
+    </div>
+    <div id="regular-sub-group" class="variant-group"></div>
+  `;
+  updateRegularSub(container.querySelector('.variant-option'), 'black');
+}
+
+function updateRegularSub(el, type) {
+  const container = el.closest('.variant-options');
+  container.querySelectorAll('.variant-option').forEach(opt => opt.classList.remove('selected'));
+  el.classList.add('selected');
+
+  const subGroup = document.getElementById('regular-sub-group');
+  if (type === 'black') {
+    subGroup.innerHTML = `
+      <label class="variant-group-label">Varian Black</label>
+      <div class="variant-options">
+        <div class="variant-option selected" data-group="Style" data-name="Americano" data-price="0">Americano</div>
+        <div class="variant-option" data-group="Style" data-name="Espresso" data-price="0">Espresso</div>
+      </div>
+    `;
+  } else {
+    subGroup.innerHTML = `
+      <label class="variant-group-label">Pilih Syrup</label>
+      <div class="variant-options">
+        <div class="variant-option selected" data-group="Syrup" data-name="Hazelnut" data-price="0">Hazelnut</div>
+        <div class="variant-option" data-group="Syrup" data-name="Gula Aren" data-price="0">Gula Aren</div>
+        <div class="variant-option" data-group="Syrup" data-name="Butterscotch" data-price="3000">Butterscotch <span class="price-mod">+Rp 3.000</span></div>
+        <div class="variant-option" data-group="Syrup" data-name="Vanilla" data-price="0">Vanilla</div>
+        <div class="variant-option" data-group="Syrup" data-name="Caramel" data-price="0">Caramel</div>
+      </div>
+    `;
+  }
+  subGroup.querySelectorAll('.variant-option').forEach(opt => {
+    opt.onclick = () => {
+      subGroup.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+    };
+  });
+}
+
+function renderDefaultVariants(container, groups) {
+  if (groups.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">Tidak ada pilihan varian untuk produk ini.</div>';
+    return;
+  }
+  groups.forEach(group => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'variant-group';
+    groupEl.innerHTML = `<label class="variant-group-label">${group.group}</label>`;
+    const optionsEl = document.createElement('div');
+    optionsEl.className = 'variant-options';
+    group.options.forEach((opt, idx) => {
+      const optEl = document.createElement('div');
+      optEl.className = `variant-option ${idx === 0 ? 'selected' : ''}`;
+      optEl.dataset.group = group.group;
+      optEl.dataset.name = opt.name;
+      optEl.dataset.price = opt.price_modifier || 0;
+      optEl.innerHTML = `${opt.name} <span class="price-mod">${parseInt(optEl.dataset.price) > 0 ? '+' + fmtRp(optEl.dataset.price) : ''}</span>`;
+      optEl.onclick = () => {
+        groupEl.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
+        optEl.classList.add('selected');
+      };
+      optionsEl.appendChild(optEl);
+    });
+    groupEl.appendChild(optionsEl);
+    container.appendChild(groupEl);
+  });
 }
 
 function groupVariants(variants) {
@@ -349,11 +496,37 @@ function updateCartUI() {
     return;
   }
 
+  const getCategoryColor = (category) => {
+    switch(category) {
+      case 'Specialty Coffee': return '#D4A05A';
+      case 'Regular Coffee': return '#8B5320';
+      case 'Signature': return '#2D5A27';
+      case 'Non-Coffee': return '#C8602A';
+      default: return '#6B3F1A';
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    switch(category) {
+      case 'Specialty Coffee': return 'coffee';
+      case 'Regular Coffee': return 'coffee';
+      case 'Signature': return 'glass-water';
+      case 'Non-Coffee': return 'cup-soda';
+      default: return 'coffee';
+    }
+  };
+
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
-  cartEl.innerHTML = cart.map((c, idx) => `
+  cartEl.innerHTML = cart.map((c, idx) => {
+    const category = products.find(p => p.id === c.productId)?.category;
+    const bgColor = getCategoryColor(category);
+    const icon = getCategoryIcon(category);
+    return `
     <div class="cart-item">
       <div class="cart-item-row">
-        <span style="font-size:16px;">${c.emoji || '☕'}</span>
+        <div style="width: 28px; height: 28px; border-radius: 50%; background: ${bgColor}15; color: ${bgColor}; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; border: 1px solid ${bgColor}30; flex-shrink: 0;">
+          <i data-lucide="${icon}" style="width:14px;height:14px;"></i>
+        </div>
         <div class="ci-name">${c.name}</div>
         <div class="flex items-center gap-2">
            <button class="qty-btn" onclick="changeQty(${idx},-1)">−</button>
@@ -363,13 +536,14 @@ function updateCartUI() {
         <div class="ci-price">${fmtRp(c.totalPrice * c.qty)}</div>
       </div>
       ${c.variants.length > 0 ? `<div class="ci-variants">${c.variants.map(v => v.name).join(', ')}</div>` : ''}
-      ${c.note ? `<div class="ci-note">📝 ${c.note}</div>` : ''}
+      ${c.note ? `<div class="ci-note" style="display:flex;align-items:center;gap:4px;"><i data-lucide="message-square" style="width:12px;height:12px;"></i> ${c.note}</div>` : ''}
     </div>
-  `).join('');
+  `}).join('');
 
   if (cartCount) cartCount.textContent = cart.length + ' item';
   if (totalValEl) totalValEl.textContent = fmtRp(total);
   if (payBtn) payBtn.disabled = false;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function changeQty(idx, delta) {
@@ -518,6 +692,15 @@ async function confirmPayment() {
   }
 }
 
+// Tambahkan ini sebelum fungsi sendWhatsAppReceipt
+function formatPhoneWA(phone) {
+  let nomor = phone.replace(/\D/g, '');
+  if (nomor.startsWith('0'))      nomor = '62' + nomor.slice(1);
+  else if (nomor.startsWith('8')) nomor = '62' + nomor;
+  else if (nomor.startsWith('+')) nomor = nomor.replace('+', '');
+  return nomor;
+}
+
 function sendWhatsAppReceipt(phone, txnId, total, items) {
   let message = `*INVOICE ${storeInfo.name.toUpperCase()}*\n`;
   message += `ID: ${txnId}\n`;
@@ -530,10 +713,10 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
   });
   message += `----------------------------\n`;
   message += `*TOTAL: ${fmtRp(total)}*\n\n`;
-  message += `Terima kasih sudah memesan! ☕`;
+  message += `Terima kasih sudah memesan! `;
 
   const encoded = encodeURIComponent(message);
-  const waUrl = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encoded}`;
+  const waUrl = `https://wa.me/${formatPhoneWA(phone)}?text=${encoded}`;
   window.open(waUrl, '_blank');
 }
 
@@ -561,6 +744,7 @@ async function renderReport(el) {
 
   const renderContent = (status) => {
     const filtered = status === 'Semua' ? txns : txns.filter(t => t.payment_status === status);
+    window.currentReportTxns = filtered; // Simpan untuk export CSV
     const totalRev = filtered.reduce((s, t) => s + t.total, 0);
     const avgTxn = filtered.length ? Math.round(totalRev / filtered.length) : 0;
     const lunasCount = filtered.filter(t => t.payment_status === 'Lunas').length;
@@ -573,7 +757,7 @@ async function renderReport(el) {
         <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${t.payment_method.toUpperCase()}</span></td>
         <td><span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
         <td style="font-weight:600;">${fmtRp(t.total)}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')">👁️</button></td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button></td>
       </tr>
     `).join('');
     
@@ -616,11 +800,42 @@ async function renderReport(el) {
           <option value="Belum Bayar">Belum Bayar</option>
         </select>
       </div>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="showToast('Export CSV segera hadir')">📥 Export CSV</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export CSV</button>
     </div>
     <div id="report-container">${renderContent('Semua')}</div>
   `;
   window.renderReportTable = renderContent;
+}
+
+function exportToCSV() {
+  if (typeof window.currentReportTxns === 'undefined' || window.currentReportTxns.length === 0) {
+    showToast('Tidak ada data untuk di-export', 'error');
+    return;
+  }
+  const txns = window.currentReportTxns;
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += "ID Transaksi,Waktu,WhatsApp,Metode,Status,Total,Kasir\n";
+  
+  txns.forEach(t => {
+    const row = [
+      t.id,
+      new Date(t.date).toLocaleString('id-ID').replace(/,/g, ''),
+      t.customer_phone || '-',
+      t.payment_method,
+      t.payment_status,
+      t.total,
+      t.cashier_name
+    ];
+    csvContent += row.join(",") + "\n";
+  });
+  
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "Laporan_KopiSembilan_" + new Date().toISOString().slice(0,10) + ".csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function generateDummyTransactions() {
@@ -650,7 +865,7 @@ function renderInventory(el) {
   el.innerHTML = `
     <div class="inv-actions">
       <div class="search-wrapper">
-        <span class="search-icon">🔍</span>
+        <i data-lucide="search" class="search-icon" style="width:16px;height:16px;"></i>
         <input type="text" class="search-input" id="inv-search-input" placeholder="Cari nama produk atau kategori..." oninput="filterInventory(this.value)">
       </div>
       <button class="btn btn-brown" onclick="openAddProduct()">+ Tambah Produk</button>
@@ -668,19 +883,50 @@ function renderInventory(el) {
 
 function renderInventoryRows(data) {
   if (!data || data.length === 0) return '<tr><td colspan="4" style="text-align:center; padding:30px; color:var(--text-muted);">Belum ada produk terdaftar.</td></tr>';
-  return data.map(p => `
+  
+  const getCategoryColor = (category) => {
+    switch(category) {
+      case 'Specialty Coffee': return '#D4A05A';
+      case 'Regular Coffee': return '#8B5320';
+      case 'Signature': return '#2D5A27';
+      case 'Non-Coffee': return '#C8602A';
+      default: return '#6B3F1A';
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    switch(category) {
+      case 'Specialty Coffee': return 'coffee';
+      case 'Regular Coffee': return 'coffee';
+      case 'Signature': return 'glass-water';
+      case 'Non-Coffee': return 'cup-soda';
+      default: return 'coffee';
+    }
+  };
+
+  return data.map(p => {
+    const bgColor = getCategoryColor(p.category);
+    const icon = getCategoryIcon(p.category);
+    return `
     <tr id="prod-row-${p.id}">
-      <td><span style="font-size:18px; margin-right:8px;">${p.emoji || '☕'}</span> <strong>${p.name}</strong></td>
+      <td>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: ${bgColor}15; color: ${bgColor}; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; border: 1px solid ${bgColor}30; flex-shrink: 0;">
+            <i data-lucide="${icon}" style="width:16px;height:16px;"></i>
+          </div>
+          <strong>${p.name}</strong>
+        </div>
+      </td>
       <td><span class="badge badge-brown">${p.category}</span></td>
       <td style="font-weight:700; color:var(--accent);">${fmtRp(p.base_price)}</td>
       <td>
         <div style="display:flex; gap:6px;">
-          <button class="btn btn-outline btn-sm" onclick="editProduct(${p.id})" title="Edit">✏️</button>
-          <button class="btn btn-red btn-sm" onclick="deleteProduct(${p.id})" title="Hapus">🗑</button>
+          <button class="btn btn-outline btn-sm" onclick="editProduct(${p.id})" title="Edit"><i data-lucide="edit-2" style="width:14px;height:14px;"></i></button>
+          <button class="btn btn-red btn-sm" onclick="deleteProduct(${p.id})" title="Hapus"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
         </div>
       </td>
     </tr>
-  `).join('');
+  `}).join('');
 }
 
 function filterInventory(query) {
@@ -760,13 +1006,11 @@ async function renderUsers(el) {
   let users = [];
   try {
     let { data, error } = await db.from('users').select('*').order('id', { ascending: true });
-    if (error || !data || data.length === 0) {
-      users = [
-        { id: 1, name: 'Admin Utama', username: 'admin', role: 'admin', active: true },
-        { id: 2, name: 'Siti Kasir', username: 'kasir', role: 'kasir', active: true }
-      ];
+    if (error || !data) {
+      showToast('Gagal memuat data pengguna!', 'error');
+      users = [];
     } else { users = data; }
-  } catch(e) { users = [{ id: 1, name: 'Demo Admin', username: 'admin', role: 'admin', active: true }]; }
+  } catch(e) { users = []; }
 
   const rows = users.map(u => `
     <tr>
@@ -781,8 +1025,8 @@ async function renderUsers(el) {
       <td><span class="badge ${u.active ? 'badge-green' : 'badge-red'}">${u.active ? 'Aktif' : 'Non-Aktif'}</span></td>
       <td>
         <div class="flex gap-2">
-           <button class="btn btn-outline btn-sm" onclick="showToast('Fitur edit segera hadir')">✏️</button>
-           <button class="btn btn-red btn-sm" onclick="showToast('Akses ditolak')">🗑</button>
+           <button class="btn btn-outline btn-sm" onclick="editUser(${u.id})" title="Edit"><i data-lucide="edit-2" style="width:14px;height:14px;"></i></button>
+           <button class="btn btn-red btn-sm" onclick="deleteUser(${u.id})" title="Hapus"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
         </div>
       </td>
     </tr>
@@ -790,17 +1034,96 @@ async function renderUsers(el) {
   el.innerHTML = `
     <div class="inv-actions">
       <div style="flex:1;"><h3 style="font-family:'DM Serif Display'; font-size:20px; color:var(--brown-800);">Kelola Tim Kasir</h3><p style="font-size:12px; color:var(--text-muted);">Daftar akun yang dapat mengakses sistem KopiSembilan.</p></div>
-      <button class="btn btn-brown" onclick="showToast('Fitur tambah pengguna segera hadir')">+ Tambah Akun</button>
+      <button class="btn btn-brown" onclick="openAddUser()">+ Tambah Akun</button>
     </div>
-    <div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Nama Lengkap</th><th>Username</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    <div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Nama Lengkap</th><th>Username</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows || '<tr><td colspan="5" style="text-align:center;">Belum ada pengguna.</td></tr>'}</tbody></table></div></div>
   `;
+}
+
+function openAddUser() {
+  editingUserId = null;
+  const title = document.getElementById('modal-user-title');
+  if (title) title.textContent = 'Tambah Pengguna';
+  document.getElementById('user-fullname').value = '';
+  document.getElementById('user-username').value = '';
+  document.getElementById('user-password').value = '';
+  document.getElementById('user-role').value = 'kasir';
+  document.getElementById('user-active').checked = true;
+  openModal('modal-user');
+}
+
+async function editUser(id) {
+  try {
+    const { data: u, error } = await db.from('users').select('*').eq('id', id).single();
+    if (error || !u) { showToast('Gagal memuat data pengguna!', 'error'); return; }
+    
+    editingUserId = id;
+    const title = document.getElementById('modal-user-title');
+    if (title) title.textContent = 'Edit Pengguna';
+    document.getElementById('user-fullname').value = u.name;
+    document.getElementById('user-username').value = u.username;
+    document.getElementById('user-password').value = ''; // Kosongkan saat edit
+    document.getElementById('user-password').placeholder = '(Biarkan kosong jika tidak ganti password)';
+    document.getElementById('user-role').value = u.role;
+    document.getElementById('user-active').checked = u.active;
+    openModal('modal-user');
+  } catch(e) { showToast('Terjadi kesalahan!', 'error'); }
+}
+
+async function saveUser() {
+  const name = document.getElementById('user-fullname').value.trim();
+  const username = document.getElementById('user-username').value.trim();
+  const password = document.getElementById('user-password').value.trim();
+  const role = document.getElementById('user-role').value;
+  const active = document.getElementById('user-active').checked;
+
+  if (!name || !username) { showToast('Nama dan Username wajib diisi!', 'error'); return; }
+  if (!editingUserId && !password) { showToast('Password wajib diisi untuk akun baru!', 'error'); return; }
+
+  const userData = { name, username, role, active };
+  
+  // Hash password jika diisi
+  if (password) {
+    const salt = dcodeIO.bcrypt.genSaltSync(10);
+    userData.password_hash = dcodeIO.bcrypt.hashSync(password, salt);
+  }
+  
+  let error;
+  if (editingUserId) {
+    const { error: err } = await db.from('users').update(userData).eq('id', editingUserId);
+    error = err;
+  } else {
+    const { error: err } = await db.from('users').insert([userData]);
+    error = err;
+  }
+
+  if (!error) {
+    showToast(editingUserId ? 'Akun diperbarui!' : 'Akun berhasil dibuat!', 'success');
+    closeModal('modal-user');
+    renderUsers(document.getElementById('page-content'));
+  } else {
+    showToast('Gagal menyimpan ke database!', 'error');
+  }
+}
+
+async function deleteUser(id) {
+  if (currentUser && currentUser.id === id) { showToast('Tidak bisa menghapus akun sendiri!', 'error'); return; }
+  if (!confirm('Hapus akun ini secara permanen?')) return;
+  
+  const { error } = await db.from('users').delete().eq('id', id);
+  if (!error) {
+    showToast('Akun berhasil dihapus!', 'success');
+    renderUsers(document.getElementById('page-content'));
+  } else {
+    showToast('Gagal menghapus akun!', 'error');
+  }
 }
 
 function renderSettings(el) {
   el.innerHTML = `
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;" class="responsive-grid">
       <div class="card">
-        <div class="card-header"><h3>🏪 Informasi Toko</h3></div>
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="store" style="width:18px;height:18px;color:var(--accent);"></i> Informasi Toko</h3></div>
         <div class="card-body">
           <div class="form-group"><label>Nama Cafe / Toko</label><input type="text" class="form-input" id="settings-store-name" value="${storeInfo.name}"></div>
           <div class="form-group"><label>Alamat Lengkap</label><textarea class="form-input" id="settings-store-address" rows="3" style="resize:none;">${storeInfo.address}</textarea></div>
@@ -809,7 +1132,7 @@ function renderSettings(el) {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h3>📱 Konfigurasi Pembayaran</h3></div>
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="settings-2" style="width:18px;height:18px;color:var(--accent);"></i> Konfigurasi Pembayaran</h3></div>
         <div class="card-body">
           <div class="form-group"><label>Status Sistem QRIS</label><select class="form-select"><option>Aktif (Auto-Generate)</option><option>Non-Aktif (Manual)</option></select></div>
           <div class="form-group"><label>Metode Pembayaran Tersedia</label><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"><span class="badge badge-green">Cash</span><span class="badge badge-green">QRIS</span><span class="badge badge-green">Transfer</span><span class="badge badge-green">Debit Card</span></div></div>
@@ -824,16 +1147,16 @@ function renderSettings(el) {
 
 function renderManual(el) {
   const guides = [
-    { title: '☕ Memulai Transaksi Baru', content: 'Klik menu <strong>Kasir / POS</strong>, lalu pilih produk. Jika produk memiliki varian, pilih ukuran dan opsi yang diinginkan sebelum menambahkan ke keranjang.' },
-    { title: '💬 Mengirim Struk via WhatsApp', content: 'Di modal pembayaran, masukkan nomor WhatsApp pelanggan (diawali 08...). Setelah klik selesai, browser akan otomatis membuka tab baru menuju WhatsApp dengan format invoice lengkap.' },
-    { title: '📝 Catatan Item & Transaksi', content: 'Gunakan fitur <strong>Note</strong> untuk instruksi khusus seperti "Sedikit Es" atau "Tanpa Gula". Catatan ini akan muncul di ringkasan pesanan and struk digital.' },
-    { title: '📊 Memantau Laporan', content: 'Halaman Laporan menampilkan pendapatan secara real-time dari Supabase. Anda dapat memfilter transaksi berdasarkan status <strong>Lunas</strong> atau <strong>Belum Bayar</strong>.' }
+    { title: 'Memulai Transaksi Baru', content: 'Klik menu <strong>Kasir / POS</strong>, lalu pilih produk. Jika produk memiliki varian, pilih ukuran dan opsi yang diinginkan sebelum menambahkan ke keranjang.' },
+    { title: 'Mengirim Struk via WhatsApp', content: 'Di modal pembayaran, masukkan nomor WhatsApp pelanggan (diawali 08...). Setelah klik selesai, browser akan otomatis membuka tab baru menuju WhatsApp dengan format invoice lengkap.' },
+    { title: 'Catatan Item & Transaksi', content: 'Gunakan fitur <strong>Note</strong> untuk instruksi khusus seperti "Sedikit Es" atau "Tanpa Gula". Catatan ini akan muncul di ringkasan pesanan and struk digital.' },
+    { title: 'Memantau Laporan', content: 'Halaman Laporan menampilkan pendapatan secara real-time dari Supabase. Anda dapat memfilter transaksi berdasarkan status <strong>Lunas</strong> atau <strong>Belum Bayar</strong>.' }
   ];
   const guideHtml = guides.map((g, i) => `
     <div class="card" style="margin-bottom:12px;"><div class="card-body" style="padding:16px;"><div style="display:flex; gap:12px; align-items:flex-start;"><div style="width:28px; height:28px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">${i+1}</div><div><h4 style="color:var(--brown-900); margin-bottom:4px;">${g.title}</h4><p style="font-size:13px; color:var(--text-muted); line-height:1.6;">${g.content}</p></div></div></div></div>
   `).join('');
   el.innerHTML = `
-    <div style="max-width:800px; margin:0 auto;"><div style="text-align:center; margin-bottom:30px;"><h2 style="font-family:'DM Serif Display'; font-size:28px; color:var(--brown-900);">Pusat Bantuan KopiSembilan</h2><p style="color:var(--text-muted);">Panduan singkat penggunaan sistem kasir modern berbasis cloud.</p></div>${guideHtml}<div style="background:var(--blue-light); padding:20px; border-radius:var(--radius); border-left:4px solid var(--blue); margin-top:20px;"><h4 style="color:var(--blue); margin-bottom:8px;">💡 Butuh Bantuan Lanjut?</h4><p style="font-size:13px; color:var(--text); line-height:1.6;">Hubungi tim IT KopiSembilan melalui WhatsApp di nomor <strong>085855180131</strong> jika Anda mengalami kendala teknis atau masalah koneksi database.</p></div></div>
+    <div style="max-width:800px; margin:0 auto;"><div style="text-align:center; margin-bottom:30px;"><h2 style="font-family:'DM Serif Display'; font-size:28px; color:var(--brown-900);">Pusat Bantuan KopiSembilan</h2><p style="color:var(--text-muted);">Panduan singkat penggunaan sistem kasir modern berbasis cloud.</p></div>${guideHtml}<div style="background:var(--blue-light); padding:20px; border-radius:var(--radius); border-left:4px solid var(--blue); margin-top:20px;"><h4 style="color:var(--blue); margin-bottom:8px; display:flex; align-items:center; gap:6px;"><i data-lucide="help-circle" style="width:16px;height:16px;"></i> Butuh Bantuan Lanjut?</h4><p style="font-size:13px; color:var(--text); line-height:1.6;">Hubungi tim IT KopiSembilan melalui WhatsApp di nomor <strong>085855180131</strong> jika Anda mengalami kendala teknis atau masalah koneksi database.</p></div></div>
   `;
 }
 
@@ -857,30 +1180,176 @@ async function viewTxnDetail(id) {
 async function renderDashboard(el) {
   let txns = [];
   try {
-    let { data } = await db.from('transactions').select('*');
+    let { data } = await db.from('transactions').select('*, transaction_items(*)').order('date', { ascending: false });
     if (!data || data.length === 0) { txns = generateDummyTransactions(); } else { txns = data; }
   } catch(e) { txns = generateDummyTransactions(); }
 
   const totalRev = (txns || []).reduce((s, t) => s + t.total, 0);
   const totalCount = (txns || []).length;
 
-  el.innerHTML = `
-    <div style="margin-bottom:24px; text-align:left;">
-      <h2 style="font-family:'DM Serif Display'; font-size:32px; color:var(--brown-900); margin-bottom:4px;">Halo, ${currentUser ? currentUser.name : 'User'}! 👋</h2>
-      <p style="color:var(--text-muted);">Berikut adalah ringkasan performa cafe Anda hari ini.</p>
+  // 1. TOP ITEMS DENGAN VARIAN
+  const itemCounts = {};
+  txns.forEach(t => {
+     if(t.transaction_items) {
+        t.transaction_items.forEach(i => {
+           const p = products.find(prod => prod.id === i.product_id);
+           const pName = p ? p.name : 'Produk ' + i.product_id;
+           let varStr = '';
+           if (i.selected_variants && i.selected_variants.length > 0) {
+               varStr = `<span style="font-size:11px; color:var(--text-muted); font-weight:normal; display:block; margin-top:2px;">Varian: ${i.selected_variants.map(v=>v.name).join(', ')}</span>`;
+           }
+           const key = pName + '|' + varStr;
+           itemCounts[key] = (itemCounts[key] || 0) + i.qty;
+        });
+     } else if(t.id.includes('DEMO')) {
+        const pName = 'Americano';
+        const varStr = `<span style="font-size:11px; color:var(--text-muted); font-weight:normal; display:block; margin-top:2px;">Varian: Normal, Less Sugar</span>`;
+        const key = pName + '|' + varStr;
+        itemCounts[key] = (itemCounts[key] || 0) + 1;
+     }
+  });
+
+  const topProducts = Object.entries(itemCounts)
+    .sort((a,b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(entry => {
+       const parts = entry[0].split('|');
+       return { name: parts[0], varStr: parts[1] || '', qty: entry[1] };
+    });
+
+  let topHtml = topProducts.map((tp, idx) => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
+       <div style="display:flex; align-items:flex-start;">
+         <span style="display:inline-block; width:22px; height:22px; background:var(--brown-100); color:var(--brown-800); border-radius:50%; text-align:center; font-size:12px; line-height:22px; margin-right:10px; font-weight:700; flex-shrink:0;">${idx+1}</span> 
+         <div>
+           <div style="font-size:13px; font-weight:600; color:var(--brown-900); line-height:1.2;">${tp.name}</div>
+           ${tp.varStr}
+         </div>
+       </div>
+       <span style="font-weight:700; font-size:14px; color:var(--accent);">${tp.qty} <span style="color:var(--text-muted); font-size:11px; font-weight:normal;">porsi</span></span>
     </div>
-    <div class="stats-grid">
-      <div class="stat-card"><div class="label">Total Pendapatan</div><div class="value">${fmtRp(totalRev)}</div><div class="change up">✓ Akumulasi Semua</div></div>
-      <div class="stat-card"><div class="label">Total Transaksi</div><div class="value">${totalCount}</div><div class="change up">▲ Transaksi Berhasil</div></div>
-      <div class="stat-card"><div class="label">Produk Aktif</div><div class="value">${products.length || 12}</div><div class="change up">✓ Menu Terdaftar</div></div>
-    </div>
-    <div class="card" style="background: var(--brown-900); color: white; border: none; padding: 10px;">
-      <div class="card-body" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-        <div><h3 style="font-family:'DM Serif Display'; font-size:24px; color: var(--brown-100); margin-bottom: 8px;">Siap Melayani Pelanggan?</h3><p style="color: var(--brown-300); font-size: 14px; max-width: 400px;">Buka halaman kasir sekarang untuk mulai mencatat pesanan, memilih varian, dan mengirim struk via WhatsApp.</p></div>
-        <button class="btn btn-brown" style="background: var(--accent); border: none; padding: 14px 28px; font-size: 16px;" onclick="showPage('cashier')">Buka Kasir / POS 🛒</button>
+  `).join('');
+  if(!topHtml) topHtml = '<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:20px;">Belum ada data penjualan.</div>';
+
+  // 2. RINGKASAN METODE PEMBAYARAN
+  const payStats = { cash: 0, qris: 0, transfer: 0, card: 0 };
+  txns.forEach(t => { if(payStats[t.payment_method] !== undefined) payStats[t.payment_method] += t.total; });
+  const payHtml = `
+    <div style="display:flex; flex-direction:column; gap:16px; padding-top:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="qr-code" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">QRIS</span></div>
+         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.qris)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="banknote" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">Tunai</span></div>
+         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.cash)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="arrow-right-left" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">Transfer</span></div>
+         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.transfer)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="credit-card" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">Kartu Debit/Kredit</span></div>
+         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.card)}</span>
       </div>
     </div>
   `;
+
+  // 3. TRANSAKSI TERBARU
+  const recentTxns = txns.slice(0, 4);
+  let recentHtml = recentTxns.map(t => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-size:12px; font-weight:700; color:var(--brown-900); font-family:monospace;">${t.id}</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${new Date(t.date).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})} • ${t.payment_method.toUpperCase()}</div>
+      </div>
+      <div style="text-align:right;">
+         <div style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:2px;">${fmtRp(t.total)}</div>
+         <span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}" style="font-size:9px; padding:2px 6px;">${t.payment_status}</span>
+      </div>
+    </div>
+  `).join('');
+  if(!recentHtml) recentHtml = '<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:20px;">Belum ada transaksi.</div>';
+
+  el.innerHTML = `
+    <div style="margin-bottom:24px; text-align:left;">
+      <h2 style="font-family:'DM Serif Display'; font-size:32px; color:var(--brown-900); margin-bottom:4px;">Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
+      <p style="color:var(--text-muted);">Berikut adalah ringkasan performa KopiSembilan hari ini.</p>
+    </div>
+    
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="label">Total Pendapatan</div><div class="value">${fmtRp(totalRev)}</div><div class="change up"><i data-lucide="trending-up" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Akumulasi Semua</div></div>
+      <div class="stat-card"><div class="label">Total Transaksi</div><div class="value">${totalCount}</div><div class="change up"><i data-lucide="activity" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Transaksi Berhasil</div></div>
+      <div class="stat-card"><div class="label">Produk Aktif</div><div class="value">${products.length || 12}</div><div class="change up"><i data-lucide="check-circle" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Menu Terdaftar</div></div>
+    </div>
+    
+    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:20px; margin-bottom:20px;" class="responsive-grid">
+       <div class="card">
+         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:12px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Grafik Pendapatan Mingguan</h3></div>
+         <div class="card-body" style="position: relative; height: 260px; padding:0;">
+           <canvas id="revenueChart"></canvas>
+         </div>
+       </div>
+       <div class="card">
+         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:4px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="award" style="width:18px;height:18px;color:var(--accent);"></i> Menu Paling Laris</h3></div>
+         <div class="card-body" style="padding-top:0;">
+           ${topHtml}
+         </div>
+       </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;" class="responsive-grid">
+       <div class="card">
+         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:4px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="pie-chart" style="width:18px;height:18px;color:var(--accent);"></i> Ringkasan Pembayaran</h3></div>
+         <div class="card-body" style="padding-top:0;">
+           ${payHtml}
+         </div>
+       </div>
+       <div class="card">
+         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:4px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> 4 Transaksi Terakhir</h3></div>
+         <div class="card-body" style="padding-top:0;">
+           ${recentHtml}
+         </div>
+       </div>
+    </div>
+  `;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  setTimeout(() => {
+     const ctx = document.getElementById('revenueChart');
+     if(ctx && typeof Chart !== 'undefined') {
+        new Chart(ctx, {
+           type: 'line',
+           data: {
+              labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
+              datasets: [{
+                 label: 'Pendapatan (Rp)',
+                 data: [150000, 220000, 180000, 290000, 310000, 450000, totalRev > 0 ? totalRev : 520000],
+                 borderColor: '#B8763A',
+                 backgroundColor: 'rgba(184, 118, 58, 0.1)',
+                 borderWidth: 2,
+                 fill: true,
+                 tension: 0.4,
+                 pointBackgroundColor: '#B8763A',
+                 pointRadius: 4
+              }]
+           },
+           options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: { 
+                 y: { 
+                    beginAtZero: true, 
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: { callback: function(val) { return 'Rp ' + (val/1000) + 'k'; } } 
+                 },
+                 x: { grid: { display: false } }
+              }
+           }
+        });
+     }
+  }, 100);
 }
 
 // ══════════════════════════════════════════════
@@ -912,9 +1381,16 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 
 // Auto load on start
 window.onload = async () => {
+  if (typeof lucide !== 'undefined') lucide.createIcons();
   await loadStoreInfo();
   const savedSession = localStorage.getItem('ks_session');
   if (savedSession) {
-    try { setupUserSession(JSON.parse(savedSession)); } catch (e) { localStorage.removeItem('ks_session'); switchRole('admin'); }
-  } else { switchRole('admin'); }
+    try { setupUserSession(JSON.parse(savedSession)); } catch (e) { localStorage.removeItem('ks_session'); }
+  }
 };
+
+document.addEventListener('focusout', function(e) {
+  if (e.target && e.target.id === 'customer-phone' && e.target.value) {
+    e.target.value = formatPhoneWA(e.target.value);
+  }
+});
