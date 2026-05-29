@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Toko Kopi Sembilan</title>
+<link rel="icon" type="image/jpeg" href="logo.jpg">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -48,10 +49,10 @@
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo" style="display:flex; align-items:center; gap:12px;">
-      <img src="logo.jpg" alt="Logo" style="width: 36px; height: 36px; border-radius: 8px; object-fit: cover; border: 1px solid rgba(255,255,255,0.1);">
+      <img src="logo.jpg" alt="Logo" style="width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0; box-shadow: 0 2px 8px rgba(184, 118, 58, 0.3);">
       <div style="display:flex; flex-direction:column;">
-        <span>Toko Kopi Sembilan</span>
-        <small id="sidebar-role-label">Admin Panel</small>
+        <span style="font-weight:700; letter-spacing:-0.2px;">KopiSembilan</span>
+        <small id="sidebar-role-label" style="opacity:0.7; font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">Admin Panel</small>
       </div>
     </div>
 
@@ -299,6 +300,26 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-user')">Batal</button>
       <button class="btn btn-brown" onclick="saveUser()">Simpan Akun</button>
+    </div>
+  </div>
+</div>
+
+<!-- Note Modal -->
+<div class="modal-overlay" id="modal-note">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header">
+      <h3 id="modal-note-title">Catatan Produk</h3>
+      <button class="modal-close" style="display:flex;align-items:center;justify-content:center;" onclick="closeModal('modal-note')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label id="note-item-label">Catatan untuk produk</label>
+        <textarea class="form-input" id="note-input" rows="3" placeholder="Contoh: Less Sugar, No Ice..." style="resize:none;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-note')">Batal</button>
+      <button class="btn btn-brown" id="note-save-btn">Simpan Catatan</button>
     </div>
   </div>
 </div>

@@ -4,18 +4,35 @@
 let currentUser = null;
 let cart = [];
 let products = [];
+let cashierProducts = [];
 let transactions = [];
 let selectedProductForVariant = null;
 let editingProductId = null;
 let editingUserId = null;
 let revenueChartInstance = null;
+let activeCashierCategory = 'Semua';
+let cashierSearchQuery = '';
+let cartItemSeq = 0;
 let storeInfo = { name: 'KopiSembilan', address: 'Jl. Kopi Nomor 9, Jember, Jawa Timur', phone: '085855180131' };
+let waTemplate = `*INVOICE [NAMA_TOKO]*
+ID: [ID_TXN]
+Tanggal: [TANGGAL]
+----------------------------
+[ITEMS]
+----------------------------
+*TOTAL: [TOTAL]*
 
-const DEFAULT_VARIANTS = [
-  { group: 'Size', options: [{ name: 'Small', price: 0 }, { name: 'Medium', price: 5000 }, { name: 'Large', price: 10000 }] },
-  { group: 'Sugar', options: [{ name: 'Normal', price: 0 }, { name: 'Less Sugar', price: 0 }, { name: 'No Sugar', price: 0 }] },
-  { group: 'Add-on', options: [{ name: 'Extra Shot', price: 5000 }, { name: 'Oat Milk', price: 8000 }] }
-];
+Terima kasih sudah memesan!`;
+
+const DEFAULT_VARIANTS = [];
+
+function escapeAttr(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 // ══════════════════════════════════════════════
 // AUTH
@@ -141,6 +158,7 @@ function performLogout() {
   localStorage.removeItem('ks_session');
   currentUser = null;
   cart = [];
+  cartItemSeq = 0;
   const frameApp = document.getElementById('frame-app');
   const frameLogin = document.getElementById('frame-login');
   if (frameApp) frameApp.classList.remove('active');
@@ -152,10 +170,11 @@ function performLogout() {
 // ══════════════════════════════════════════════
 async function loadStoreInfo() {
   try {
-    const { data, error } = await db.from('settings').select('value').eq('key', 'store_info').single();
-    if (!error && data) {
-      storeInfo = data.value;
-    }
+    const { data: info } = await db.from('settings').select('value').eq('key', 'store_info').single();
+    if (info) storeInfo = info.value;
+
+    const { data: template } = await db.from('settings').select('value').eq('key', 'wa_template').single();
+    if (template) waTemplate = template.value;
   } catch (e) { console.log('Store info fail', e); }
 }
 
@@ -175,6 +194,19 @@ async function saveStoreInfo() {
   }
 }
 
+async function saveWATemplate() {
+  const template = document.getElementById('settings-wa-template').value.trim();
+  if (!template) return;
+
+  const { error } = await db.from('settings').upsert({ key: 'wa_template', value: template });
+  if (!error) {
+    waTemplate = template;
+    showToast('Template WhatsApp berhasil disimpan!', 'success');
+  } else {
+    showToast('Gagal menyimpan template!', 'error');
+  }
+}
+
 async function loadProducts() {
   await loadStoreInfo();
   try {
@@ -185,6 +217,7 @@ async function loadProducts() {
     
     if (!error && data) {
       products = data;
+      cashierProducts = buildCashierMenuProducts(data);
     }
   } catch (e) { console.log('Products load fail', e); }
 
@@ -245,17 +278,26 @@ function closeSidebar() {
 // KASIR / POS
 // ══════════════════════════════════════════════
 function renderCashier(el) {
+  activeCashierCategory = activeCashierCategory || 'Semua';
+  cashierSearchQuery = cashierSearchQuery || '';
   el.innerHTML = `
     <div class="pos-layout">
       <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden;">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-brown btn-sm cat-btn active" onclick="filterCat(this,'Semua')">Semua</button>
-          ${['Specialty Coffee','Regular Coffee','Non-Coffee','Signature'].map(c =>
-            `<button class="btn btn-outline btn-sm cat-btn" onclick="filterCat(this,'${c}')">${c}</button>`
-          ).join('')}
+        <div class="cashier-toolbar">
+          <div class="cashier-category-row">
+            <button class="btn ${activeCashierCategory === 'Semua' ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'Semua')">Semua</button>
+            ${['Specialty Coffee','Regular Coffee','Non-Coffee','Signature'].map(c =>
+              `<button class="btn ${activeCashierCategory === c ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'${c}')">${c}</button>`
+            ).join('')}
+          </div>
+          <div class="search-wrapper cashier-search">
+            <i data-lucide="search" class="search-icon" style="width:16px;height:16px;"></i>
+            <input type="text" class="search-input" id="cashier-search-input" placeholder="Cari menu..." value="${escapeAttr(cashierSearchQuery)}" oninput="searchCashierMenu(this.value)">
+            <button class="cashier-search-clear ${cashierSearchQuery ? '' : 'hidden'}" id="cashier-search-clear" type="button" onclick="clearCashierSearch()" title="Bersihkan pencarian"><i data-lucide="x" style="width:14px;height:14px;"></i></button>
+          </div>
         </div>
         <div class="menu-grid" id="menu-grid" style="overflow-y:auto;max-height:calc(100vh - 200px);padding-bottom:16px;">
-          ${renderMenuItems('Semua')}
+          ${renderMenuItems(activeCashierCategory, cashierSearchQuery)}
         </div>
       </div>
       <div class="cart-panel">
@@ -272,10 +314,13 @@ function renderCashier(el) {
       </div>
     </div>
   `;
+  updateCartUI();
 }
 
-function renderMenuItems(cat) {
-  if (!products || products.length === 0) return '<div style="text-align:center; padding:20px; color:var(--text-muted);">Belum ada produk.</div>';
+function renderMenuItems(cat, query = '') {
+  const menuProducts = cashierProducts.length ? cashierProducts : buildCashierMenuProducts(products);
+  if (!menuProducts || menuProducts.length === 0) return '<div style="text-align:center; padding:20px; color:var(--text-muted);">Belum ada produk.</div>';
+  const search = query.trim().toLowerCase();
   
   const getCategoryColor = (category) => {
     switch(category) {
@@ -297,13 +342,26 @@ function renderMenuItems(cat) {
     }
   };
 
-  return products.map(p => {
-    if (cat !== 'Semua' && p.category !== cat) return '';
+  const filteredProducts = menuProducts.filter(p => {
+    const productName = String(p.name || '').toLowerCase();
+    const productCategory = String(p.category || '').toLowerCase();
+    const matchesCategory = search ? true : cat === 'Semua' || p.category === cat;
+    const matchesSearch = !search ||
+      productName.includes(search) ||
+      productCategory.includes(search);
+    return matchesCategory && matchesSearch;
+  });
+
+  if (filteredProducts.length === 0) {
+    return '<div style="grid-column:1/-1;text-align:center; padding:32px 20px; color:var(--text-muted); font-size:13px;">Menu tidak ditemukan.</div>';
+  }
+
+  return filteredProducts.map(p => {
     const bgColor = getCategoryColor(p.category);
     const icon = getCategoryIcon(p.category);
     
     return `
-      <div class="menu-card" onclick="openVariantModal(${p.id})">
+      <div class="menu-card" onclick='addMenuToCart(${JSON.stringify(String(p.id))})'>
         <div class="icon-circle" style="background: ${bgColor}15; color: ${bgColor}; border-color: ${bgColor}30;">
           <i data-lucide="${icon}" style="width:24px;height:24px;"></i>
         </div>
@@ -315,214 +373,78 @@ function renderMenuItems(cat) {
 }
 
 function filterCat(btn, cat) {
-  document.querySelectorAll('.cat-btn').forEach(b => { b.classList.remove('btn-brown'); b.classList.add('btn-outline'); });
-  btn.classList.add('btn-brown'); btn.classList.remove('btn-outline');
+  activeCashierCategory = cat;
+  updateCashierCategoryButtons();
+  refreshCashierMenu();
+}
+
+function searchCashierMenu(value) {
+  cashierSearchQuery = value;
+  if (cashierSearchQuery.trim()) {
+    activeCashierCategory = 'Semua';
+    updateCashierCategoryButtons();
+  }
+  updateCashierSearchClear();
+  refreshCashierMenu();
+}
+
+function clearCashierSearch() {
+  cashierSearchQuery = '';
+  const input = document.getElementById('cashier-search-input');
+  if (input) input.value = '';
+  updateCashierSearchClear();
+  refreshCashierMenu();
+}
+
+function updateCashierCategoryButtons() {
+  document.querySelectorAll('.cat-btn').forEach(btn => {
+    const isActive = btn.textContent.trim() === activeCashierCategory;
+    btn.classList.toggle('btn-brown', isActive);
+    btn.classList.toggle('btn-outline', !isActive);
+  });
+}
+
+function updateCashierSearchClear() {
+  const clearBtn = document.getElementById('cashier-search-clear');
+  if (clearBtn) clearBtn.classList.toggle('hidden', !cashierSearchQuery.trim());
+}
+
+function refreshCashierMenu() {
   const menuGrid = document.getElementById('menu-grid');
   if (menuGrid) {
-    menuGrid.innerHTML = renderMenuItems(cat);
+    menuGrid.innerHTML = renderMenuItems(activeCashierCategory, cashierSearchQuery);
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 }
 
-// ─── VARIANTS LOGIC ───
-function openVariantModal(productId) {
-  const product = products.find(p => p.id === productId);
+function buildCashierMenuProducts(sourceProducts) {
+  // Sekarang database sudah berisi menu flat (tanpa perlu ekspansi manual di JS)
+  return sourceProducts.map(p => ({
+    ...p,
+    sourceProductId: p.id,
+    product_variants: p.product_variants || []
+  }));
+}
+
+// ─── CART LOGIC ───
+function addMenuToCart(productId) {
+  const product = cashierProducts.find(p => String(p.id) === String(productId));
   if (!product) return;
-  selectedProductForVariant = product;
-  
-  const title = document.getElementById('variant-product-name');
-  if (title) title.textContent = product.name;
-  
-  const body = document.getElementById('variant-modal-body');
-  if (!body) return;
-  body.innerHTML = '';
-
-  // Render Logic based on Category & Product Name
-  if (product.category === 'Specialty Coffee' && (product.name.includes('Classic') || product.name.includes('Modern'))) {
-    renderSpecialtyVariants(body);
-  } else if (product.name === 'Regular Coffee') {
-    renderRegularVariants(body);
-  } else {
-    // Default variants for other products
-    const variantGroups = product.product_variants && product.product_variants.length > 0 
-      ? groupVariants(product.product_variants) 
-      : [];
-    renderDefaultVariants(body, variantGroups);
-  }
-
-  const noteInput = document.getElementById('item-note');
-  if (noteInput) noteInput.value = '';
-  
-  const confirmBtn = document.getElementById('add-to-cart-confirm');
-  if (confirmBtn) confirmBtn.onclick = () => addToCartConfirmed();
-  
-  openModal('modal-variant');
-}
-
-function renderSpecialtyVariants(container) {
-  container.innerHTML = `
-    <div class="variant-group">
-      <label class="variant-group-label">Pilih Tipe</label>
-      <div class="variant-options">
-        <div class="variant-option selected" data-group="Type" data-name="Black" data-price="0" onclick="updateSpecialtySub(this, 'black')">BLACK <span class="price-mod"></span></div>
-        <div class="variant-option" data-group="Type" data-name="White" data-price="5000" onclick="updateSpecialtySub(this, 'white')">WHITE <span class="price-mod">+Rp 5.000</span></div>
-      </div>
-    </div>
-    <div id="specialty-sub-group" class="variant-group">
-      <!-- Sub variants will appear here -->
-    </div>
-  `;
-  // Initial render for Black
-  updateSpecialtySub(container.querySelector('.variant-option'), 'black');
-}
-
-function updateSpecialtySub(el, type) {
-  const container = el.closest('.variant-options');
-  container.querySelectorAll('.variant-option').forEach(opt => opt.classList.remove('selected'));
-  el.classList.add('selected');
-
-  const subGroup = document.getElementById('specialty-sub-group');
-  if (type === 'black') {
-    subGroup.innerHTML = `
-      <label class="variant-group-label">Varian Black</label>
-      <div class="variant-options">
-        <div class="variant-option selected" data-group="Style" data-name="Americano" data-price="0">Americano</div>
-        <div class="variant-option" data-group="Style" data-name="Espresso" data-price="0">Espresso</div>
-      </div>
-    `;
-  } else {
-    subGroup.innerHTML = `
-      <label class="variant-group-label">Varian White</label>
-      <div class="variant-options">
-        <div class="variant-option selected" data-group="Style" data-name="Latte" data-price="0">Latte</div>
-        <div class="variant-option" data-group="Style" data-name="Cappuccino" data-price="0">Cappuccino</div>
-        <div class="variant-option" data-group="Style" data-name="Split" data-price="5000">Split <span class="price-mod">+Rp 5.000</span></div>
-        <div class="variant-option" data-group="Style" data-name="Dirty" data-price="5000">Dirty <span class="price-mod">+Rp 5.000</span></div>
-        <div class="variant-option" data-group="Style" data-name="Magic" data-price="5000">Magic <span class="price-mod">+Rp 5.000</span></div>
-      </div>
-    `;
-  }
-  // Re-attach listeners for sub-options
-  subGroup.querySelectorAll('.variant-option').forEach(opt => {
-    opt.onclick = () => {
-      subGroup.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
-      opt.classList.add('selected');
-    };
-  });
-}
-
-function renderRegularVariants(container) {
-  container.innerHTML = `
-    <div class="variant-group">
-      <label class="variant-group-label">Pilih Tipe</label>
-      <div class="variant-options">
-        <div class="variant-option selected" data-group="Type" data-name="Black" data-price="0" onclick="updateRegularSub(this, 'black')">BLACK <span class="price-mod"></span></div>
-        <div class="variant-option" data-group="Type" data-name="White Syrup" data-price="10000" onclick="updateRegularSub(this, 'white')">WHITE SYRUP <span class="price-mod">+Rp 10.000</span></div>
-      </div>
-    </div>
-    <div id="regular-sub-group" class="variant-group"></div>
-  `;
-  updateRegularSub(container.querySelector('.variant-option'), 'black');
-}
-
-function updateRegularSub(el, type) {
-  const container = el.closest('.variant-options');
-  container.querySelectorAll('.variant-option').forEach(opt => opt.classList.remove('selected'));
-  el.classList.add('selected');
-
-  const subGroup = document.getElementById('regular-sub-group');
-  if (type === 'black') {
-    subGroup.innerHTML = `
-      <label class="variant-group-label">Varian Black</label>
-      <div class="variant-options">
-        <div class="variant-option selected" data-group="Style" data-name="Americano" data-price="0">Americano</div>
-        <div class="variant-option" data-group="Style" data-name="Espresso" data-price="0">Espresso</div>
-      </div>
-    `;
-  } else {
-    subGroup.innerHTML = `
-      <label class="variant-group-label">Pilih Syrup</label>
-      <div class="variant-options">
-        <div class="variant-option selected" data-group="Syrup" data-name="Hazelnut" data-price="0">Hazelnut</div>
-        <div class="variant-option" data-group="Syrup" data-name="Gula Aren" data-price="0">Gula Aren</div>
-        <div class="variant-option" data-group="Syrup" data-name="Butterscotch" data-price="3000">Butterscotch <span class="price-mod">+Rp 3.000</span></div>
-        <div class="variant-option" data-group="Syrup" data-name="Vanilla" data-price="0">Vanilla</div>
-        <div class="variant-option" data-group="Syrup" data-name="Caramel" data-price="0">Caramel</div>
-      </div>
-    `;
-  }
-  subGroup.querySelectorAll('.variant-option').forEach(opt => {
-    opt.onclick = () => {
-      subGroup.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
-      opt.classList.add('selected');
-    };
-  });
-}
-
-function renderDefaultVariants(container, groups) {
-  if (groups.length === 0) {
-    container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">Tidak ada pilihan varian untuk produk ini.</div>';
-    return;
-  }
-  groups.forEach(group => {
-    const groupEl = document.createElement('div');
-    groupEl.className = 'variant-group';
-    groupEl.innerHTML = `<label class="variant-group-label">${group.group}</label>`;
-    const optionsEl = document.createElement('div');
-    optionsEl.className = 'variant-options';
-    group.options.forEach((opt, idx) => {
-      const optEl = document.createElement('div');
-      optEl.className = `variant-option ${idx === 0 ? 'selected' : ''}`;
-      optEl.dataset.group = group.group;
-      optEl.dataset.name = opt.name;
-      optEl.dataset.price = opt.price_modifier || 0;
-      optEl.innerHTML = `${opt.name} <span class="price-mod">${parseInt(optEl.dataset.price) > 0 ? '+' + fmtRp(optEl.dataset.price) : ''}</span>`;
-      optEl.onclick = () => {
-        groupEl.querySelectorAll('.variant-option').forEach(o => o.classList.remove('selected'));
-        optEl.classList.add('selected');
-      };
-      optionsEl.appendChild(optEl);
-    });
-    groupEl.appendChild(optionsEl);
-    container.appendChild(groupEl);
-  });
-}
-
-function groupVariants(variants) {
-  const groups = {};
-  variants.forEach(v => {
-    if (!groups[v.group_name]) groups[v.group_name] = { group: v.group_name, options: [] };
-    groups[v.group_name].options.push(v);
-  });
-  return Object.values(groups);
-}
-
-function addToCartConfirmed() {
-  const selectedOptions = [];
-  let extraPrice = 0;
-  document.querySelectorAll('.variant-option.selected').forEach(opt => {
-    const p = parseInt(opt.dataset.price) || 0;
-    selectedOptions.push({ group: opt.dataset.group, name: opt.dataset.name, price: p });
-    extraPrice += p;
-  });
-
-  const itemNote = document.getElementById('item-note').value.trim();
-  const totalPrice = selectedProductForVariant.base_price + extraPrice;
 
   cart.push({
-    productId: selectedProductForVariant.id,
-    name: selectedProductForVariant.name,
-    emoji: selectedProductForVariant.emoji,
-    basePrice: selectedProductForVariant.base_price,
-    totalPrice: totalPrice,
+    cartId: ++cartItemSeq,
+    productId: product.id,
+    name: product.name,
+    emoji: product.emoji,
+    basePrice: product.base_price,
+    totalPrice: product.base_price,
     qty: 1,
-    variants: selectedOptions,
-    note: itemNote
+    variants: [],
+    note: ''
   });
 
   updateCartUI();
-  closeModal('modal-variant');
-  showToast(selectedProductForVariant.name + ' ditambahkan', 'success');
+  showToast(product.name + ' ditambahkan', 'success');
 }
 
 function updateCartUI() {
@@ -561,7 +483,7 @@ function updateCartUI() {
   };
 
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
-  cartEl.innerHTML = cart.map((c, idx) => {
+  cartEl.innerHTML = cart.map((c) => {
     const category = products.find(p => p.id === c.productId)?.category;
     const bgColor = getCategoryColor(category);
     const icon = getCategoryIcon(category);
@@ -573,14 +495,17 @@ function updateCartUI() {
         </div>
         <div class="ci-name">${c.name}</div>
         <div class="flex items-center gap-2">
-           <button class="qty-btn" onclick="changeQty(${idx},-1)">−</button>
+           <button class="qty-btn" onclick="changeQty(${c.cartId},-1)">−</button>
            <span style="font-size:13px;font-weight:600;min-width:15px;text-align:center;">${c.qty}</span>
-           <button class="qty-btn" onclick="changeQty(${idx},1)">+</button>
+           <button class="qty-btn" onclick="changeQty(${c.cartId},1)">+</button>
         </div>
         <div class="ci-price">${fmtRp(c.totalPrice * c.qty)}</div>
+        <button class="cart-remove-btn" onclick="removeCartItem(${c.cartId})" title="Hapus item"><i data-lucide="trash-2" style="width:15px;height:15px;"></i></button>
       </div>
-      ${c.variants.length > 0 ? `<div class="ci-variants">${c.variants.map(v => v.name).join(', ')}</div>` : ''}
-      ${c.note ? `<div class="ci-note" style="display:flex;align-items:center;gap:4px;"><i data-lucide="message-square" style="width:12px;height:12px;"></i> ${c.note}</div>` : ''}
+      <div class="cart-item-actions">
+        <button class="cart-note-btn ${c.note ? 'has-note' : ''}" onclick="editCartNote(${c.cartId})" title="Catatan item"><i data-lucide="message-square" style="width:14px;height:14px;"></i> ${c.note ? 'Ubah note' : 'Tambah note'}</button>
+      </div>
+      ${c.note ? `<div class="ci-note" style="display:flex;align-items:center;gap:4px;"><i data-lucide="message-square" style="width:12px;height:12px;"></i> ${escapeAttr(c.note)}</div>` : ''}
     </div>
   `}).join('');
 
@@ -590,17 +515,64 @@ function updateCartUI() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function changeQty(idx, delta) {
-  cart[idx].qty += delta;
-  if (cart[idx].qty <= 0) cart.splice(idx, 1);
+function changeQty(cartId, delta) {
+  const item = cart.find(c => c.cartId === cartId);
+  if (!item) {
+    updateCartUI();
+    return;
+  }
+
+  item.qty += delta;
+  if (item.qty <= 0) {
+    removeCartItem(cartId);
+    return;
+  }
   updateCartUI();
+}
+
+function removeCartItem(cartId) {
+  cart = cart.filter(c => c.cartId !== cartId);
+  updateCartUI();
+}
+
+function editCartNote(cartId) {
+  const item = cart.find(c => c.cartId === cartId);
+  if (!item) return;
+
+  const label = document.getElementById('note-item-label');
+  const input = document.getElementById('note-input');
+  const saveBtn = document.getElementById('note-save-btn');
+
+  if (label) label.textContent = 'Catatan untuk ' + item.name;
+  if (input) input.value = item.note || '';
+  
+  if (saveBtn) {
+    saveBtn.onclick = () => {
+      item.note = input.value.trim();
+      updateCartUI();
+      closeModal('modal-note');
+    };
+  }
+
+  openModal('modal-note');
 }
 
 function clearCart() {
   if (cart.length === 0) return;
-  if (!confirm('Kosongkan keranjang?')) return;
-  cart = [];
-  updateCartUI();
+  
+  showConfirmDialog({
+    title: 'Kosongkan Keranjang?',
+    message: 'Semua item yang sudah dipilih akan dihapus dari daftar belanja.',
+    icon: 'trash-2',
+    confirmText: 'Ya, Kosongkan',
+    cancelText: 'Batal',
+    onConfirm: () => {
+      cart = [];
+      cartItemSeq = 0;
+      updateCartUI();
+      showToast('Keranjang telah dikosongkan', 'success');
+    }
+  });
 }
 
 // ─── PAYMENT LOGIC ───
@@ -633,7 +605,12 @@ function resetPaymentModalForCheckout() {
   if (footer) {
     footer.innerHTML = `
       <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
-      <button class="btn btn-green w-full" style="display:flex; align-items:center; justify-content:center; gap:8px;" onclick="confirmPayment()"><i data-lucide="check-circle" style="width:18px;height:18px;"></i> Selesaikan & Kirim WA</button>
+      <div style="display:flex; gap:8px; width:100%;">
+        <button class="btn btn-brown" style="flex:1;" onclick="confirmPayment(false)">Selesai</button>
+        <button class="btn btn-green" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="confirmPayment(true)">
+          <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA
+        </button>
+      </div>
     `;
   }
 
@@ -708,13 +685,20 @@ function calcChange() {
   }
 }
 
-async function confirmPayment() {
+async function confirmPayment(sendWA = false) {
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
-  const phone = document.getElementById('customer-phone').value.trim();
+  const phoneEl = document.getElementById('customer-phone');
+  const phone = phoneEl ? phoneEl.value.trim() : '';
   const status = document.getElementById('payment-status').value;
   const note = document.getElementById('txn-note').value.trim();
   const now = new Date();
   const txnId = 'TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
+
+  if (sendWA && !phone) {
+    showToast('Masukkan nomor WA untuk kirim struk!', 'error');
+    if (phoneEl) phoneEl.focus();
+    return;
+  }
 
   if (selectedPaymentMethod === 'cash') {
     const paid = parseInt(document.getElementById('cash-input').value) || 0;
@@ -750,10 +734,11 @@ async function confirmPayment() {
     const { error: itemsErr } = await db.from('transaction_items').insert(itemsToInsert);
     if (itemsErr) { console.log('Item insert fail', itemsErr); }
 
-    if (phone) sendWhatsAppReceipt(phone, txnId, total, cart);
+    if (sendWA && phone) sendWhatsAppReceipt(phone, txnId, total, cart);
 
     showToast('Transaksi Berhasil!', 'success');
     cart = [];
+    cartItemSeq = 0;
     updateCartUI();
     closeModal('modal-payment');
     const pageTitle = document.getElementById('page-title').textContent;
@@ -772,18 +757,18 @@ function formatPhoneWA(phone) {
 }
 
 function sendWhatsAppReceipt(phone, txnId, total, items) {
-  let message = `*INVOICE ${storeInfo.name.toUpperCase()}*\n`;
-  message += `ID: ${txnId}\n`;
-  message += `Tanggal: ${new Date().toLocaleDateString()}\n`;
-  message += `----------------------------\n`;
-  items.forEach(c => {
-    message += `• ${c.name} x${c.qty} = ${fmtRp(c.totalPrice * c.qty)}\n`;
-    if (c.variants && c.variants.length > 0) message += `  (${c.variants.map(v => v.name).join(', ')})\n`;
-    if (c.note) message += `  Note: ${c.note}\n`;
-  });
-  message += `----------------------------\n`;
-  message += `*TOTAL: ${fmtRp(total)}*\n\n`;
-  message += `Terima kasih sudah memesan! `;
+  const itemsText = items.map(c => {
+    let text = `• ${c.name} x${c.qty} = ${fmtRp(c.totalPrice * c.qty)}`;
+    if (c.note) text += `\n  Note: ${c.note}`;
+    return text;
+  }).join('\n');
+
+  let message = waTemplate
+    .replace('[NAMA_TOKO]', storeInfo.name)
+    .replace('[ID_TXN]', txnId)
+    .replace('[TANGGAL]', new Date().toLocaleDateString('id-ID'))
+    .replace('[ITEMS]', itemsText)
+    .replace('[TOTAL]', fmtRp(total));
 
   const encoded = encodeURIComponent(message);
   const waUrl = `https://wa.me/${formatPhoneWA(phone)}?text=${encoded}`;
@@ -812,19 +797,29 @@ async function renderReport(el) {
     txns = generateDummyTransactions();
   }
 
-  const renderContent = (status) => {
-    const filtered = status === 'Semua' ? txns : txns.filter(t => t.payment_status === status);
+  const renderContent = (status = 'Semua', method = 'Semua') => {
+    const filtered = txns.filter(t => {
+      const matchesStatus = status === 'Semua' || t.payment_status === status;
+      const matchesMethod = method === 'Semua' || t.payment_method === method;
+      return matchesStatus && matchesMethod;
+    });
     window.currentReportTxns = filtered; // Simpan untuk export CSV
     const totalRev = filtered.reduce((s, t) => s + t.total, 0);
     const avgTxn = filtered.length ? Math.round(totalRev / filtered.length) : 0;
     const lunasCount = filtered.filter(t => t.payment_status === 'Lunas').length;
+    const methodLabel = {
+      cash: 'Tunai',
+      qris: 'QRIS',
+      transfer: 'Transfer',
+      card: 'Debit Card'
+    };
 
     const rows = filtered.map(t => `
       <tr>
         <td><span style="font-family:monospace; font-size:11px;">${t.id}</span></td>
         <td>${new Date(t.date).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
         <td>${t.customer_phone || '-'}</td>
-        <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${t.payment_method.toUpperCase()}</span></td>
+        <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
         <td><span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
         <td style="font-weight:600;">${fmtRp(t.total)}</td>
         <td><button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button></td>
@@ -848,6 +843,11 @@ async function renderReport(el) {
           <div class="value">${lunasCount}</div>
           <div class="sub-value">${filtered.length - lunasCount} Menunggu pembayaran</div>
         </div>
+        <div class="report-card">
+          <div class="label">Metode Dipilih</div>
+          <div class="value" style="font-size:20px;">${method === 'Semua' ? 'Semua' : methodLabel[method]}</div>
+          <div class="sub-value">${filtered.length} transaksi cocok</div>
+        </div>
       </div>
       <div class="card">
         <div style="overflow-x:auto;">
@@ -862,25 +862,38 @@ async function renderReport(el) {
 
   el.innerHTML = `
     <div class="filter-bar">
-      <div style="display:flex; align-items:center; gap:10px;">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <span style="font-size:13px; font-weight:600; color:var(--text-muted);">FILTER:</span>
-        <select class="select-input" onchange="document.getElementById('report-container').innerHTML = renderReportTable(this.value)">
+        <select class="select-input" id="report-status-filter" onchange="applyReportFilters()">
           <option value="Semua">Semua Status</option>
           <option value="Lunas">Lunas</option>
           <option value="Belum Bayar">Belum Bayar</option>
         </select>
+        <select class="select-input" id="report-method-filter" onchange="applyReportFilters()">
+          <option value="Semua">Semua Metode</option>
+          <option value="cash">Tunai</option>
+          <option value="qris">QRIS</option>
+          <option value="transfer">Transfer</option>
+          <option value="card">Debit Card</option>
+        </select>
       </div>
       <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export CSV</button>
     </div>
-    <div id="report-container">${renderContent('Semua')}</div>
+    <div id="report-container">${renderContent('Semua', 'Semua')}</div>
   `;
   if (typeof lucide !== 'undefined') lucide.createIcons();
-  window.renderReportTable = (status) => {
-    const html = renderContent(status);
+  window.renderReportTable = (status = 'Semua', method = 'Semua') => {
+    const html = renderContent(status, method);
     setTimeout(() => {
       if (typeof lucide !== 'undefined') lucide.createIcons();
     }, 0);
     return html;
+  };
+  window.applyReportFilters = () => {
+    const status = document.getElementById('report-status-filter')?.value || 'Semua';
+    const method = document.getElementById('report-method-filter')?.value || 'Semua';
+    const container = document.getElementById('report-container');
+    if (container) container.innerHTML = window.renderReportTable(status, method);
   };
 }
 
@@ -926,7 +939,7 @@ function generateDummyTransactions() {
       date: date.toISOString(),
       customer_phone: '081234567' + i,
       total: 25000 + (Math.floor(Math.random() * 5) * 5000),
-      payment_method: ['cash', 'qris', 'card'][Math.floor(Math.random() * 3)],
+      payment_method: ['cash', 'qris', 'transfer', 'card'][Math.floor(Math.random() * 4)],
       payment_status: Math.random() > 0.2 ? 'Lunas' : 'Belum Bayar',
       notes: i % 3 === 0 ? 'Tanpa sedotan' : '',
       cashier_name: 'Demo Admin'
@@ -956,6 +969,7 @@ function renderInventory(el) {
       </div>
     </div>
   `;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function renderInventoryRows(data) {
@@ -1010,7 +1024,10 @@ function filterInventory(query) {
   const q = query.toLowerCase();
   const filtered = products.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
   const tbody = document.getElementById('inv-tbody');
-  if (tbody) tbody.innerHTML = renderInventoryRows(filtered);
+  if (tbody) {
+    tbody.innerHTML = renderInventoryRows(filtered);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
 }
 
 function openAddProduct() {
@@ -1019,10 +1036,8 @@ function openAddProduct() {
   if (title) title.textContent = 'Tambah Produk';
   const nameIn = document.getElementById('prod-name');
   const priceIn = document.getElementById('prod-price');
-  const emojiIn = document.getElementById('prod-emoji');
   if (nameIn) nameIn.value = '';
   if (priceIn) priceIn.value = '';
-  if (emojiIn) emojiIn.value = '☕';
   openModal('modal-product');
 }
 
@@ -1035,7 +1050,6 @@ function editProduct(id) {
   document.getElementById('prod-name').value = p.name;
   document.getElementById('prod-price').value = p.base_price;
   document.getElementById('prod-category').value = p.category;
-  document.getElementById('prod-emoji').value = p.emoji || '☕';
   openModal('modal-product');
 }
 
@@ -1043,15 +1057,16 @@ async function saveProduct() {
   const name = document.getElementById('prod-name').value.trim();
   const price = parseInt(document.getElementById('prod-price').value);
   const cat = document.getElementById('prod-category').value;
-  const emoji = document.getElementById('prod-emoji').value;
   if (!name || isNaN(price)) { showToast('Nama and harga wajib diisi!', 'error'); return; }
 
   let error;
+  const productData = { name, base_price: price, category: cat };
+  
   if (editingProductId) {
-    const { error: err } = await db.from('products').update({ name, base_price: price, category: cat, emoji }).eq('id', editingProductId);
+    const { error: err } = await db.from('products').update(productData).eq('id', editingProductId);
     error = err;
   } else {
-    const { error: err } = await db.from('products').insert([{ name, base_price: price, category: cat, emoji }]);
+    const { error: err } = await db.from('products').insert([productData]);
     error = err;
   }
 
@@ -1065,14 +1080,26 @@ async function saveProduct() {
 }
 
 async function deleteProduct(id) {
-  if (!confirm('Hapus produk ini secara permanen?')) return;
-  const { error } = await db.from('products').delete().eq('id', id);
-  if (!error) {
-    showToast('Produk berhasil dihapus!', 'success');
-    await loadProducts();
-  } else {
-    showToast('Gagal menghapus produk!', 'error');
-  }
+  showConfirmDialog({
+    title: 'Hapus Produk?',
+    message: 'Produk ini akan dinonaktifkan dari sistem (histori transaksi tetap aman).',
+    icon: 'trash-2',
+    confirmText: 'Ya, Hapus',
+    cancelText: 'Batal',
+    onConfirm: async () => {
+      // Gunakan "Soft Delete" dengan mengubah status active menjadi false
+      // Ini agar histori transaksi lama tidak rusak/error
+      const { error } = await db.from('products').update({ active: false }).eq('id', id);
+      
+      if (!error) {
+        showToast('Produk berhasil dihapus!', 'success');
+        await loadProducts();
+      } else {
+        console.error('Delete Error:', error);
+        showToast('Gagal menghapus produk!', 'error');
+      }
+    }
+  });
 }
 
 // ══════════════════════════════════════════════
@@ -1213,8 +1240,12 @@ function renderSettings(el) {
         <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="settings-2" style="width:18px;height:18px;color:var(--accent);"></i> Konfigurasi Pembayaran</h3></div>
         <div class="card-body">
           <div class="form-group"><label>Metode Pembayaran Tersedia</label><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"><span class="badge badge-green">Cash</span><span class="badge badge-green">QRIS</span><span class="badge badge-green">Transfer</span><span class="badge badge-green">Debit Card</span></div></div>
-          <div class="form-group"><label>Template Pesan WhatsApp</label><textarea class="form-input" rows="4" style="resize:none; font-size:12px;">Halo [Pelanggan], Terima kasih telah memesan di KopiSembilan. Berikut adalah struk digital Anda: [Link_Invoice]</textarea></div>
-          <button class="btn btn-brown w-full" onclick="showToast('Konfigurasi diperbarui!', 'success')">Simpan Konfigurasi</button>
+          <div class="form-group">
+            <label>Template Pesan WhatsApp</label>
+            <textarea class="form-input" id="settings-wa-template" rows="8" style="resize:none; font-size:12px; font-family:monospace;">${waTemplate}</textarea>
+            <p style="font-size:10px; color:var(--text-muted); margin-top:8px;">Placeholder: [NAMA_TOKO], [ID_TXN], [TANGGAL], [ITEMS], [TOTAL]</p>
+          </div>
+          <button class="btn btn-brown w-full" onclick="saveWATemplate()">Simpan Konfigurasi</button>
         </div>
       </div>
     </div>
@@ -1224,10 +1255,10 @@ function renderSettings(el) {
 
 function renderManual(el) {
   const guides = [
-    { title: 'Memulai Transaksi Baru', content: 'Klik menu <strong>Kasir / POS</strong>, lalu pilih produk. Jika produk memiliki varian, pilih ukuran dan opsi yang diinginkan sebelum menambahkan ke keranjang.' },
-    { title: 'Mengirim Struk via WhatsApp', content: 'Di modal pembayaran, masukkan nomor WhatsApp pelanggan (diawali 08...). Setelah klik selesai, browser akan otomatis membuka tab baru menuju WhatsApp dengan format invoice lengkap.' },
-    { title: 'Catatan Item & Transaksi', content: 'Gunakan fitur <strong>Note</strong> untuk instruksi khusus seperti "Sedikit Es" atau "Tanpa Gula". Catatan ini akan muncul di ringkasan pesanan and struk digital.' },
-    { title: 'Memantau Laporan', content: 'Halaman Laporan menampilkan pendapatan secara real-time dari Supabase. Anda dapat memfilter transaksi berdasarkan status <strong>Lunas</strong> atau <strong>Belum Bayar</strong>.' }
+    { title: 'Memulai Transaksi Baru', content: 'Klik menu <strong>Kasir / POS</strong>, lalu pilih produk. Gunakan fitur Note untuk instruksi khusus.' },
+    { title: 'Mengirim Struk via WhatsApp', content: 'Di modal pembayaran, masukkan nomor WhatsApp pelanggan. Klik <strong>Kirim WA</strong> untuk membuka WhatsApp dengan invoice otomatis.' },
+    { title: 'Manajemen Template WA', content: 'Buka <strong>Pengaturan</strong> untuk mengubah format pesan struk. Gunakan kode seperti [ITEMS] agar daftar pesanan muncul otomatis.' },
+    { title: 'Memantau Laporan', content: 'Halaman Laporan menampilkan pendapatan secara real-time. Anda dapat memfilter transaksi berdasarkan periode waktu.' }
   ];
   const guideHtml = guides.map((g, i) => `
     <div class="card" style="margin-bottom:12px;"><div class="card-body" style="padding:16px;"><div style="display:flex; gap:12px; align-items:flex-start;"><div style="width:28px; height:28px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">${i+1}</div><div><h4 style="color:var(--brown-900); margin-bottom:4px;">${g.title}</h4><p style="font-size:13px; color:var(--text-muted); line-height:1.6;">${g.content}</p></div></div></div></div>
@@ -1264,6 +1295,26 @@ function getRevenueSeries(txns, period) {
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   };
+
+  if (period === 'daily') {
+    const labels = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
+    const values = labels.map(() => 0);
+    txns.forEach(t => {
+      const d = new Date(t.date);
+      if (d.toDateString() === now.toDateString()) {
+        const hour = d.getHours();
+        if (hour >= 8 && hour < 10) values[0] += Number(t.total) || 0;
+        else if (hour >= 10 && hour < 12) values[1] += Number(t.total) || 0;
+        else if (hour >= 12 && hour < 14) values[2] += Number(t.total) || 0;
+        else if (hour >= 14 && hour < 16) values[3] += Number(t.total) || 0;
+        else if (hour >= 16 && hour < 18) values[4] += Number(t.total) || 0;
+        else if (hour >= 18 && hour < 20) values[5] += Number(t.total) || 0;
+        else if (hour >= 20 && hour < 22) values[6] += Number(t.total) || 0;
+        else if (hour >= 22) values[7] += Number(t.total) || 0;
+      }
+    });
+    return { labels, values, title: 'Pendapatan Hari Ini' };
+  }
 
   if (period === 'yearly') {
     const startYear = now.getFullYear() - 4;
@@ -1311,7 +1362,6 @@ function renderDashboardRevenueChart(period = 'weekly') {
   const series = getRevenueSeries(window.dashboardTxns || [], period);
   const titleEl = document.getElementById('revenue-chart-title');
   if (titleEl) titleEl.innerHTML = `<i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> ${series.title}`;
-  document.querySelectorAll('.period-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.period === period));
   if (typeof lucide !== 'undefined') lucide.createIcons();
 
   if (revenueChartInstance) revenueChartInstance.destroy();
@@ -1347,7 +1397,29 @@ function renderDashboardRevenueChart(period = 'weekly') {
   });
 }
 
+let activeDashboardPeriod = 'daily';
+
 async function renderDashboard(el) {
+  el.innerHTML = `
+    <div class="dashboard-hero">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px;">
+        <div>
+          <h2>Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
+          <p>Berikut adalah ringkasan performa KopiSembilan.</p>
+        </div>
+        <div class="period-tabs" style="background:var(--brown-50); padding:4px; border-radius:12px; border:1px solid var(--brown-100);">
+          <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')">Hari Ini</button>
+          <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')">Mingguan</button>
+          <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')">Bulanan</button>
+          <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')">Tahunan</button>
+        </div>
+      </div>
+    </div>
+    <div id="dashboard-content-area">
+      <div style="text-align:center; padding:40px; color:var(--text-muted);">Memuat data dashboard...</div>
+    </div>
+  `;
+  
   let txns = [];
   try {
     let { data } = await db.from('transactions').select('*, transaction_items(*)').order('date', { ascending: false });
@@ -1355,51 +1427,75 @@ async function renderDashboard(el) {
   } catch(e) { txns = generateDummyTransactions(); }
   window.dashboardTxns = txns;
 
-  const totalRev = (txns || []).reduce((s, t) => s + (Number(t.total) || 0), 0);
-  const totalCount = (txns || []).length;
+  renderDashboardContent();
+}
+
+function changeDashboardPeriod(period) {
+  activeDashboardPeriod = period;
+  document.querySelectorAll('.dashboard-hero .period-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${period}'`));
+  });
+  renderDashboardContent();
+}
+
+function renderDashboardContent() {
+  const area = document.getElementById('dashboard-content-area');
+  if (!area) return;
+
+  const txns = window.dashboardTxns || [];
+  const now = new Date();
+  
+  const filteredTxns = txns.filter(t => {
+    const d = new Date(t.date);
+    if (activeDashboardPeriod === 'daily') {
+      return d.toDateString() === now.toDateString();
+    } else if (activeDashboardPeriod === 'weekly') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(now.getDate() - 7);
+      return d >= weekAgo;
+    } else if (activeDashboardPeriod === 'monthly') {
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    } else if (activeDashboardPeriod === 'yearly') {
+      return d.getFullYear() === now.getFullYear();
+    }
+    return true;
+  });
+
+  const totalRev = filteredTxns.reduce((s, t) => s + (Number(t.total) || 0), 0);
+  const totalCount = filteredTxns.length;
 
   const itemCounts = {};
-  txns.forEach(t => {
+  filteredTxns.forEach(t => {
     if (t.transaction_items) {
       t.transaction_items.forEach(i => {
         const p = products.find(prod => prod.id === i.product_id);
-        const pName = p ? p.name : 'Produk ' + i.product_id;
-        const varStr = i.selected_variants && i.selected_variants.length > 0
-          ? `<span class="item-meta">Varian: ${i.selected_variants.map(v => v.name).join(', ')}</span>`
-          : '';
-        const key = pName + '|' + varStr;
+        // Jika produk tidak ditemukan di daftar aktif, jangan tampilkan di ranking
+        if (!p) return;
+        
+        const key = p.name;
         itemCounts[key] = (itemCounts[key] || 0) + i.qty;
       });
-    } else if (t.id && t.id.includes('DEMO')) {
-      const key = 'Americano|<span class="item-meta">Varian: Normal, Less Sugar</span>';
-      itemCounts[key] = (itemCounts[key] || 0) + 1;
     }
   });
 
   const topProducts = Object.entries(itemCounts)
     .sort((a,b) => b[1] - a[1])
     .slice(0, 4)
-    .map(entry => {
-      const parts = entry[0].split('|');
-      return { name: parts[0], varStr: parts[1] || '', qty: entry[1] };
-    });
+    .map(entry => ({ name: entry[0], qty: entry[1] }));
 
   let topHtml = topProducts.map((tp, idx) => `
     <div class="dashboard-list-row">
       <div class="ranked-item">
         <span class="rank-badge">${idx + 1}</span>
-        <div>
-          <div class="item-title">${tp.name}</div>
-          ${tp.varStr}
-        </div>
+        <div><div class="item-title">${tp.name}</div></div>
       </div>
       <span class="item-qty">${tp.qty} <span>porsi</span></span>
     </div>
   `).join('');
-  if (!topHtml) topHtml = '<div class="empty-state">Belum ada data penjualan.</div>';
+  if (!topHtml) topHtml = '<div class="empty-state">Belum ada data penjualan periode ini.</div>';
 
   const payStats = { cash: 0, qris: 0, transfer: 0, card: 0 };
-  txns.forEach(t => { if (payStats[t.payment_method] !== undefined) payStats[t.payment_method] += Number(t.total) || 0; });
+  filteredTxns.forEach(t => { if (payStats[t.payment_method] !== undefined) payStats[t.payment_method] += Number(t.total) || 0; });
   const payHtml = [
     ['qr-code', 'QRIS', payStats.qris],
     ['banknote', 'Tunai', payStats.cash],
@@ -1412,7 +1508,7 @@ async function renderDashboard(el) {
     </div>
   `).join('');
 
-  const recentTxns = txns.slice(0, 4);
+  const recentTxns = filteredTxns.slice(0, 4);
   let recentHtml = recentTxns.map(t => `
     <div class="dashboard-list-row">
       <div class="recent-transaction-main">
@@ -1425,29 +1521,19 @@ async function renderDashboard(el) {
       </div>
     </div>
   `).join('');
-  if (!recentHtml) recentHtml = '<div class="empty-state">Belum ada transaksi.</div>';
+  if (!recentHtml) recentHtml = '<div class="empty-state">Belum ada transaksi periode ini.</div>';
 
-  el.innerHTML = `
-    <div class="dashboard-hero">
-      <h2>Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
-      <p>Berikut adalah ringkasan performa KopiSembilan hari ini.</p>
-    </div>
-
+  area.innerHTML = `
     <div class="stats-grid dashboard-stats">
-      <div class="stat-card"><div class="label">Total Pendapatan</div><div class="value">${fmtRp(totalRev)}</div><div class="change up"><i data-lucide="trending-up" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Akumulasi Semua</div></div>
-      <div class="stat-card"><div class="label">Total Transaksi</div><div class="value">${totalCount}</div><div class="change up"><i data-lucide="activity" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Transaksi Berhasil</div></div>
-      <div class="stat-card"><div class="label">Produk Aktif</div><div class="value">${products.length || 12}</div><div class="change up"><i data-lucide="check-circle" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Menu Terdaftar</div></div>
+      <div class="stat-card"><div class="label">Total Pendapatan</div><div class="value">${fmtRp(totalRev)}</div><div class="change up"><i data-lucide="trending-up" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Periode terpilih</div></div>
+      <div class="stat-card"><div class="label">Total Transaksi</div><div class="value">${totalCount}</div><div class="change up"><i data-lucide="activity" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Transaksi periode ini</div></div>
+      <div class="stat-card"><div class="label">Produk Terjual</div><div class="value">${Object.values(itemCounts).reduce((a,b)=>a+b, 0)}</div><div class="change up"><i data-lucide="coffee" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Porsi disajikan</div></div>
     </div>
 
     <div class="dashboard-grid dashboard-grid-primary">
       <div class="card">
         <div class="card-header dashboard-card-header">
-          <h3 id="revenue-chart-title"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Pendapatan Mingguan</h3>
-          <div class="period-tabs">
-            <button class="period-tab active" data-period="weekly" onclick="renderDashboardRevenueChart('weekly')">Mingguan</button>
-            <button class="period-tab" data-period="monthly" onclick="renderDashboardRevenueChart('monthly')">Bulanan</button>
-            <button class="period-tab" data-period="yearly" onclick="renderDashboardRevenueChart('yearly')">Tahunan</button>
-          </div>
+          <h3 id="revenue-chart-title"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Grafik Pendapatan</h3>
         </div>
         <div class="card-body dashboard-chart-body">
           <canvas id="revenueChart"></canvas>
@@ -1465,13 +1551,14 @@ async function renderDashboard(el) {
         <div class="card-body payment-summary">${payHtml}</div>
       </div>
       <div class="card">
-        <div class="card-header dashboard-card-header"><h3><i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> 4 Transaksi Terakhir</h3></div>
+        <div class="card-header dashboard-card-header"><h3><i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> Transaksi Terakhir</h3></div>
         <div class="card-body dashboard-list">${recentHtml}</div>
       </div>
     </div>
   `;
+  
   if (typeof lucide !== 'undefined') lucide.createIcons();
-  setTimeout(() => renderDashboardRevenueChart('weekly'), 100);
+  setTimeout(() => renderDashboardRevenueChart(activeDashboardPeriod), 100);
 }
 
 // ══════════════════════════════════════════════
@@ -1484,8 +1571,18 @@ function showToast(msg, type = '') {
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.textContent = msg;
+  toast.style.display = 'flex';
+  toast.style.alignItems = 'center';
+  toast.style.gap = '10px';
+  
+  toast.innerHTML = `
+    <i data-lucide="coffee" style="width:16px;height:16px;"></i>
+    <span>${msg}</span>
+  `;
+  
   container.appendChild(toast);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  
   setTimeout(() => toast.remove(), 3000);
 }
 function updateClock() {
@@ -1516,3 +1613,22 @@ document.addEventListener('focusout', function(e) {
     e.target.value = formatPhoneWA(e.target.value);
   }
 });
+
+function sendWhatsAppReceipt(phone, txnId, total, items) {
+  const itemsText = items.map(c => {
+    let text = `• ${c.name} x${c.qty} = ${fmtRp(c.totalPrice * c.qty)}`;
+    if (c.note) text += `\n  Note: ${c.note}`;
+    return text;
+  }).join('\n');
+
+  let message = waTemplate
+    .replace('[NAMA_TOKO]', storeInfo.name)
+    .replace('[ID_TXN]', txnId)
+    .replace('[TANGGAL]', new Date().toLocaleDateString('id-ID'))
+    .replace('[ITEMS]', itemsText)
+    .replace('[TOTAL]', fmtRp(total));
+
+  const encoded = encodeURIComponent(message);
+  const waUrl = `https://wa.me/${formatPhoneWA(phone)}?text=${encoded}`;
+  window.open(waUrl, '_blank');
+}

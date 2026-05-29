@@ -589,6 +589,58 @@ body {
   align-content: start;
   padding: 10px 5px; /* Tambah padding agar hover tidak terpotong */
 }
+.cashier-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 12px;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+.cashier-category-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.cashier-search {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.cashier-search .search-input {
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--cream);
+  padding-right: 42px;
+}
+.cashier-search .search-input:focus {
+  background: #fff;
+}
+.cashier-search-clear {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cashier-search-clear:hover {
+  color: var(--brown-800);
+  border-color: var(--brown-300);
+  background: var(--brown-50);
+}
 .menu-card {
   background: var(--card);
   border: 1.5px solid var(--border);
@@ -662,11 +714,56 @@ body {
   margin-bottom: 4px;
   background: var(--surface);
 }
-.cart-item-row { display: flex; align-items: center; gap: 10px; }
+.cart-item-row { display: flex; align-items: center; gap: 8px; }
 .cart-item .ci-name { flex: 1; font-size: 13px; font-weight: 600; }
 .cart-item .ci-price { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 60px; text-align: right; }
 .cart-item .ci-variants { font-size: 11px; color: var(--text-muted); margin-left: 26px; font-style: italic; }
 .cart-item .ci-note { font-size: 11px; color: var(--brown-500); margin-left: 26px; }
+.cart-item-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-left: 38px;
+}
+.cart-note-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text-muted);
+  padding: 5px 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cart-note-btn:hover,
+.cart-note-btn.has-note {
+  color: var(--brown-800);
+  border-color: var(--brown-300);
+  background: var(--brown-50);
+}
+.cart-remove-btn {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red);
+  border: 1px solid rgba(192, 57, 43, 0.2);
+  border-radius: var(--radius-sm);
+  background: var(--red-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cart-remove-btn:hover {
+  color: #fff;
+  background: var(--red);
+  border-color: var(--red);
+}
 
 .cart-summary {
   padding: 16px 18px;
@@ -897,17 +994,22 @@ body {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--brown-800);
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  padding: 7px 10px;
+  padding: 7px 12px;
   white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.period-tab:hover {
+  background: var(--brown-100);
 }
 .period-tab.active {
-  background: var(--brown-700);
-  color: white;
+  background: var(--brown-700) !important;
+  color: white !important;
+  box-shadow: 0 2px 6px rgba(139, 83, 32, 0.25) !important;
 }
 .dashboard-chart-body {
   position: relative;
@@ -1084,6 +1186,19 @@ body {
     grid-template-columns: 1fr;
     height: auto;
     gap: 16px;
+  }
+  .cashier-toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .cashier-category-row {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+  .cashier-category-row .btn {
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
   .menu-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
