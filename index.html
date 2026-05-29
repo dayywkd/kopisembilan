@@ -82,6 +82,9 @@
       <div class="nav-item" onclick="showPage('manual')">
         <i data-lucide="help-circle" class="nav-icon"></i> Panduan Pengguna
       </div>
+      <div class="nav-item" onclick="showPage('logs')">
+        <i data-lucide="clipboard-list" class="nav-icon"></i> Log Aktivitas
+      </div>
     </div>
 
     <!-- Kasir menu -->
@@ -92,6 +95,9 @@
       </div>
       <div class="nav-item" onclick="showPage('report')">
         <i data-lucide="bar-chart-3" class="nav-icon"></i> Laporan Hari Ini
+      </div>
+      <div class="nav-item" onclick="showPage('logs')">
+        <i data-lucide="clipboard-list" class="nav-icon"></i> Log Aktivitas
       </div>
       <div class="nav-item" onclick="showPage('manual')">
         <i data-lucide="help-circle" class="nav-icon"></i> Panduan Pengguna
@@ -358,6 +364,53 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-note')">Batal</button>
       <button class="btn btn-brown" id="note-save-btn">Simpan Catatan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Edit Transaksi -->
+<div class="modal-overlay" id="modal-edit-txn">
+  <div class="modal">
+    <div class="modal-header">
+      <h3><i data-lucide="edit-2" style="width:20px;height:20px;color:var(--brown-800);"></i> Edit Transaksi</h3>
+      <button class="modal-close" style="display:flex;align-items:center;justify-content:center;" onclick="closeModal('modal-edit-txn')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-txn-id">
+      <div class="form-group">
+        <label>ID Transaksi</label>
+        <input type="text" class="form-input" id="edit-txn-id-display" disabled>
+      </div>
+      <div class="form-group">
+        <label>WhatsApp Pelanggan</label>
+        <input type="text" class="form-input" id="edit-txn-phone" placeholder="Contoh: 08123456789">
+      </div>
+      <div class="form-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="form-group">
+          <label>Metode Pembayaran</label>
+          <select class="select-input" id="edit-txn-method">
+            <option value="cash">Tunai</option>
+            <option value="qris">QRIS</option>
+            <option value="transfer">Transfer</option>
+            <option value="card">Debit Card</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status Pembayaran</label>
+          <select class="select-input" id="edit-txn-status">
+            <option value="Lunas">Lunas</option>
+            <option value="Belum Bayar">Belum Bayar</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Catatan Transaksi</label>
+        <textarea class="form-input" id="edit-txn-notes" rows="3" style="resize:none;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-edit-txn')">Batal</button>
+      <button class="btn btn-brown" onclick="saveTransactionEdit()">Simpan Perubahan</button>
     </div>
   </div>
 </div>

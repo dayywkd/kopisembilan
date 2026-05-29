@@ -73,6 +73,7 @@ async function doLogin() {
 
   localStorage.setItem('ks_session', JSON.stringify(user));
   setupUserSession(user);
+  addActivityLog('Login Berhasil', `User ${user.name} masuk ke sistem`);
 }
 
 function setupUserSession(user) {
@@ -189,6 +190,7 @@ async function saveStoreInfo() {
   if (!error) {
     storeInfo = newInfo;
     showToast('Informasi toko berhasil disimpan!', 'success');
+    addActivityLog('Update Info Toko', `Nama: ${name}`);
   } else {
     showToast('Gagal menyimpan ke database!', 'error');
   }
@@ -202,6 +204,7 @@ async function saveWATemplate() {
   if (!error) {
     waTemplate = template;
     showToast('Template WhatsApp berhasil disimpan!', 'success');
+    addActivityLog('Update Template WA', 'Perubahan format struk');
   } else {
     showToast('Gagal menyimpan template!', 'error');
   }
@@ -235,7 +238,8 @@ async function loadProducts() {
 // ══════════════════════════════════════════════
 const PAGE_TITLES = {
   dashboard: 'Dashboard', cashier: 'Kasir / POS', inventory: 'Inventaris Produk',
-  report: 'Laporan Keuangan', users: 'Manajemen Pengguna', settings: 'Pengaturan', manual: 'Panduan Pengguna'
+  report: 'Laporan Keuangan', users: 'Manajemen Pengguna', settings: 'Pengaturan', manual: 'Panduan Pengguna',
+  logs: 'Log Aktivitas'
 };
 
 function showPage(page) {
@@ -253,7 +257,8 @@ function showPage(page) {
     content.innerHTML = '';
     const renders = {
       dashboard: renderDashboard, cashier: renderCashier, inventory: renderInventory,
-      report: renderReport, users: renderUsers, settings: renderSettings, manual: renderManual
+      report: renderReport, users: renderUsers, settings: renderSettings, manual: renderManual,
+      logs: renderLogs
     };
     if (renders[page]) renders[page](content);
     if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -272,6 +277,20 @@ function closeSidebar() {
   const overlay = document.getElementById('sidebar-overlay');
   if (sidebar) sidebar.classList.remove('open');
   if (overlay) overlay.classList.remove('open');
+}
+
+function toggleMobileCart() {
+  if (window.innerWidth > 768) return;
+  const cartPanel = document.getElementById('cart-panel');
+  if (cartPanel) {
+    cartPanel.classList.toggle('expanded');
+    const icon = cartPanel.querySelector('.cart-toggle-icon');
+    if (icon) {
+      const isExpanded = cartPanel.classList.contains('expanded');
+      icon.innerHTML = `<i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-up'}" style="width:20px;height:20px;"></i>`;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -300,10 +319,24 @@ function renderCashier(el) {
           ${renderMenuItems(activeCashierCategory, cashierSearchQuery)}
         </div>
       </div>
-      <div class="cart-panel">
-        <div class="cart-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <div style="display:flex;align-items:center;gap:8px;"><i data-lucide="shopping-bag" style="width:18px;height:18px;"></i> Keranjang</div>
-          <span id="cart-count" style="font-size:13px;color:var(--text-muted);font-family:'DM Sans';font-weight:normal;">0 item</span>
+      <div class="cart-panel" id="cart-panel">
+        <div class="cart-header" onclick="toggleMobileCart()">
+          <div class="cart-mobile-summary mobile-only">
+             <div style="display:flex;align-items:center;gap:12px;">
+               <div style="position:relative; display:flex; align-items:center;">
+                 <i data-lucide="shopping-cart" style="width:22px;height:22px;color:var(--brown-800);"></i>
+                 <span id="cart-mobile-badge" class="badge badge-red" style="position:absolute; top:-10px; right:-10px; padding:2px 6px; font-size:10px; border:2px solid white; min-width:20px; text-align:center;">0</span>
+               </div>
+               <div id="cart-mobile-total" class="cart-mobile-total">Rp 0</div>
+             </div>
+          </div>
+          <div class="desktop-only" style="display:flex;align-items:center;gap:8px;">
+            <i data-lucide="shopping-bag" style="width:18px;height:18px;"></i> Keranjang
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="cart-count" class="desktop-only" style="font-size:13px;color:var(--text-muted);font-family:'DM Sans';font-weight:normal;">0 item</span>
+            <div class="cart-toggle-icon mobile-only" style="display:flex;align-items:center;"><i data-lucide="chevron-up" style="width:20px;height:20px;"></i></div>
+          </div>
         </div>
         <div class="cart-items" id="cart-items"><div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px;">Pilih produk dari menu</div></div>
         <div class="cart-summary">
@@ -459,6 +492,12 @@ function updateCartUI() {
     if (cartCount) cartCount.textContent = '0 item';
     if (payBtn) payBtn.disabled = true;
     if (totalValEl) totalValEl.textContent = 'Rp 0';
+    
+    const mobileBadge = document.getElementById('cart-mobile-badge');
+    const mobileTotal = document.getElementById('cart-mobile-total');
+    if (mobileBadge) mobileBadge.textContent = '0';
+    if (mobileTotal) mobileTotal.textContent = 'Rp 0';
+    
     return;
   }
 
@@ -510,6 +549,13 @@ function updateCartUI() {
   `}).join('');
 
   if (cartCount) cartCount.textContent = cart.length + ' item';
+  
+  // Update Mobile Summary
+  const mobileBadge = document.getElementById('cart-mobile-badge');
+  const mobileTotal = document.getElementById('cart-mobile-total');
+  if (mobileBadge) mobileBadge.textContent = cart.reduce((sum, item) => sum + item.qty, 0);
+  if (mobileTotal) mobileTotal.textContent = fmtRp(total);
+
   if (totalValEl) totalValEl.textContent = fmtRp(total);
   if (payBtn) payBtn.disabled = false;
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -544,7 +590,14 @@ function editCartNote(cartId) {
   const saveBtn = document.getElementById('note-save-btn');
 
   if (label) label.textContent = 'Catatan untuk ' + item.name;
-  if (input) input.value = item.note || '';
+  if (input) {
+    input.value = item.note || '';
+    // Sinkronisasi shortcut saat modal dibuka
+    setTimeout(() => syncShortcutChips('note-input'), 50);
+    
+    // Sinkronisasi saat mengetik manual
+    input.oninput = () => syncShortcutChips('note-input');
+  }
   
   if (saveBtn) {
     saveBtn.onclick = () => {
@@ -776,6 +829,7 @@ async function confirmPayment(sendWA = false) {
     if (sendWA && phone) sendWhatsAppReceipt(phone, txnId, total, cart);
 
     showToast('Transaksi Berhasil!', 'success');
+    addActivityLog('Transaksi Baru', `ID: ${txnId}, Total: ${fmtRp(total)}`);
     cart = [];
     cartItemSeq = 0;
     updateCartUI();
@@ -862,6 +916,7 @@ async function renderReport(el) {
         <td>
           <div style="display:flex; gap:6px;">
             <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
+            <button class="btn btn-outline btn-sm" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
             ${t.customer_phone ? `<button class="btn btn-green btn-sm" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
           </div>
         </td>
@@ -1097,6 +1152,7 @@ async function saveProduct() {
 
   if (!error) {
     showToast(editingProductId ? 'Produk diperbarui!' : 'Produk ditambahkan!', 'success');
+    addActivityLog(editingProductId ? 'Edit Produk' : 'Tambah Produk', `Nama: ${name}, Kategori: ${cat}, Harga: ${fmtRp(price)}`);
     await loadProducts();
     closeModal('modal-product');
   } else {
@@ -1118,6 +1174,7 @@ async function deleteProduct(id) {
       
       if (!error) {
         showToast('Produk berhasil dihapus!', 'success');
+        addActivityLog('Hapus Produk', `ID: ${id}`);
         await loadProducts();
       } else {
         console.error('Delete Error:', error);
@@ -1229,6 +1286,7 @@ async function saveUser() {
 
   if (!error) {
     showToast(editingUserId ? 'Akun diperbarui!' : 'Akun berhasil dibuat!', 'success');
+    addActivityLog(editingUserId ? 'Edit Pengguna' : 'Tambah Pengguna', `Username: ${username}, Role: ${role}`);
     closeModal('modal-user');
     renderUsers(document.getElementById('page-content'));
   } else {
@@ -1243,6 +1301,7 @@ async function deleteUser(id) {
   const { error } = await db.from('users').delete().eq('id', id);
   if (!error) {
     showToast('Akun berhasil dihapus!', 'success');
+    addActivityLog('Hapus Pengguna', `ID: ${id}`);
     renderUsers(document.getElementById('page-content'));
   } else {
     showToast('Gagal menghapus akun!', 'error');
@@ -1642,7 +1701,7 @@ document.addEventListener('focusout', function(e) {
 });
 
 /**
- * Menambahkan shortcut catatan ke input textarea atau text
+ * Menambahkan shortcut catatan ke input textarea atau text (Toggle Mode)
  * @param {string} text 
  * @param {string} targetId
  */
@@ -1650,19 +1709,96 @@ function addNoteShortcut(text, targetId = 'note-input') {
   const input = document.getElementById(targetId);
   if (!input) return;
   
-  const currentVal = input.value.trim();
-  if (currentVal) {
-    // Jika sudah ada teks, tambahkan koma dan spasi
-    const lastChar = currentVal.slice(-1);
-    if (lastChar === ',' || lastChar === '.') {
-      input.value = currentVal + ' ' + text;
-    } else {
-      input.value = currentVal + ', ' + text;
-    }
+  let currentVal = input.value.trim();
+  // Pisahkan berdasarkan koma dan bersihkan spasi
+  let tags = currentVal ? currentVal.split(',').map(t => t.trim()).filter(t => t) : [];
+  
+  const index = tags.indexOf(text);
+  if (index > -1) {
+    // Jika sudah ada, hapus (toggle off)
+    tags.splice(index, 1);
   } else {
-    input.value = text;
+    // Jika belum ada, tambah (toggle on)
+    tags.push(text);
   }
+  
+  input.value = tags.join(', ');
   input.focus();
+  
+  // Update tampilan shortcut
+  syncShortcutChips(targetId);
+}
+
+/**
+ * Menyinkronkan status aktif shortcut chip dengan isi input
+ * @param {string} targetId 
+ */
+function syncShortcutChips(targetId) {
+  const input = document.getElementById(targetId);
+  if (!input) return;
+  
+  const currentVal = input.value.trim();
+  const tags = currentVal ? currentVal.split(',').map(t => t.trim()) : [];
+  
+  // Cari container shortcuts terdekat
+  const container = input.parentElement.querySelector('.note-shortcuts');
+  if (container) {
+    container.querySelectorAll('.shortcut-chip').forEach(btn => {
+      const btnText = btn.textContent.trim();
+      if (tags.includes(btnText)) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+}
+
+async function editTransaction(id) {
+  try {
+    const { data: txn, error } = await db.from('transactions').select('*').eq('id', id).single();
+    if (error || !txn) { showToast('Gagal memuat data transaksi!', 'error'); return; }
+
+    document.getElementById('edit-txn-id').value = txn.id;
+    document.getElementById('edit-txn-id-display').value = txn.id;
+    document.getElementById('edit-txn-phone').value = txn.customer_phone || '';
+    document.getElementById('edit-txn-method').value = txn.payment_method || 'cash';
+    document.getElementById('edit-txn-status').value = txn.payment_status || 'Lunas';
+    document.getElementById('edit-txn-notes').value = txn.notes || '';
+
+    openModal('modal-edit-txn');
+  } catch (e) { showToast('Terjadi kesalahan!', 'error'); }
+}
+
+async function saveTransactionEdit() {
+  const id = document.getElementById('edit-txn-id').value;
+  const phone = document.getElementById('edit-txn-phone').value.trim();
+  const method = document.getElementById('edit-txn-method').value;
+  const status = document.getElementById('edit-txn-status').value;
+  const notes = document.getElementById('edit-txn-notes').value.trim();
+
+  try {
+    const { error } = await db.from('transactions').update({
+      customer_phone: phone,
+      payment_method: method,
+      payment_status: status,
+      notes: notes
+    }).eq('id', id);
+
+    if (!error) {
+      showToast('Transaksi diperbarui!', 'success');
+      addActivityLog('Edit Transaksi', `ID: ${id}, Status: ${status}, Metode: ${method}`);
+      closeModal('modal-edit-txn');
+      
+      // Refresh laporan jika sedang di halaman laporan
+      const currentTitle = document.getElementById('page-title').textContent;
+      if (currentTitle.includes('Laporan')) {
+        renderReport(document.getElementById('page-content'));
+      }
+    } else {
+      showToast('Gagal menyimpan perubahan!', 'error');
+    }
+  } catch (e) { showToast('Kesalahan sistem!', 'error'); }
 }
 
 /**
@@ -1727,3 +1863,56 @@ function downloadReceiptImage(txnId) {
     element.style.cssText = originalStyle;
   });
 }
+
+// ══════════════════════════════════════════════
+// ACTIVITY LOGS
+// ══════════════════════════════════════════════
+async function renderLogs(el) {
+  el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat log aktivitas...</div>`;
+  
+  let logs = [];
+  try {
+    const { data, error } = await db.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100);
+    if (!error && data) logs = data;
+  } catch(e) { console.error('Load logs fail', e); }
+
+  const rows = logs.map(l => `
+    <tr>
+      <td><div style="font-size:12px; color:var(--text-muted);">${new Date(l.created_at).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</div></td>
+      <td><strong>${l.user_name}</strong> <span class="badge ${l.user_role === 'admin' ? 'badge-amber' : 'badge-blue'}" style="font-size:9px; padding:1px 6px;">${l.user_role.toUpperCase()}</span></td>
+      <td><span style="font-weight:600; color:var(--brown-800);">${l.action}</span></td>
+      <td><div style="font-size:11px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeAttr(l.details || '')}">${l.details || '-'}</div></td>
+    </tr>
+  `).join('');
+
+  el.innerHTML = `
+    <div class="inv-actions">
+      <div style="flex:1;"><h3 style="font-family:'DM Serif Display'; font-size:20px; color:var(--brown-800);">Riwayat Aktivitas</h3><p style="font-size:12px; color:var(--text-muted);">Memantau 100 tindakan terakhir yang dilakukan di sistem.</p></div>
+      <button class="btn btn-outline btn-sm" onclick="showPage('logs')"><i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Refresh</button>
+    </div>
+    <div class="card">
+      <div style="overflow-x:auto;">
+        <table class="table">
+          <thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Detail</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="4" style="text-align:center; padding:30px;">Belum ada catatan aktivitas.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+async function addActivityLog(action, details = '') {
+  if (!currentUser) return;
+  try {
+    const { error } = await db.from('activity_logs').insert([{
+      user_id: currentUser.id,
+      user_name: currentUser.name,
+      user_role: currentUser.role,
+      action: action,
+      details: details
+    }]);
+    if (error) console.error('Add log error:', error.message, error.details);
+  } catch(e) { console.error('Add log fail', e); }
+}
+
