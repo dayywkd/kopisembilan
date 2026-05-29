@@ -792,9 +792,12 @@ async function confirmPayment(sendWA = false) {
     return;
   }
 
+  let cashAmount = 0;
+  let cashChange = 0;
   if (selectedPaymentMethod === 'cash') {
-    const paid = parseInt(document.getElementById('cash-input').value) || 0;
-    if (paid < total && status === 'Lunas') { showToast('Jumlah bayar kurang!', 'error'); return; }
+    cashAmount = parseInt(document.getElementById('cash-input').value) || 0;
+    if (cashAmount < total && status === 'Lunas') { showToast('Jumlah bayar kurang!', 'error'); return; }
+    cashChange = cashAmount - total;
   }
 
   try {
@@ -807,7 +810,9 @@ async function confirmPayment(sendWA = false) {
         payment_method: selectedPaymentMethod,
         payment_status: status,
         notes: note,
-        cashier_name: currentUser ? currentUser.name : 'Kasir'
+        cashier_name: currentUser ? currentUser.name : 'Kasir',
+        cash_amount: cashAmount,
+        cash_change: cashChange
       }])
       .select()
       .single();
@@ -913,6 +918,8 @@ async function renderReport(el) {
         <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
         <td><span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
         <td style="font-weight:600;">${fmtRp(t.total)}</td>
+        <td style="font-size:11px; color:var(--text-muted);">${t.payment_method === 'cash' ? fmtRp(t.cash_amount || 0) : '-'}</td>
+        <td style="font-size:11px; color:var(--text-muted);">${t.payment_method === 'cash' ? fmtRp(t.cash_change || 0) : '-'}</td>
         <td>
           <div style="display:flex; gap:6px;">
             <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
@@ -949,8 +956,8 @@ async function renderReport(el) {
       <div class="card">
         <div style="overflow-x:auto;">
           <table class="table">
-            <thead><tr><th>ID</th><th>Waktu</th><th>WhatsApp</th><th>Metode</th><th>Status</th><th>Total</th><th>Aksi</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="7" style="text-align:center;">Tidak ada data transaksi</td></tr>'}</tbody>
+            <thead><tr><th>ID</th><th>Waktu</th><th>WhatsApp</th><th>Metode</th><th>Status</th><th>Total</th><th>Bayar</th><th>Kembali</th><th>Aksi</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="9" style="text-align:center;">Tidak ada data transaksi</td></tr>'}</tbody>
           </table>
         </div>
       </div>
@@ -1002,7 +1009,7 @@ function exportToCSV() {
   }
   const txns = window.currentReportTxns;
   let csvContent = "data:text/csv;charset=utf-8,";
-  csvContent += "ID Transaksi,Waktu,WhatsApp,Metode,Status,Total,Kasir\n";
+  csvContent += "ID Transaksi,Waktu,WhatsApp,Metode,Status,Total,Bayar,Kembali,Kasir\n";
   
   txns.forEach(t => {
     const row = [
@@ -1012,6 +1019,8 @@ function exportToCSV() {
       t.payment_method,
       t.payment_status,
       t.total,
+      t.payment_method === 'cash' ? (t.cash_amount || 0) : '-',
+      t.payment_method === 'cash' ? (t.cash_change || 0) : '-',
       t.cashier_name
     ];
     csvContent += row.join(",") + "\n";
@@ -1358,7 +1367,7 @@ async function viewTxnDetail(id) {
   let itemHtml = txn.transaction_items.map(i => `
     <div style="padding:10px; border-bottom:1px solid var(--border);"><div style="display:flex; justify-content:space-between; gap:12px; font-weight:600;"><span style="display:flex; align-items:center; gap:6px;"><i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name} x${i.qty}</span><span>${fmtRp(i.price * i.qty)}</span></div>${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}</div>
   `).join('');
-  const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${new Date(txn.date).toLocaleString('id-ID')}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div></div>`;
+  const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${new Date(txn.date).toLocaleString('id-ID')}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>Metode:</strong> ${txn.payment_method.toUpperCase()}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div>${txn.payment_method === 'cash' ? `<div style="display:flex; justify-content:space-between; font-size:13px; margin-top:4px;"><span>BAYAR</span><span>${fmtRp(txn.cash_amount || 0)}</span></div><div style="display:flex; justify-content:space-between; font-size:13px; margin-top:2px;"><span>KEMBALI</span><span>${fmtRp(txn.cash_change || 0)}</span></div>` : ''}</div>`;
   document.getElementById('receipt-preview').innerHTML = detailHtml;
   if (typeof lucide !== 'undefined') lucide.createIcons();
   document.getElementById('modal-payment').classList.add('open');
