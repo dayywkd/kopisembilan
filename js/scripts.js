@@ -603,15 +603,15 @@ function resetPaymentModalForCheckout() {
 
   const footer = document.querySelector('#modal-payment .modal-footer');
   if (footer) {
-    footer.innerHTML = `
-      <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
-      <div style="display:flex; gap:8px; width:100%;">
-        <button class="btn btn-brown" style="flex:1;" onclick="confirmPayment(false)">Selesai</button>
-        <button class="btn btn-green" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="confirmPayment(true)">
-          <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA
-        </button>
-      </div>
-    `;
+  footer.innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
+    <div style="display:flex; gap:8px; width:100%;">
+      <button class="btn btn-green" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="confirmPaymentWithWA()">
+        <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA
+      </button>
+      <button class="btn btn-brown" style="flex:1.5;" onclick="confirmPayment(false)">Selesai</button>
+    </div>
+  `;
   }
 
   selectedPaymentMethod = 'cash';
@@ -620,7 +620,46 @@ function resetPaymentModalForCheckout() {
   const cashWrap = document.getElementById('cash-input-wrap');
   if (qris) qris.style.display = 'none';
   if (cashWrap) cashWrap.style.display = 'block';
+  
+  const phoneGroup = document.getElementById('phone-input-group');
+  if (phoneGroup) phoneGroup.style.display = 'none';
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+/**
+ * Handle konfirmasi pembayaran dengan pengiriman WA (meminta nomor via modal)
+ */
+function confirmPaymentWithWA() {
+  const phoneEl = document.getElementById('customer-phone');
+  const modalInput = document.getElementById('phone-modal-input');
+  
+  if (modalInput) {
+    modalInput.value = phoneEl ? phoneEl.value.trim() : '';
+  }
+  
+  openModal('modal-phone');
+  if (modalInput) setTimeout(() => modalInput.focus(), 200);
+}
+
+/**
+ * Memproses aksi dari modal input nomor WA
+ * @param {boolean} sendNow 
+ */
+function processPhoneAction(sendNow) {
+  const modalInput = document.getElementById('phone-modal-input');
+  const phoneEl = document.getElementById('customer-phone');
+  const phone = modalInput ? modalInput.value.trim() : '';
+
+  if (!phone) {
+    showToast("Nomor WhatsApp wajib diisi!", "error");
+    if (modalInput) modalInput.focus();
+    return;
+  }
+
+  if (phoneEl) phoneEl.value = phone;
+  closeModal('modal-phone');
+  confirmPayment(sendNow);
 }
 
 function openPayment() {
@@ -822,7 +861,12 @@ async function renderReport(el) {
         <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
         <td><span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
         <td style="font-weight:600;">${fmtRp(t.total)}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button></td>
+        <td>
+          <div style="display:flex; gap:6px;">
+            <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
+            ${t.customer_phone ? `<button class="btn btn-green btn-sm" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
+          </div>
+        </td>
       </tr>
     `).join('');
     
@@ -884,9 +928,10 @@ async function renderReport(el) {
   if (typeof lucide !== 'undefined') lucide.createIcons();
   window.renderReportTable = (status = 'Semua', method = 'Semua') => {
     const html = renderContent(status, method);
-    setTimeout(() => {
-      if (typeof lucide !== 'undefined') lucide.createIcons();
-    }, 0);
+    if (typeof lucide !== 'undefined') {
+      // Jalankan setelah DOM terupdate
+      requestAnimationFrame(() => lucide.createIcons());
+    }
     return html;
   };
   window.applyReportFilters = () => {
@@ -1283,7 +1328,9 @@ async function viewTxnDetail(id) {
   const payInputs = document.querySelector('#modal-payment .modal-body > div:nth-child(2)');
   if (payInputs) payInputs.style.display = 'none';
   const footer = document.querySelector('#modal-payment .modal-footer');
-  if (footer) footer.innerHTML = `<button class="btn btn-brown w-full" onclick="closeModal('modal-payment'); showPage('report');">Tutup</button>`;
+  if (footer) footer.innerHTML = `
+    <button class="btn btn-brown w-full" onclick="closeModal('modal-payment'); showPage('report');">Tutup</button>
+  `;
 }
 
 function getRevenueSeries(txns, period) {
@@ -1614,21 +1661,89 @@ document.addEventListener('focusout', function(e) {
   }
 });
 
-function sendWhatsAppReceipt(phone, txnId, total, items) {
-  const itemsText = items.map(c => {
-    let text = `• ${c.name} x${c.qty} = ${fmtRp(c.totalPrice * c.qty)}`;
-    if (c.note) text += `\n  Note: ${c.note}`;
-    return text;
-  }).join('\n');
+/**
+ * Menambahkan shortcut catatan ke input textarea atau text
+ * @param {string} text 
+ * @param {string} targetId
+ */
+function addNoteShortcut(text, targetId = 'note-input') {
+  const input = document.getElementById(targetId);
+  if (!input) return;
+  
+  const currentVal = input.value.trim();
+  if (currentVal) {
+    // Jika sudah ada teks, tambahkan koma dan spasi
+    const lastChar = currentVal.slice(-1);
+    if (lastChar === ',' || lastChar === '.') {
+      input.value = currentVal + ' ' + text;
+    } else {
+      input.value = currentVal + ', ' + text;
+    }
+  } else {
+    input.value = text;
+  }
+  input.focus();
+}
 
-  let message = waTemplate
-    .replace('[NAMA_TOKO]', storeInfo.name)
-    .replace('[ID_TXN]', txnId)
-    .replace('[TANGGAL]', new Date().toLocaleDateString('id-ID'))
-    .replace('[ITEMS]', itemsText)
-    .replace('[TOTAL]', fmtRp(total));
+/**
+ * Mengirim ulang struk via WhatsApp dari laporan
+ * @param {string} id - Transaction ID
+ */
+async function resendWhatsAppReceipt(id) {
+  const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
+  if (error || !txn) { 
+    showToast('Gagal memuat data transaksi!', 'error'); 
+    return; 
+  }
+  
+  if (!txn.customer_phone) {
+    showToast('Nomor WhatsApp tidak tersimpan untuk transaksi ini!', 'error');
+    return;
+  }
 
-  const encoded = encodeURIComponent(message);
-  const waUrl = `https://wa.me/${formatPhoneWA(phone)}?text=${encoded}`;
-  window.open(waUrl, '_blank');
+  // Format item agar sesuai dengan yang diharapkan sendWhatsAppReceipt
+  const formattedItems = txn.transaction_items.map(i => ({
+    name: i.products?.name || 'Produk',
+    qty: i.qty,
+    totalPrice: i.price,
+    note: i.item_note
+  }));
+
+  sendWhatsAppReceipt(txn.customer_phone, txn.id, txn.total, formattedItems);
+}
+
+/**
+ * Mengunduh pratinjau struk sebagai gambar PNG
+ * @param {string} txnId 
+ */
+function downloadReceiptImage(txnId) {
+  const element = document.getElementById('receipt-preview');
+  if (!element) return;
+
+  // Berikan sedikit padding dan styling khusus untuk ekspor gambar
+  const originalStyle = element.style.cssText;
+  element.style.padding = '30px';
+  element.style.background = 'white';
+  element.style.width = '350px'; // Ukuran standar struk
+
+  html2canvas(element, {
+    scale: 2, // Kualitas lebih tajam
+    backgroundColor: '#ffffff',
+    logging: false
+  }).then(canvas => {
+    // Kembalikan style asli
+    element.style.cssText = originalStyle;
+
+    // Trigger download
+    const link = document.createElement('a');
+    link.download = `Struk-${txnId}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    
+    showToast('Struk berhasil diunduh!', 'success');
+  }).catch(err => {
+    console.error('Export error:', err);
+    showToast('Gagal membuat gambar struk!', 'error');
+    element.style.cssText = originalStyle;
+  });
 }

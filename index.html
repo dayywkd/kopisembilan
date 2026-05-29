@@ -146,6 +146,15 @@
       <div class="form-group">
         <label>Catatan Item</label>
         <input type="text" class="form-input" id="item-note" placeholder="Contoh: Less Sugar, No Ice...">
+        <div class="note-shortcuts" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;">
+          <button class="shortcut-chip" onclick="addNoteShortcut('Less Sugar', 'item-note')">Less Sugar</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('Normal Sugar', 'item-note')">Normal Sugar</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('No Sugar', 'item-note')">No Sugar</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('Less Ice', 'item-note')">Less Ice</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('Normal Ice', 'item-note')">Normal Ice</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('More Ice', 'item-note')">More Ice</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('No Ice', 'item-note')">No Ice</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -186,14 +195,8 @@
           </div>
         </div>
 
-        <div id="qris-display" style="display:none; text-align:center; padding:20px; background:white; border:1px solid var(--border); border-radius:12px; margin-top:16px;">
-          <p style="font-size:12px; font-weight:600; margin-bottom:10px;">SILAKAN SCAN QRIS</p>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=KopiSembilan-QRIS-Mockup" alt="QRIS Mockup" style="width:150px; height:150px;">
-          <p style="font-size:11px; color:var(--text-muted); margin-top:8px;">KopiSembilan Digital Payment</p>
-        </div>
-
         <div class="payment-form-grid" style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-          <div class="form-group">
+          <div class="form-group" id="phone-input-group" style="display:none;">
             <label>No. WhatsApp Pelanggan</label>
             <input type="text" class="form-input" id="customer-phone" placeholder="08xxxxxx">
           </div>
@@ -304,6 +307,32 @@
   </div>
 </div>
 
+<!-- Phone Input Modal -->
+<div class="modal-overlay" id="modal-phone">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header">
+      <h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="phone" style="width:20px;height:20px;color:var(--brown-800);"></i> Kirim Struk WhatsApp</h3>
+      <button class="modal-close" style="display:flex;align-items:center;justify-content:center;" onclick="closeModal('modal-phone')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nomor WhatsApp Pelanggan</label>
+        <input type="text" class="form-input" id="phone-modal-input" placeholder="Contoh: 08123456789">
+        <p style="font-size:11px; color:var(--text-muted); margin-top:8px;">Struk akan dikirimkan ke nomor ini melalui WhatsApp.</p>
+      </div>
+    </div>
+    <div class="modal-footer" style="flex-direction:column; gap:8px;">
+      <button class="btn btn-green w-full" style="display:flex; align-items:center; justify-content:center; gap:8px;" onclick="processPhoneAction(true)">
+        <i data-lucide="send" style="width:18px;height:18px;"></i> Kirim Sekarang
+      </button>
+      <div style="display:flex; gap:8px; width:100%;">
+        <button class="btn btn-outline" style="flex:1;" onclick="closeModal('modal-phone')">Batal</button>
+        <button class="btn btn-brown" style="flex:1;" onclick="processPhoneAction(false)">Simpan Saja</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Note Modal -->
 <div class="modal-overlay" id="modal-note">
   <div class="modal" style="max-width:400px;">
@@ -315,6 +344,15 @@
       <div class="form-group">
         <label id="note-item-label">Catatan untuk produk</label>
         <textarea class="form-input" id="note-input" rows="3" placeholder="Contoh: Less Sugar, No Ice..." style="resize:none;"></textarea>
+        <div class="note-shortcuts" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;">
+          <button class="shortcut-chip" onclick="addNoteShortcut('Less Sugar')">Less Sugar</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('Normal Sugar')">Normal Sugar</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('No Sugar')">No Sugar</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('Less Ice')">Less Ice</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('Normal Ice')">Normal Ice</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('More Ice')">More Ice</button>
+          <button class="shortcut-chip" onclick="addNoteShortcut('No Ice')">No Ice</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -344,6 +382,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="js/supabase-config.js"></script>
 <script src="js/scripts.js?v=1.1"></script>
 </body>
