@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KopiSembilan — Sistem Kasir</title>
+<title>Toko Kopi Sembilan</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -62,7 +62,7 @@
         <i data-lucide="layout-dashboard" class="nav-icon"></i> Dashboard
       </div>
       <div class="nav-item" onclick="showPage('cashier')">
-        <i data-lucide="shopping-cart" class="nav-icon"></i> Kasir / POS
+        <i data-lucide="shopping-cart" class="nav-icon"></i> Kasir
       </div>
       <div class="nav-section">Manajemen</div>
       <div class="nav-item" onclick="showPage('inventory')">
@@ -87,13 +87,13 @@
     <div id="kasir-menu" class="hidden">
       <div class="nav-section">Kasir</div>
       <div class="nav-item active" onclick="showPage('cashier')">
-        <span class="nav-icon">🛒</span> Kasir / POS
+        <i data-lucide="shopping-cart" class="nav-icon"></i> Kasir
       </div>
       <div class="nav-item" onclick="showPage('report')">
-        <span class="nav-icon">📈</span> Laporan Hari Ini
+        <i data-lucide="bar-chart-3" class="nav-icon"></i> Laporan Hari Ini
       </div>
       <div class="nav-item" onclick="showPage('manual')">
-        <span class="nav-icon">📘</span> Panduan Pengguna
+        <i data-lucide="help-circle" class="nav-icon"></i> Panduan Pengguna
       </div>
     </div>
 
@@ -191,7 +191,7 @@
           <p style="font-size:11px; color:var(--text-muted); margin-top:8px;">KopiSembilan Digital Payment</p>
         </div>
 
-        <div style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+        <div class="payment-form-grid" style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
           <div class="form-group">
             <label>No. WhatsApp Pelanggan</label>
             <input type="text" class="form-input" id="customer-phone" placeholder="08xxxxxx">
@@ -305,6 +305,23 @@
 
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal confirm-modal">
+    <div class="confirm-icon">
+      <i data-lucide="log-out" style="width:24px;height:24px;"></i>
+    </div>
+    <div class="confirm-content">
+      <h3 id="confirm-title">Konfirmasi</h3>
+      <p id="confirm-message">Apakah Anda yakin?</p>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn btn-outline" id="confirm-cancel">Batal</button>
+      <button class="btn btn-brown" id="confirm-ok">Ya, Lanjutkan</button>
+    </div>
+  </div>
+</div>
 
 <script src="js/supabase-config.js"></script>
 <script src="js/scripts.js?v=1.1"></script>

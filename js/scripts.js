@@ -8,6 +8,7 @@ let transactions = [];
 let selectedProductForVariant = null;
 let editingProductId = null;
 let editingUserId = null;
+let revenueChartInstance = null;
 let storeInfo = { name: 'KopiSembilan', address: 'Jl. Kopi Nomor 9, Jember, Jawa Timur', phone: '085855180131' };
 
 const DEFAULT_VARIANTS = [
@@ -92,8 +93,51 @@ function setupUserSession(user) {
   loadProducts();
 }
 
+function showConfirmDialog({ title, message, icon = 'alert-circle', confirmText = 'Ya', cancelText = 'Batal', onConfirm }) {
+  const modal = document.getElementById('modal-confirm');
+  if (!modal) {
+    if (confirm(message)) onConfirm();
+    return;
+  }
+
+  const titleEl = document.getElementById('confirm-title');
+  const messageEl = document.getElementById('confirm-message');
+  const iconEl = modal.querySelector('.confirm-icon');
+  const cancelBtn = document.getElementById('confirm-cancel');
+  const okBtn = document.getElementById('confirm-ok');
+
+  if (titleEl) titleEl.textContent = title;
+  if (messageEl) messageEl.textContent = message;
+  if (iconEl) iconEl.innerHTML = `<i data-lucide="${icon}" style="width:24px;height:24px;"></i>`;
+  if (cancelBtn) cancelBtn.textContent = cancelText;
+  if (okBtn) okBtn.textContent = confirmText;
+
+  const close = () => modal.classList.remove('open');
+  if (cancelBtn) cancelBtn.onclick = close;
+  if (okBtn) okBtn.onclick = () => {
+    close();
+    onConfirm();
+  };
+  modal.onclick = (e) => {
+    if (e.target === modal) close();
+  };
+
+  modal.classList.add('open');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
 function doLogout() {
-  if (!confirm('Yakin ingin keluar dari sistem?')) return;
+  showConfirmDialog({
+    title: 'Keluar dari sistem?',
+    message: 'Sesi Anda akan ditutup dan kembali ke halaman login.',
+    icon: 'log-out',
+    confirmText: 'Keluar',
+    cancelText: 'Batal',
+    onConfirm: performLogout
+  });
+}
+
+function performLogout() {
   localStorage.removeItem('ks_session');
   currentUser = null;
   cart = [];
@@ -576,7 +620,34 @@ function selectPayMethod(el) {
   if (selectedPaymentMethod !== 'cash' && changeDisplay) changeDisplay.style.display = 'none';
 }
 
+function resetPaymentModalForCheckout() {
+  const modalTitle = document.querySelector('#modal-payment .modal-header h3');
+  if (modalTitle) {
+    modalTitle.innerHTML = `<i data-lucide="credit-card" style="width:20px;height:20px;color:var(--brown-800);"></i> Pembayaran`;
+  }
+
+  const paymentControls = document.querySelector('#modal-payment .modal-body > div:nth-child(2)');
+  if (paymentControls) paymentControls.style.display = 'block';
+
+  const footer = document.querySelector('#modal-payment .modal-footer');
+  if (footer) {
+    footer.innerHTML = `
+      <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
+      <button class="btn btn-green w-full" style="display:flex; align-items:center; justify-content:center; gap:8px;" onclick="confirmPayment()"><i data-lucide="check-circle" style="width:18px;height:18px;"></i> Selesaikan & Kirim WA</button>
+    `;
+  }
+
+  selectedPaymentMethod = 'cash';
+  document.querySelectorAll('.pay-method-card').forEach(c => c.classList.toggle('active', c.dataset.method === 'cash'));
+  const qris = document.getElementById('qris-display');
+  const cashWrap = document.getElementById('cash-input-wrap');
+  if (qris) qris.style.display = 'none';
+  if (cashWrap) cashWrap.style.display = 'block';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
 function openPayment() {
+  resetPaymentModalForCheckout();
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const now = new Date();
   const txnId = 'TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
@@ -692,7 +763,6 @@ async function confirmPayment() {
   }
 }
 
-// Tambahkan ini sebelum fungsi sendWhatsAppReceipt
 function formatPhoneWA(phone) {
   let nomor = phone.replace(/\D/g, '');
   if (nomor.startsWith('0'))      nomor = '62' + nomor.slice(1);
@@ -804,7 +874,14 @@ async function renderReport(el) {
     </div>
     <div id="report-container">${renderContent('Semua')}</div>
   `;
-  window.renderReportTable = renderContent;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  window.renderReportTable = (status) => {
+    const html = renderContent(status);
+    setTimeout(() => {
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }, 0);
+    return html;
+  };
 }
 
 function exportToCSV() {
@@ -1025,7 +1102,7 @@ async function renderUsers(el) {
       <td><span class="badge ${u.active ? 'badge-green' : 'badge-red'}">${u.active ? 'Aktif' : 'Non-Aktif'}</span></td>
       <td>
         <div class="flex gap-2">
-           <button class="btn btn-outline btn-sm" onclick="editUser(${u.id})" title="Edit"><i data-lucide="edit-2" style="width:14px;height:14px;"></i></button>
+           <button class="btn btn-outline btn-sm" onclick="editUser(${u.id})" title="Edit"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
            <button class="btn btn-red btn-sm" onclick="deleteUser(${u.id})" title="Hapus"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
         </div>
       </td>
@@ -1038,6 +1115,7 @@ async function renderUsers(el) {
     </div>
     <div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Nama Lengkap</th><th>Username</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows || '<tr><td colspan="5" style="text-align:center;">Belum ada pengguna.</td></tr>'}</tbody></table></div></div>
   `;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function openAddUser() {
@@ -1134,7 +1212,6 @@ function renderSettings(el) {
       <div class="card">
         <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="settings-2" style="width:18px;height:18px;color:var(--accent);"></i> Konfigurasi Pembayaran</h3></div>
         <div class="card-body">
-          <div class="form-group"><label>Status Sistem QRIS</label><select class="form-select"><option>Aktif (Auto-Generate)</option><option>Non-Aktif (Manual)</option></select></div>
           <div class="form-group"><label>Metode Pembayaran Tersedia</label><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"><span class="badge badge-green">Cash</span><span class="badge badge-green">QRIS</span><span class="badge badge-green">Transfer</span><span class="badge badge-green">Debit Card</span></div></div>
           <div class="form-group"><label>Template Pesan WhatsApp</label><textarea class="form-input" rows="4" style="resize:none; font-size:12px;">Halo [Pelanggan], Terima kasih telah memesan di KopiSembilan. Berikut adalah struk digital Anda: [Link_Invoice]</textarea></div>
           <button class="btn btn-brown w-full" onclick="showToast('Konfigurasi diperbarui!', 'success')">Simpan Konfigurasi</button>
@@ -1164,10 +1241,11 @@ async function viewTxnDetail(id) {
   const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
   if (error || !txn) { showToast('Gagal memuat detail transaksi!', 'error'); return; }
   let itemHtml = txn.transaction_items.map(i => `
-    <div style="padding:10px; border-bottom:1px solid var(--border);"><div style="display:flex; justify-content:space-between; font-weight:600;"><span>${i.products?.emoji || '☕'} ${i.products?.name} x${i.qty}</span><span>${fmtRp(i.price * i.qty)}</span></div>${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}</div>
+    <div style="padding:10px; border-bottom:1px solid var(--border);"><div style="display:flex; justify-content:space-between; gap:12px; font-weight:600;"><span style="display:flex; align-items:center; gap:6px;"><i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name} x${i.qty}</span><span>${fmtRp(i.price * i.qty)}</span></div>${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}</div>
   `).join('');
   const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${new Date(txn.date).toLocaleString('id-ID')}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div></div>`;
   document.getElementById('receipt-preview').innerHTML = detailHtml;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
   document.getElementById('modal-payment').classList.add('open');
   const modalTitle = document.querySelector('#modal-payment .modal-header h3');
   if (modalTitle) modalTitle.textContent = 'Detail Transaksi';
@@ -1177,179 +1255,223 @@ async function viewTxnDetail(id) {
   if (footer) footer.innerHTML = `<button class="btn btn-brown w-full" onclick="closeModal('modal-payment'); showPage('report');">Tutup</button>`;
 }
 
+function getRevenueSeries(txns, period) {
+  const now = new Date();
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const dateKey = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  if (period === 'yearly') {
+    const startYear = now.getFullYear() - 4;
+    const labels = Array.from({ length: 5 }, (_, i) => String(startYear + i));
+    const values = labels.map(() => 0);
+    txns.forEach(t => {
+      const d = new Date(t.date);
+      const idx = d.getFullYear() - startYear;
+      if (idx >= 0 && idx < values.length) values[idx] += Number(t.total) || 0;
+    });
+    return { labels, values, title: 'Pendapatan Tahunan' };
+  }
+
+  if (period === 'monthly') {
+    const labels = monthNames;
+    const values = labels.map(() => 0);
+    txns.forEach(t => {
+      const d = new Date(t.date);
+      if (d.getFullYear() === now.getFullYear()) values[d.getMonth()] += Number(t.total) || 0;
+    });
+    return { labels, values, title: 'Pendapatan Bulanan' };
+  }
+
+  const labels = [];
+  const keys = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    labels.push(d.toLocaleDateString('id-ID', { weekday: 'short' }));
+    keys.push(dateKey(d));
+  }
+  const values = labels.map(() => 0);
+  txns.forEach(t => {
+    const key = dateKey(new Date(t.date));
+    const idx = keys.indexOf(key);
+    if (idx >= 0) values[idx] += Number(t.total) || 0;
+  });
+  return { labels, values, title: 'Pendapatan Mingguan' };
+}
+
+function renderDashboardRevenueChart(period = 'weekly') {
+  const ctx = document.getElementById('revenueChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+
+  const series = getRevenueSeries(window.dashboardTxns || [], period);
+  const titleEl = document.getElementById('revenue-chart-title');
+  if (titleEl) titleEl.innerHTML = `<i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> ${series.title}`;
+  document.querySelectorAll('.period-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.period === period));
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  if (revenueChartInstance) revenueChartInstance.destroy();
+  revenueChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: series.labels,
+      datasets: [{
+        label: 'Pendapatan (Rp)',
+        data: series.values,
+        borderColor: '#B8763A',
+        backgroundColor: 'rgba(184, 118, 58, 0.12)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.35,
+        pointBackgroundColor: '#B8763A',
+        pointRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { callback: function(val) { return 'Rp ' + (val / 1000) + 'k'; } }
+        },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
 async function renderDashboard(el) {
   let txns = [];
   try {
     let { data } = await db.from('transactions').select('*, transaction_items(*)').order('date', { ascending: false });
     if (!data || data.length === 0) { txns = generateDummyTransactions(); } else { txns = data; }
   } catch(e) { txns = generateDummyTransactions(); }
+  window.dashboardTxns = txns;
 
-  const totalRev = (txns || []).reduce((s, t) => s + t.total, 0);
+  const totalRev = (txns || []).reduce((s, t) => s + (Number(t.total) || 0), 0);
   const totalCount = (txns || []).length;
 
-  // 1. TOP ITEMS DENGAN VARIAN
   const itemCounts = {};
   txns.forEach(t => {
-     if(t.transaction_items) {
-        t.transaction_items.forEach(i => {
-           const p = products.find(prod => prod.id === i.product_id);
-           const pName = p ? p.name : 'Produk ' + i.product_id;
-           let varStr = '';
-           if (i.selected_variants && i.selected_variants.length > 0) {
-               varStr = `<span style="font-size:11px; color:var(--text-muted); font-weight:normal; display:block; margin-top:2px;">Varian: ${i.selected_variants.map(v=>v.name).join(', ')}</span>`;
-           }
-           const key = pName + '|' + varStr;
-           itemCounts[key] = (itemCounts[key] || 0) + i.qty;
-        });
-     } else if(t.id.includes('DEMO')) {
-        const pName = 'Americano';
-        const varStr = `<span style="font-size:11px; color:var(--text-muted); font-weight:normal; display:block; margin-top:2px;">Varian: Normal, Less Sugar</span>`;
+    if (t.transaction_items) {
+      t.transaction_items.forEach(i => {
+        const p = products.find(prod => prod.id === i.product_id);
+        const pName = p ? p.name : 'Produk ' + i.product_id;
+        const varStr = i.selected_variants && i.selected_variants.length > 0
+          ? `<span class="item-meta">Varian: ${i.selected_variants.map(v => v.name).join(', ')}</span>`
+          : '';
         const key = pName + '|' + varStr;
-        itemCounts[key] = (itemCounts[key] || 0) + 1;
-     }
+        itemCounts[key] = (itemCounts[key] || 0) + i.qty;
+      });
+    } else if (t.id && t.id.includes('DEMO')) {
+      const key = 'Americano|<span class="item-meta">Varian: Normal, Less Sugar</span>';
+      itemCounts[key] = (itemCounts[key] || 0) + 1;
+    }
   });
 
   const topProducts = Object.entries(itemCounts)
     .sort((a,b) => b[1] - a[1])
     .slice(0, 4)
     .map(entry => {
-       const parts = entry[0].split('|');
-       return { name: parts[0], varStr: parts[1] || '', qty: entry[1] };
+      const parts = entry[0].split('|');
+      return { name: parts[0], varStr: parts[1] || '', qty: entry[1] };
     });
 
   let topHtml = topProducts.map((tp, idx) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
-       <div style="display:flex; align-items:flex-start;">
-         <span style="display:inline-block; width:22px; height:22px; background:var(--brown-100); color:var(--brown-800); border-radius:50%; text-align:center; font-size:12px; line-height:22px; margin-right:10px; font-weight:700; flex-shrink:0;">${idx+1}</span> 
-         <div>
-           <div style="font-size:13px; font-weight:600; color:var(--brown-900); line-height:1.2;">${tp.name}</div>
-           ${tp.varStr}
-         </div>
-       </div>
-       <span style="font-weight:700; font-size:14px; color:var(--accent);">${tp.qty} <span style="color:var(--text-muted); font-size:11px; font-weight:normal;">porsi</span></span>
+    <div class="dashboard-list-row">
+      <div class="ranked-item">
+        <span class="rank-badge">${idx + 1}</span>
+        <div>
+          <div class="item-title">${tp.name}</div>
+          ${tp.varStr}
+        </div>
+      </div>
+      <span class="item-qty">${tp.qty} <span>porsi</span></span>
     </div>
   `).join('');
-  if(!topHtml) topHtml = '<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:20px;">Belum ada data penjualan.</div>';
+  if (!topHtml) topHtml = '<div class="empty-state">Belum ada data penjualan.</div>';
 
-  // 2. RINGKASAN METODE PEMBAYARAN
   const payStats = { cash: 0, qris: 0, transfer: 0, card: 0 };
-  txns.forEach(t => { if(payStats[t.payment_method] !== undefined) payStats[t.payment_method] += t.total; });
-  const payHtml = `
-    <div style="display:flex; flex-direction:column; gap:16px; padding-top:8px;">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="qr-code" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">QRIS</span></div>
-         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.qris)}</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="banknote" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">Tunai</span></div>
-         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.cash)}</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="arrow-right-left" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">Transfer</span></div>
-         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.transfer)}</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-         <div style="display:flex; align-items:center; gap:10px;"><i data-lucide="credit-card" style="width:18px;height:18px;color:var(--text-muted);"></i> <span style="font-size:13px; font-weight:600; color:var(--brown-900);">Kartu Debit/Kredit</span></div>
-         <span style="font-size:14px; font-weight:700; color:var(--accent);">${fmtRp(payStats.card)}</span>
-      </div>
+  txns.forEach(t => { if (payStats[t.payment_method] !== undefined) payStats[t.payment_method] += Number(t.total) || 0; });
+  const payHtml = [
+    ['qr-code', 'QRIS', payStats.qris],
+    ['banknote', 'Tunai', payStats.cash],
+    ['arrow-right-left', 'Transfer', payStats.transfer],
+    ['credit-card', 'Kartu Debit/Kredit', payStats.card]
+  ].map(([icon, label, value]) => `
+    <div class="payment-summary-row">
+      <div><i data-lucide="${icon}" style="width:18px;height:18px;color:var(--text-muted);"></i><span>${label}</span></div>
+      <strong>${fmtRp(value)}</strong>
     </div>
-  `;
+  `).join('');
 
-  // 3. TRANSAKSI TERBARU
   const recentTxns = txns.slice(0, 4);
   let recentHtml = recentTxns.map(t => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
-      <div>
-        <div style="font-size:12px; font-weight:700; color:var(--brown-900); font-family:monospace;">${t.id}</div>
-        <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${new Date(t.date).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})} • ${t.payment_method.toUpperCase()}</div>
+    <div class="dashboard-list-row">
+      <div class="recent-transaction-main">
+        <div class="recent-transaction-id">${t.id}</div>
+        <div class="item-meta">${new Date(t.date).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})} - ${t.payment_method.toUpperCase()}</div>
       </div>
-      <div style="text-align:right;">
-         <div style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:2px;">${fmtRp(t.total)}</div>
-         <span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}" style="font-size:9px; padding:2px 6px;">${t.payment_status}</span>
+      <div class="recent-transaction-total">
+        <div>${fmtRp(t.total)}</div>
+        <span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}">${t.payment_status}</span>
       </div>
     </div>
   `).join('');
-  if(!recentHtml) recentHtml = '<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:20px;">Belum ada transaksi.</div>';
+  if (!recentHtml) recentHtml = '<div class="empty-state">Belum ada transaksi.</div>';
 
   el.innerHTML = `
-    <div style="margin-bottom:24px; text-align:left;">
-      <h2 style="font-family:'DM Serif Display'; font-size:32px; color:var(--brown-900); margin-bottom:4px;">Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
-      <p style="color:var(--text-muted);">Berikut adalah ringkasan performa KopiSembilan hari ini.</p>
+    <div class="dashboard-hero">
+      <h2>Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
+      <p>Berikut adalah ringkasan performa KopiSembilan hari ini.</p>
     </div>
-    
-    <div class="stats-grid" style="margin-bottom:20px;">
+
+    <div class="stats-grid dashboard-stats">
       <div class="stat-card"><div class="label">Total Pendapatan</div><div class="value">${fmtRp(totalRev)}</div><div class="change up"><i data-lucide="trending-up" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Akumulasi Semua</div></div>
       <div class="stat-card"><div class="label">Total Transaksi</div><div class="value">${totalCount}</div><div class="change up"><i data-lucide="activity" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Transaksi Berhasil</div></div>
       <div class="stat-card"><div class="label">Produk Aktif</div><div class="value">${products.length || 12}</div><div class="change up"><i data-lucide="check-circle" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Menu Terdaftar</div></div>
     </div>
-    
-    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:20px; margin-bottom:20px;" class="responsive-grid">
-       <div class="card">
-         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:12px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Grafik Pendapatan Mingguan</h3></div>
-         <div class="card-body" style="position: relative; height: 260px; padding:0;">
-           <canvas id="revenueChart"></canvas>
-         </div>
-       </div>
-       <div class="card">
-         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:4px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="award" style="width:18px;height:18px;color:var(--accent);"></i> Menu Paling Laris</h3></div>
-         <div class="card-body" style="padding-top:0;">
-           ${topHtml}
-         </div>
-       </div>
+
+    <div class="dashboard-grid dashboard-grid-primary">
+      <div class="card">
+        <div class="card-header dashboard-card-header">
+          <h3 id="revenue-chart-title"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Pendapatan Mingguan</h3>
+          <div class="period-tabs">
+            <button class="period-tab active" data-period="weekly" onclick="renderDashboardRevenueChart('weekly')">Mingguan</button>
+            <button class="period-tab" data-period="monthly" onclick="renderDashboardRevenueChart('monthly')">Bulanan</button>
+            <button class="period-tab" data-period="yearly" onclick="renderDashboardRevenueChart('yearly')">Tahunan</button>
+          </div>
+        </div>
+        <div class="card-body dashboard-chart-body">
+          <canvas id="revenueChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header dashboard-card-header"><h3><i data-lucide="award" style="width:18px;height:18px;color:var(--accent);"></i> Menu Paling Laris</h3></div>
+        <div class="card-body dashboard-list">${topHtml}</div>
+      </div>
     </div>
 
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;" class="responsive-grid">
-       <div class="card">
-         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:4px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="pie-chart" style="width:18px;height:18px;color:var(--accent);"></i> Ringkasan Pembayaran</h3></div>
-         <div class="card-body" style="padding-top:0;">
-           ${payHtml}
-         </div>
-       </div>
-       <div class="card">
-         <div class="card-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:4px;"><h3 style="display:flex;align-items:center;gap:8px; font-size:15px;"><i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> 4 Transaksi Terakhir</h3></div>
-         <div class="card-body" style="padding-top:0;">
-           ${recentHtml}
-         </div>
-       </div>
+    <div class="dashboard-grid dashboard-grid-secondary">
+      <div class="card">
+        <div class="card-header dashboard-card-header"><h3><i data-lucide="pie-chart" style="width:18px;height:18px;color:var(--accent);"></i> Ringkasan Pembayaran</h3></div>
+        <div class="card-body payment-summary">${payHtml}</div>
+      </div>
+      <div class="card">
+        <div class="card-header dashboard-card-header"><h3><i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> 4 Transaksi Terakhir</h3></div>
+        <div class="card-body dashboard-list">${recentHtml}</div>
+      </div>
     </div>
   `;
   if (typeof lucide !== 'undefined') lucide.createIcons();
-
-  setTimeout(() => {
-     const ctx = document.getElementById('revenueChart');
-     if(ctx && typeof Chart !== 'undefined') {
-        new Chart(ctx, {
-           type: 'line',
-           data: {
-              labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
-              datasets: [{
-                 label: 'Pendapatan (Rp)',
-                 data: [150000, 220000, 180000, 290000, 310000, 450000, totalRev > 0 ? totalRev : 520000],
-                 borderColor: '#B8763A',
-                 backgroundColor: 'rgba(184, 118, 58, 0.1)',
-                 borderWidth: 2,
-                 fill: true,
-                 tension: 0.4,
-                 pointBackgroundColor: '#B8763A',
-                 pointRadius: 4
-              }]
-           },
-           options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: { 
-                 y: { 
-                    beginAtZero: true, 
-                    grid: { color: 'rgba(0,0,0,0.05)' },
-                    ticks: { callback: function(val) { return 'Rp ' + (val/1000) + 'k'; } } 
-                 },
-                 x: { grid: { display: false } }
-              }
-           }
-        });
-     }
-  }, 100);
+  setTimeout(() => renderDashboardRevenueChart('weekly'), 100);
 }
 
 // ══════════════════════════════════════════════

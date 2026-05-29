@@ -61,7 +61,8 @@ CREATE TABLE settings (
 
 -- Data Awal Pengaturan
 INSERT INTO settings (key, value) VALUES 
-('store_info', '{"name": "KopiSembilan", "address": "Jl. Kopi Nomor 9, Jember, Jawa Timur", "phone": "085855180131"}'::jsonb);
+('store_info', '{"name": "KopiSembilan", "address": "Jl. Kopi Nomor 9, Jember, Jawa Timur", "phone": "085855180131"}'::jsonb),
+('whatsapp_template', '{"template": "*INVOICE [NAMA_TOKO]*\nID: [ID_TRANSAKSI]\nTanggal: [TANGGAL]\n----------------------------\n[ITEMS]\n----------------------------\n*TOTAL: [TOTAL]*\n\nTerima kasih sudah memesan!"}'::jsonb);
 
 -- ... users insertion ...
 
