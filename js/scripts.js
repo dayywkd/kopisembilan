@@ -827,13 +827,11 @@ async function renderReport(el) {
       .select('*, transaction_items(*)')
       .order('date', { ascending: false });
     
-    if (error || !data || data.length === 0) {
-      txns = generateDummyTransactions();
-    } else {
+    if (!error && data) {
       txns = data;
     }
   } catch (e) {
-    txns = generateDummyTransactions();
+    console.error('Report load fail', e);
   }
 
   const renderContent = (status = 'Semua', method = 'Semua') => {
@@ -973,25 +971,7 @@ function exportToCSV() {
   document.body.removeChild(link);
 }
 
-function generateDummyTransactions() {
-  const dummy = [];
-  const now = new Date();
-  for (let i = 1; i <= 10; i++) {
-    const date = new Date(now);
-    date.setHours(now.getHours() - i * 2);
-    dummy.push({
-      id: `TXN-DEMO-${1000 + i}`,
-      date: date.toISOString(),
-      customer_phone: '081234567' + i,
-      total: 25000 + (Math.floor(Math.random() * 5) * 5000),
-      payment_method: ['cash', 'qris', 'transfer', 'card'][Math.floor(Math.random() * 4)],
-      payment_status: Math.random() > 0.2 ? 'Lunas' : 'Belum Bayar',
-      notes: i % 3 === 0 ? 'Tanpa sedotan' : '',
-      cashier_name: 'Demo Admin'
-    });
-  }
-  return dummy;
-}
+
 
 // ══════════════════════════════════════════════
 // INVENTARIS / PRODUCTS
@@ -1470,8 +1450,8 @@ async function renderDashboard(el) {
   let txns = [];
   try {
     let { data } = await db.from('transactions').select('*, transaction_items(*)').order('date', { ascending: false });
-    if (!data || data.length === 0) { txns = generateDummyTransactions(); } else { txns = data; }
-  } catch(e) { txns = generateDummyTransactions(); }
+    if (data) txns = data;
+  } catch(e) { console.error('Dashboard load fail', e); }
   window.dashboardTxns = txns;
 
   renderDashboardContent();
