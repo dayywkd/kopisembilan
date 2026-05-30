@@ -2,7 +2,7 @@ name: Supabase Daily Backup
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Berjalan otomatis setiap hari jam 00:00 UTC
+    - cron: '0 17 * * *' # Jam 17:00 UTC = Jam 00:00 WIB (12 Malam)
   workflow_dispatch: # Memungkinkan menjalankan backup secara manual dari tab Actions di GitHub
 
 jobs:
@@ -10,7 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Setup IPv6/NAT64 (Free IPv6 Access)
+        # Trik ini memungkinkan GitHub Actions mengakses database IPv6 secara gratis
+        # melalui publik NAT64 gateway.
+        run: |
+          sudo sed -i 's/nameserver .*/nameserver 2a00:1098:2c::1\nnameserver 2a01:4f8:c2c:123f::1\nnameserver 2a00:1098:2b::1/' /etc/resolv.conf
 
       - name: Install PostgreSQL Client
         run: |
@@ -20,11 +26,15 @@ jobs:
       - name: Dump Database
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
         run: |
+          if [ -z "$DB_HOST" ] || [ -z "$PGPASSWORD" ]; then
+            echo "Error: SUPABASE_DB_HOST atau SUPABASE_DB_PASSWORD belum diatur di GitHub Secrets!"
+            exit 1
+          fi
           mkdir -p backups
-          # Melakukan dump database Supabase
-          # Host, User, dan DB Name diambil dari GitHub Secrets
-          pg_dump -h ${{ secrets.SUPABASE_DB_HOST }} -U postgres -d postgres -p 5432 --schema=public --no-owner --no-privileges > backups/backup_$(date +%Y-%m-%d).sql
+          # Menggunakan port 6543 (Connection Pooler)
+          pg_dump -h "$DB_HOST" -U postgres -d postgres -p 6543 --schema=public --no-owner --no-privileges > backups/backup_$(date +%Y-%m-%d).sql
 
       - name: Commit and Push Backup
         run: |
