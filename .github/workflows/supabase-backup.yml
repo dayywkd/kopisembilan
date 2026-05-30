@@ -2,8 +2,8 @@ name: Supabase Daily Backup
 
 on:
   schedule:
-    - cron: '0 17 * * *' # Jam 17:00 UTC = Jam 00:00 WIB (12 Malam)
-  workflow_dispatch: # Memungkinkan menjalankan backup secara manual dari tab Actions di GitHub
+    - cron: '0 17 * * *' # Jam 00:00 WIB
+  workflow_dispatch:
 
 jobs:
   backup:
@@ -12,18 +12,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup IPv6/NAT64 (Free IPv6 Access)
-        # Trik ini memungkinkan GitHub Actions mengakses database IPv6 secara gratis
-        # melalui publik NAT64 gateway.
-        run: |
-          sudo sed -i 's/nameserver .*/nameserver 2a00:1098:2c::1\nnameserver 2a01:4f8:c2c:123f::1\nnameserver 2a00:1098:2b::1/' /etc/resolv.conf
-
-      - name: Install PostgreSQL Client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Dump Database
+      - name: Dump Database via Docker
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
@@ -33,14 +22,18 @@ jobs:
             exit 1
           fi
           mkdir -p backups
-          # Menggunakan port 6543 (Connection Pooler)
-          pg_dump -h "$DB_HOST" -U postgres -d postgres -p 6543 --schema=public --no-owner --no-privileges > backups/backup_$(date +%Y-%m-%d).sql
+          # Menggunakan Docker agar pg_dump selalu versi yang tepat dan stabil
+          # Menggunakan port 6543 karena ini adalah Transaction Pooler yang mendukung IPv4 (Gratis)
+          docker run --rm \
+            -e PGPASSWORD="$PGPASSWORD" \
+            -v $(pwd)/backups:/backups \
+            postgres:15 \
+            pg_dump -h "$DB_HOST" -U postgres -d postgres -p 6543 --schema=public --no-owner --no-privileges -f /backups/backup_$(date +%Y-%m-%d).sql
 
       - name: Commit and Push Backup
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action Backup"
           git add backups/
-          # Hanya commit jika ada perubahan file (mencegah error jika tidak ada perubahan)
           git diff --quiet && git diff --staged --quiet || git commit -m "Auto-backup: $(date +%Y-%m-%d)"
           git push
