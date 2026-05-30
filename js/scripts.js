@@ -41,43 +41,69 @@ async function doLogin() {
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value.trim();
   
-  console.log("Attempting login for:", u);
+  if (!u || !p) {
+    showToast('Username dan Password wajib diisi!', 'error');
+    return;
+  }
 
-  const { data: user, error } = await db
+  console.log("Attempting Supabase Auth login for:", u);
+
+  // Menggunakan email bayangan karena Supabase Auth memerlukan email.
+  // Format: username@kopi9.local
+  const fakeEmail = `${u}@kopi9.local`;
+
+  const { data, error } = await db.auth.signInWithPassword({
+    email: fakeEmail,
+    password: p
+  });
+
+  if (error) {
+    console.error("Auth Error:", error.message);
+    if (error.message.includes("Invalid login credentials")) {
+      showToast('Username atau Password salah!', 'error');
+    } else {
+      showToast('Login Gagal: ' + error.message, 'error');
+    }
+    return;
+  }
+
+  // Jika auth berhasil, ambil data detail dari tabel users lama
+  const { data: userProfile, error: profileErr } = await db
     .from('users')
     .select('*')
-    .eq('username', u)
-    .eq('active', true)
+    .eq('auth_id', data.user.id)
     .single();
 
-  if (error || !user) {
-    console.error("Login Error:", error);
-    showToast('Username tidak ditemukan!', 'error');
-    return;
-  }
+  if (profileErr || !userProfile) {
+    console.error("Profile Fetch Error:", profileErr);
+    // Fallback jika profile belum terhubung ke auth_id
+    // Coba cari berdasarkan username (untuk user migrasi)
+    const { data: legacyUser, error: legacyErr } = await db
+      .from('users')
+      .select('*')
+      .eq('username', u)
+      .single();
 
-  let isValid = false;
-  try {
-    const storedHash = user.password_hash || user.password;
-    if (storedHash && typeof dcodeIO !== 'undefined') {
-      isValid = dcodeIO.bcrypt.compareSync(p, storedHash);
+    if (!legacyErr && legacyUser) {
+      // Hubungkan auth_id secara otomatis jika belum ada
+      if (!legacyUser.auth_id) {
+        await db.from('users').update({ auth_id: data.user.id }).eq('id', legacyUser.id);
+      }
+      setupUserSession(legacyUser);
+      addActivityLog('Login Berhasil', `User ${legacyUser.name} masuk ke sistem`);
+    } else {
+      showToast('Profil user tidak ditemukan!', 'error');
     }
-  } catch(e) {
-    console.error("Bcrypt Verification Fail:", e);
+  } else {
+    setupUserSession(userProfile);
+    addActivityLog('Login Berhasil', `User ${userProfile.name} masuk ke sistem`);
   }
-
-  if (!isValid) {
-    showToast('Password salah!', 'error');
-    return;
-  }
-
-  localStorage.setItem('ks_session', JSON.stringify(user));
-  setupUserSession(user);
-  addActivityLog('Login Berhasil', `User ${user.name} masuk ke sistem`);
 }
 
 function setupUserSession(user) {
   currentUser = user;
+  localStorage.setItem('ks_session', JSON.stringify(user));
+  
   const frameLogin = document.getElementById('frame-login');
   const frameApp = document.getElementById('frame-app');
   if (frameLogin) frameLogin.classList.remove('active');
@@ -155,7 +181,8 @@ function doLogout() {
   });
 }
 
-function performLogout() {
+async function performLogout() {
+  await db.auth.signOut();
   localStorage.removeItem('ks_session');
   currentUser = null;
   cart = [];

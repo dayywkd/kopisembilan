@@ -1,0 +1,36 @@
+name: Supabase Daily Backup
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Berjalan otomatis setiap hari jam 00:00 UTC
+  workflow_dispatch: # Memungkinkan menjalankan backup secara manual dari tab Actions di GitHub
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install PostgreSQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump Database
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          mkdir -p backups
+          # Melakukan dump database Supabase
+          # Host, User, dan DB Name diambil dari GitHub Secrets
+          pg_dump -h ${{ secrets.SUPABASE_DB_HOST }} -U postgres -d postgres -p 5432 --schema=public --no-owner --no-privileges > backups/backup_$(date +%Y-%m-%d).sql
+
+      - name: Commit and Push Backup
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Backup"
+          git add backups/
+          # Hanya commit jika ada perubahan file (mencegah error jika tidak ada perubahan)
+          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-backup: $(date +%Y-%m-%d)"
+          git push
