@@ -26,7 +26,7 @@ jobs:
           docker run --rm \
             -e PGPASSWORD="$PGPASSWORD" \
             -v $(pwd)/backups:/backups \
-            postgres:15 \
+            postgres:17 \
             pg_dump -h "$DB_HOST" -U "postgres.$PROJECT_ID" -d postgres -p 6543 --schema=public --no-owner --no-privileges -f /backups/backup_$(date +%Y-%m-%d).sql
 
       - name: Commit and Push Backup
