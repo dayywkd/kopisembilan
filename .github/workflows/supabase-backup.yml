@@ -37,3 +37,11 @@ jobs:
           git add backups/
           git diff --quiet && git diff --staged --quiet || git commit -m "Auto-backup: $(date +%Y-%m-%d)"
           git push
+
+      - name: Upload to Google Drive
+        uses: adityak74/google-drive-upload-git-action@main
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
+          filename: "backups/backup-$(date +%Y-%m-%d).json"
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          overwrite: "true"

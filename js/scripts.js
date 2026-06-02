@@ -10,6 +10,7 @@ let transactions = [];
 let selectedProductForVariant = null;
 let editingProductId = null;
 let editingUserId = null;
+let editingTransactionId = null;
 let revenueChartInstance = null;
 let activeCashierCategory = 'Semua';
 let cashierSearchQuery = '';
@@ -370,6 +371,22 @@ function renderCashier(el) {
   cashierSearchQuery = cashierSearchQuery || '';
   el.innerHTML = `
     <div class="pos-layout">
+      <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden; grid-column: 1 / -1;">
+        ${editingTransactionId ? `
+          <div style="background: var(--brown-50); border: 1px solid var(--brown-200); padding: 12px 16px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <div style="display: flex; align-items: center; gap: 10px; color: var(--brown-800); font-weight: 600;">
+              <i data-lucide="edit-3" style="width: 20px; height: 20px;"></i>
+              <div style="display:flex; flex-direction:column;">
+                <span style="font-size:14px;">Mode Edit Aktif</span>
+                <small style="font-weight:400; opacity:0.8;">Mengubah Transaksi: ${editingTransactionId}</small>
+              </div>
+            </div>
+            <button class="btn btn-red btn-sm" onclick="cancelCashierEdit()" style="display:flex; align-items:center; gap:6px;">
+              <i data-lucide="x-circle" style="width:14px;height:14px;"></i> Batalkan Edit
+            </button>
+          </div>
+        ` : ''}
+      </div>
       <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden;">
         <div class="cashier-toolbar">
           <div class="cashier-category-row">
@@ -410,7 +427,7 @@ function renderCashier(el) {
         <div class="cart-items" id="cart-items"><div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px;">Pilih produk dari menu</div></div>
         <div class="cart-summary">
           <div class="summary-row total"><span>TOTAL</span><span id="total-val">Rp 0</span></div>
-          <button class="pay-btn" id="pay-btn" disabled onclick="openPayment()">BAYAR</button>
+          <button class="pay-btn" id="pay-btn" disabled onclick="openPayment()">${editingTransactionId ? 'UPDATE TRANSAKSI' : 'BAYAR'}</button>
           <button class="btn btn-outline w-full" style="margin-top:8px;" onclick="clearCart()"><i data-lucide="trash-2" style="width:16px;height:16px;"></i> Kosongkan</button>
         </div>
       </div>
@@ -826,6 +843,52 @@ function calcChange() {
   }
 }
 
+async function loadTransactionToCashier() {
+  const id = document.getElementById('edit-txn-id').value;
+  if (!id) return;
+
+  try {
+    const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
+    if (error || !txn) { showToast('Gagal memuat data!', 'error'); return; }
+
+    // Set mode edit
+    editingTransactionId = id;
+    
+    // Konversi item transaksi ke format keranjang
+    cart = txn.transaction_items.map((i, idx) => ({
+      cartId: idx + 1,
+      productId: i.product_id,
+      name: i.products?.name || 'Produk',
+      basePrice: i.price,
+      totalPrice: i.price,
+      qty: i.qty,
+      variants: i.selected_variants || [],
+      note: i.item_note || ''
+    }));
+    cartItemSeq = cart.length;
+
+    closeModal('modal-edit-txn');
+    showPage('cashier');
+    showToast('Mode Edit: Silakan tambah menu baru', 'success');
+  } catch (e) { console.error(e); }
+}
+
+function cancelCashierEdit() {
+  showConfirmDialog({
+    title: 'Batalkan Edit?',
+    message: 'Perubahan yang belum disimpan akan hilang.',
+    icon: 'x-circle',
+    confirmText: 'Ya, Batalkan',
+    onConfirm: () => {
+      editingTransactionId = null;
+      cart = [];
+      cartItemSeq = 0;
+      showPage('report');
+      showToast('Edit dibatalkan', 'info');
+    }
+  });
+}
+
 async function confirmPayment(sendWA = false) {
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const phoneEl = document.getElementById('customer-phone');
@@ -833,7 +896,9 @@ async function confirmPayment(sendWA = false) {
   const status = document.getElementById('payment-status').value;
   const note = document.getElementById('txn-note').value.trim();
   const now = new Date();
-  const txnId = 'TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
+  
+  // Gunakan ID lama jika sedang edit, jika tidak buat ID baru
+  const txnId = editingTransactionId || ('TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
 
   if (sendWA && !phone) {
     showToast('Masukkan nomor WA untuk kirim struk!', 'error');
@@ -850,9 +915,27 @@ async function confirmPayment(sendWA = false) {
   }
 
   try {
-    const { data: txn, error: txnErr } = await db
-      .from('transactions')
-      .insert([{
+    let txnResult;
+    if (editingTransactionId) {
+      // UPDATE transaksi yang sudah ada
+      const { data, error } = await db.from('transactions').update({
+        total: total,
+        customer_phone: phone,
+        payment_method: selectedPaymentMethod,
+        payment_status: status,
+        notes: note,
+        cash_amount: cashAmount,
+        cash_change: cashChange
+      }).eq('id', txnId).select().single();
+      
+      if (error) throw error;
+      txnResult = data;
+
+      // Hapus item lama dan insert ulang (cara paling simpel untuk sinkronisasi)
+      await db.from('transaction_items').delete().eq('transaction_id', txnId);
+    } else {
+      // INSERT transaksi baru
+      const { data, error } = await db.from('transactions').insert([{
         id: txnId,
         total: total,
         customer_phone: phone,
@@ -862,11 +945,11 @@ async function confirmPayment(sendWA = false) {
         cashier_name: currentUser ? currentUser.name : 'Kasir',
         cash_amount: cashAmount,
         cash_change: cashChange
-      }])
-      .select()
-      .single();
-
-    if (txnErr) { showToast('Gagal menyimpan transaksi!', 'error'); return; }
+      }]).select().single();
+      
+      if (error) throw error;
+      txnResult = data;
+    }
 
     const itemsToInsert = cart.map(c => ({
       transaction_id: txnId,
@@ -878,19 +961,27 @@ async function confirmPayment(sendWA = false) {
     }));
 
     const { error: itemsErr } = await db.from('transaction_items').insert(itemsToInsert);
-    if (itemsErr) { console.log('Item insert fail', itemsErr); }
+    if (itemsErr) throw itemsErr;
 
     if (sendWA && phone) sendWhatsAppReceipt(phone, txnId, total, cart);
 
-    showToast('Transaksi Berhasil!', 'success');
-    addActivityLog('Transaksi Baru', `ID: ${txnId}, Total: ${fmtRp(total)}`);
+    showToast(editingTransactionId ? 'Transaksi diperbarui!' : 'Transaksi Berhasil!', 'success');
+    addActivityLog(editingTransactionId ? 'Update Transaksi' : 'Transaksi Baru', `ID: ${txnId}, Total: ${fmtRp(total)}`);
+    
+    // Reset state
+    editingTransactionId = null;
     cart = [];
     cartItemSeq = 0;
     updateCartUI();
     closeModal('modal-payment');
+    
     const pageTitle = document.getElementById('page-title').textContent;
     if (pageTitle === 'Dashboard') renderDashboard(document.getElementById('page-content'));
+    else if (pageTitle.includes('Laporan')) renderReport(document.getElementById('page-content'));
+    else showPage('report');
+
   } catch (e) {
+    console.error(e);
     showToast('Terjadi kesalahan sistem!', 'error');
   }
 }
@@ -973,6 +1064,7 @@ async function renderReport(el) {
           <div style="display:flex; gap:6px;">
             <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
             <button class="btn btn-outline btn-sm" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
+            <button class="btn btn-red btn-sm" onclick="deleteTransaction('${t.id}')" title="Hapus Transaksi"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
             ${t.customer_phone ? `<button class="btn btn-green btn-sm" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
           </div>
         </td>
@@ -1416,6 +1508,35 @@ function renderSettings(el) {
       </div>
     </div>
     <style>.responsive-grid{display:grid; grid-template-columns:1fr 1fr;} @media(max-width:768px){.responsive-grid{grid-template-columns:1fr;}}</style>
+    
+    <div class="card" style="grid-column: 1 / -1; margin-top: 20px;">
+      <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="database" style="width:18px;height:18px;color:var(--accent);"></i> Backup & Pemulihan Data</h3></div>
+      <div class="card-body">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;" class="responsive-grid">
+          <div>
+            <h4 style="margin-bottom:8px; font-size:14px; color:var(--brown-800);">Backup Manual</h4>
+            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Unduh seluruh data sistem (Menu, Transaksi, Pengguna) ke dalam satu file untuk cadangan lokal.</p>
+            <button class="btn btn-brown w-full" onclick="downloadSystemBackup()" style="display:flex; align-items:center; justify-content:center; gap:8px;">
+              <i data-lucide="download-cloud" style="width:18px;height:18px;"></i> Unduh Backup (JSON)
+            </button>
+          </div>
+          <div>
+            <h4 style="margin-bottom:8px; font-size:14px; color:var(--brown-800);">Ekspor Data Menu</h4>
+            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Ekspor daftar menu dan harga ke dalam format CSV agar dapat dibuka di Excel.</p>
+            <button class="btn btn-outline w-full" onclick="exportMenuToCSV()" style="display:flex; align-items:center; justify-content:center; gap:8px;">
+              <i data-lucide="file-spreadsheet" style="width:18px;height:18px;"></i> Ekspor Menu (CSV)
+            </button>
+          </div>
+        </div>
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
+          <div style="background:var(--brown-50); padding:12px; border-radius:8px; border:1px dashed var(--brown-200);">
+            <p style="font-size:11px; color:var(--brown-700); line-height:1.5;">
+              <strong>Info Backup Otomatis:</strong> Sistem ini sudah dilengkapi dengan pencadangan harian otomatis ke server GitHub setiap pukul 00:00 WIB. Backup manual di atas berguna sebagai cadangan tambahan di perangkat Anda sendiri.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -1919,11 +2040,15 @@ function syncShortcutChips(targetId) {
   }
 }
 
+let currentEditingTxnItems = [];
+let currentEditingTxn = null;
+
 async function editTransaction(id) {
   try {
-    const { data: txn, error } = await db.from('transactions').select('*').eq('id', id).single();
+    const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
     if (error || !txn) { showToast('Gagal memuat data transaksi!', 'error'); return; }
 
+    currentEditingTxn = txn;
     document.getElementById('edit-txn-id').value = txn.id;
     document.getElementById('edit-txn-id-display').value = txn.id;
     document.getElementById('edit-txn-phone').value = txn.customer_phone || '';
@@ -1931,8 +2056,71 @@ async function editTransaction(id) {
     document.getElementById('edit-txn-status').value = txn.payment_status || 'Lunas';
     document.getElementById('edit-txn-notes').value = txn.notes || '';
 
+    currentEditingTxnItems = txn.transaction_items.map(i => ({
+      id: i.id,
+      product_id: i.product_id,
+      name: i.products?.name || 'Produk',
+      price: i.price,
+      qty: i.qty,
+      item_note: i.item_note || '',
+      originalQty: i.qty,
+      removed: false
+    }));
+
+    renderEditTxnItems();
     openModal('modal-edit-txn');
   } catch (e) { showToast('Terjadi kesalahan!', 'error'); }
+}
+
+function renderEditTxnItems() {
+  const container = document.getElementById('edit-txn-items-list');
+  if (!container) return;
+
+  const visibleItems = currentEditingTxnItems.filter(i => !i.removed);
+  
+  if (visibleItems.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Tidak ada item dalam pesanan.</div>';
+    return;
+  }
+
+  container.innerHTML = currentEditingTxnItems.map((item, idx) => {
+    if (item.removed) return '';
+    return `
+      <div class="edit-item-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px; background:var(--brown-50); border-radius:8px; gap:12px;">
+        <div style="flex:1;">
+          <div style="font-weight:600; font-size:13px;">${item.name}</div>
+          <div style="font-size:11px; color:var(--text-muted);">${fmtRp(item.price)}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button class="qty-btn" style="width:24px; height:24px;" onclick="changeEditItemQty(${idx}, -1)">−</button>
+          <span style="font-weight:700; font-size:14px; min-width:20px; text-align:center;">${item.qty}</span>
+          <button class="qty-btn" style="width:24px; height:24px;" onclick="changeEditItemQty(${idx}, 1)">+</button>
+        </div>
+        <button class="btn btn-red btn-sm" style="padding:4px;" onclick="removeEditItem(${idx})" title="Hapus Item"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
+      </div>
+    `;
+  }).join('');
+  
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function changeEditItemQty(idx, delta) {
+  const item = currentEditingTxnItems[idx];
+  if (!item) return;
+  
+  item.qty += delta;
+  if (item.qty <= 0) {
+    item.qty = 0;
+    item.removed = true;
+  }
+  renderEditTxnItems();
+}
+
+function removeEditItem(idx) {
+  const item = currentEditingTxnItems[idx];
+  if (!item) return;
+  item.removed = true;
+  renderEditTxnItems();
 }
 
 async function saveTransactionEdit() {
@@ -1943,27 +2131,69 @@ async function saveTransactionEdit() {
   const notes = document.getElementById('edit-txn-notes').value.trim();
 
   try {
-    const { error } = await db.from('transactions').update({
+    // 1. Hitung total baru berdasarkan item yang diedit
+    const newTotal = currentEditingTxnItems.reduce((sum, item) => {
+      return sum + (item.removed ? 0 : item.price * item.qty);
+    }, 0);
+
+    // 2. Hitung ulang kembalian jika metode pembayaran tunai
+    let cashChange = currentEditingTxn ? (currentEditingTxn.cash_change || 0) : 0;
+    if (currentEditingTxn && currentEditingTxn.payment_method === 'cash') {
+      const cashAmount = currentEditingTxn.cash_amount || 0;
+      // Jika total baru lebih kecil, kembalian bertambah
+      // Jika total baru lebih besar, kembalian berkurang
+      cashChange = cashAmount - newTotal;
+      if (cashChange < 0 && status === 'Lunas') {
+        showToast('Peringatan: Total pesanan melebihi jumlah bayar!', 'error');
+        // Jangan batalkan save, tapi beri tahu user
+      }
+    } else if (method !== 'cash') {
+      // Jika berubah ke non-tunai, reset info tunai
+      cashChange = 0;
+    }
+
+    // 3. Update transaksi utama
+    const updateData = {
       customer_phone: phone,
       payment_method: method,
       payment_status: status,
-      notes: notes
-    }).eq('id', id);
-
-    if (!error) {
-      showToast('Transaksi diperbarui!', 'success');
-      addActivityLog('Edit Transaksi', `ID: ${id}, Status: ${status}, Metode: ${method}`);
-      closeModal('modal-edit-txn');
-      
-      // Refresh laporan jika sedang di halaman laporan
-      const currentTitle = document.getElementById('page-title').textContent;
-      if (currentTitle.includes('Laporan')) {
-        renderReport(document.getElementById('page-content'));
-      }
-    } else {
-      showToast('Gagal menyimpan perubahan!', 'error');
+      notes: notes,
+      total: newTotal,
+      cash_change: cashChange
+    };
+    
+    if (method !== 'cash') {
+      updateData.cash_amount = 0;
     }
-  } catch (e) { showToast('Kesalahan sistem!', 'error'); }
+
+    const { error: txnErr } = await db.from('transactions').update(updateData).eq('id', id);
+
+    if (txnErr) throw txnErr;
+
+    // 4. Update item transaksi
+    for (const item of currentEditingTxnItems) {
+      if (item.removed) {
+        // Hapus item jika ditandai removed
+        await db.from('transaction_items').delete().eq('id', item.id);
+      } else if (item.qty !== item.originalQty) {
+        // Update kuantitas jika berubah
+        await db.from('transaction_items').update({ qty: item.qty }).eq('id', item.id);
+      }
+    }
+
+    showToast('Transaksi dan pesanan diperbarui!', 'success');
+    addActivityLog('Edit Transaksi & Pesanan', `ID: ${id}, Total Baru: ${fmtRp(newTotal)}`);
+    closeModal('modal-edit-txn');
+    
+    // Refresh laporan jika sedang di halaman laporan
+    const currentTitle = document.getElementById('page-title').textContent;
+    if (currentTitle.includes('Laporan')) {
+      renderReport(document.getElementById('page-content'));
+    }
+  } catch (e) {
+    console.error('Save txn edit error:', e);
+    showToast('Gagal menyimpan perubahan!', 'error');
+  }
 }
 
 /**
@@ -1991,6 +2221,43 @@ async function resendWhatsAppReceipt(id) {
   }));
 
   sendWhatsAppReceipt(txn.customer_phone, txn.id, txn.total, formattedItems);
+}
+
+/**
+ * Menghapus transaksi dari database
+ * @param {string} id - Transaction ID
+ */
+async function deleteTransaction(id) {
+  showConfirmDialog({
+    title: 'Hapus Transaksi?',
+    message: 'Data transaksi ini akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.',
+    icon: 'trash-2',
+    confirmText: 'Ya, Hapus',
+    cancelText: 'Batal',
+    onConfirm: async () => {
+      try {
+        // Hapus item transaksi terlebih dahulu (jika tidak ada cascade delete)
+        const { error: itemErr } = await db.from('transaction_items').delete().eq('transaction_id', id);
+        if (itemErr) throw itemErr;
+
+        // Hapus transaksi utama
+        const { error: txnErr } = await db.from('transactions').delete().eq('id', id);
+        if (txnErr) throw txnErr;
+
+        showToast('Transaksi berhasil dihapus!', 'success');
+        addActivityLog('Hapus Transaksi', `ID: ${id}`);
+        
+        // Refresh laporan jika sedang di halaman laporan
+        const currentTitle = document.getElementById('page-title').textContent;
+        if (currentTitle.includes('Laporan')) {
+          renderReport(document.getElementById('page-content'));
+        }
+      } catch (e) {
+        console.error('Delete transaction error:', e);
+        showToast('Gagal menghapus transaksi!', 'error');
+      }
+    }
+  });
 }
 
 /**
@@ -2079,5 +2346,78 @@ async function addActivityLog(action, details = '') {
     }]);
     if (error) console.error('Add log error:', error.message, error.details);
   } catch(e) { console.error('Add log fail', e); }
+}
+
+/**
+ * Mengunduh seluruh data sistem sebagai file JSON untuk backup manual
+ */
+async function downloadSystemBackup() {
+  showToast('Menyiapkan file backup...', 'info');
+  try {
+    const tables = ['products', 'categories', 'users', 'transactions', 'transaction_items', 'settings'];
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      store: storeInfo.name,
+      data: {}
+    };
+
+    for (const table of tables) {
+      const { data, error } = await db.from(table).select('*');
+      if (!error) {
+        backupData.data[table] = data;
+      }
+    }
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Backup_KopiSembilan_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast('Backup berhasil diunduh!', 'success');
+    addActivityLog('Backup Sistem', 'Unduh file JSON backup manual');
+  } catch (e) {
+    console.error('Backup error:', e);
+    showToast('Gagal membuat backup!', 'error');
+  }
+}
+
+/**
+ * Mengekspor daftar menu ke format CSV agar mudah dibuka di Excel
+ */
+function exportMenuToCSV() {
+  if (!products || products.length === 0) {
+    showToast('Tidak ada data menu untuk diekspor', 'error');
+    return;
+  }
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += "ID,Nama Menu,Kategori,Harga Dasar,Status Aktif\n";
+
+  products.forEach(p => {
+    const row = [
+      p.id,
+      `"${p.name}"`,
+      `"${p.category}"`,
+      p.base_price,
+      p.active ? 'Aktif' : 'Non-Aktif'
+    ];
+    csvContent += row.join(",") + "\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `Daftar_Menu_KopiSembilan_${new Date().toISOString().slice(0,10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  showToast('Daftar menu berhasil diekspor!', 'success');
+  addActivityLog('Ekspor Menu', 'Unduh file CSV daftar menu');
 }
 
