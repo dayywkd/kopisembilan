@@ -12,6 +12,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set Backup Filename
+        run: echo "BACKUP_FILENAME=backup_$(date +%Y-%m-%d).sql" >> $GITHUB_ENV
+
       - name: Dump Database via Docker
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -27,7 +30,7 @@ jobs:
             -e PGPASSWORD="$PGPASSWORD" \
             -v $(pwd)/backups:/backups \
             postgres:17 \
-            pg_dump -h "$DB_HOST" -U "postgres.$PROJECT_ID" -d postgres -p 6543 --schema=public --no-owner --no-privileges -f /backups/backup_$(date +%Y-%m-%d).sql
+            pg_dump -h "$DB_HOST" -U "postgres.$PROJECT_ID" -d postgres -p 6543 --schema=public --no-owner --no-privileges -f /backups/${{ env.BACKUP_FILENAME }}
 
       - name: Commit and Push Backup
         run: |
@@ -41,6 +44,6 @@ jobs:
         uses: adityak74/google-drive-upload-git-action@main
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
-          filename: "backups/backup-$(date +%Y-%m-%d).json"
+          filename: "backups/${{ env.BACKUP_FILENAME }}"
           folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
           overwrite: "true"
