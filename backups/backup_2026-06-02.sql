@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lwgGBN33hXlG6mvSDWSm0dzvbBByAkzcLADr5ShaYD15tvqjS48DTKyuqTquUUc
+\restrict GANWkPju8BjBD58R53MzfAyQSYYlherg3AYsI6cWpctHo3XJakCAfJho1IW4exx
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.10 (Debian 17.10-1.pgdg13+1)
@@ -473,6 +473,7 @@ COPY public.activity_logs (id, created_at, user_id, user_name, user_role, action
 108	2026-06-02 22:49:59.795725+00	1	Admin Utama	admin	Update Transaksi	ID: TXN-20260602-4262, Total: Rp 126.000
 109	2026-06-02 22:50:11.095223+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260602-4262
 110	2026-06-02 22:52:35.157634+00	1	Admin Utama	admin	Backup Sistem	Unduh file JSON backup manual
+111	2026-06-02 23:37:53.597318+00	1	Admin Utama	admin	Login Berhasil	User Admin Utama masuk ke sistem
 \.
 
 
@@ -726,7 +727,7 @@ COPY public.users (id, name, username, password_hash, role, active, created_at, 
 -- Name: activity_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.activity_logs_id_seq', 110, true);
+SELECT pg_catalog.setval('public.activity_logs_id_seq', 111, true);
 
 
 --
@@ -978,5 +979,5 @@ CREATE POLICY "Transaksi aman" ON public.transactions TO authenticated USING (tr
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lwgGBN33hXlG6mvSDWSm0dzvbBByAkzcLADr5ShaYD15tvqjS48DTKyuqTquUUc
+\unrestrict GANWkPju8BjBD58R53MzfAyQSYYlherg3AYsI6cWpctHo3XJakCAfJho1IW4exx
 
