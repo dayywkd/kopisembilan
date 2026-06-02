@@ -4,6 +4,7 @@
 let currentUser = null;
 let cart = [];
 let products = [];
+let categories = [];
 let cashierProducts = [];
 let transactions = [];
 let selectedProductForVariant = null;
@@ -25,6 +26,46 @@ Tanggal: [TANGGAL]
 Terima kasih sudah memesan!`;
 
 const DEFAULT_VARIANTS = [];
+
+// Tambahan fungsi kategori dinamis
+async function loadCategories() {
+  try {
+    const { data, error } = await db.from('categories').select('*').order('name');
+    if (!error && data) {
+      categories = data;
+      // Perbarui dropdown kategori di modal produk jika ada
+      const select = document.getElementById('prod-category');
+      if (select) {
+        select.innerHTML = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+      }
+    }
+  } catch (e) { console.error('Categories load fail', e); }
+}
+
+// Fungsi pembantu kategori
+function getCategoryColor(categoryName) {
+  const cat = categories.find(c => c.name === categoryName);
+  if (cat && cat.color) return cat.color;
+  switch(categoryName) {
+    case 'Specialty Coffee': return '#D4A05A';
+    case 'Regular Coffee': return '#8B5320';
+    case 'Signature': return '#2D5A27';
+    case 'Non-Coffee': return '#C8602A';
+    default: return '#6B3F1A';
+  }
+}
+
+function getCategoryIcon(categoryName) {
+  const cat = categories.find(c => c.name === categoryName);
+  if (cat && cat.icon) return cat.icon;
+  switch(categoryName) {
+    case 'Specialty Coffee': return 'coffee';
+    case 'Regular Coffee': return 'coffee';
+    case 'Signature': return 'glass-water';
+    case 'Non-Coffee': return 'cup-soda';
+    default: return 'coffee';
+  }
+}
 
 function escapeAttr(value = '') {
   return String(value)
@@ -239,6 +280,7 @@ async function saveWATemplate() {
 
 async function loadProducts() {
   await loadStoreInfo();
+  await loadCategories();
   try {
     const { data, error } = await db
       .from('products')
@@ -332,8 +374,8 @@ function renderCashier(el) {
         <div class="cashier-toolbar">
           <div class="cashier-category-row">
             <button class="btn ${activeCashierCategory === 'Semua' ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'Semua')">Semua</button>
-            ${['Specialty Coffee','Regular Coffee','Non-Coffee','Signature'].map(c =>
-              `<button class="btn ${activeCashierCategory === c ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'${c}')">${c}</button>`
+            ${categories.map(c =>
+              `<button class="btn ${activeCashierCategory === c.name ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'${c.name}')">${c.name}</button>`
             ).join('')}
           </div>
           <div class="search-wrapper cashier-search">
@@ -382,26 +424,6 @@ function renderMenuItems(cat, query = '') {
   if (!menuProducts || menuProducts.length === 0) return '<div style="text-align:center; padding:20px; color:var(--text-muted);">Belum ada produk.</div>';
   const search = query.trim().toLowerCase();
   
-  const getCategoryColor = (category) => {
-    switch(category) {
-      case 'Specialty Coffee': return '#D4A05A'; // Amber
-      case 'Regular Coffee': return '#8B5320'; // Brown
-      case 'Signature': return '#2D5A27'; // Emerald
-      case 'Non-Coffee': return '#C8602A'; // Terracotta
-      default: return '#6B3F1A';
-    }
-  };
-
-  const getCategoryIcon = (category) => {
-    switch(category) {
-      case 'Specialty Coffee': return 'coffee';
-      case 'Regular Coffee': return 'coffee';
-      case 'Signature': return 'glass-water';
-      case 'Non-Coffee': return 'cup-soda';
-      default: return 'coffee';
-    }
-  };
-
   const filteredProducts = menuProducts.filter(p => {
     const productName = String(p.name || '').toLowerCase();
     const productCategory = String(p.category || '').toLowerCase();
@@ -1357,9 +1379,33 @@ function renderSettings(el) {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="settings-2" style="width:18px;height:18px;color:var(--accent);"></i> Konfigurasi Pembayaran</h3></div>
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="tag" style="width:18px;height:18px;color:var(--accent);"></i> Kelola Kategori Produk</h3></div>
         <div class="card-body">
-          <div class="form-group"><label>Metode Pembayaran Tersedia</label><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"><span class="badge badge-green">Cash</span><span class="badge badge-green">QRIS</span><span class="badge badge-green">Transfer</span><span class="badge badge-green">Debit Card</span></div></div>
+          <div style="max-height: 250px; overflow-y: auto; margin-bottom: 16px;">
+            <table class="table" style="font-size: 13px;">
+              <thead><tr><th>Nama</th><th>Warna</th><th>Aksi</th></tr></thead>
+              <tbody>
+                ${categories.map(c => `
+                  <tr>
+                    <td><strong>${c.name}</strong></td>
+                    <td><div style="width:20px;height:20px;border-radius:4px;background:${c.color || '#ccc'};border:1px solid rgba(0,0,0,0.1);"></div></td>
+                    <td>
+                      <div class="flex gap-2">
+                        <button class="btn btn-outline btn-sm" onclick="editCategory(${c.id})" title="Edit"><i data-lucide="pencil" style="width:12px;height:12px;"></i></button>
+                        <button class="btn btn-red btn-sm" onclick="deleteCategory(${c.id})" title="Hapus"><i data-lucide="trash-2" style="width:12px;height:12px;"></i></button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <button class="btn btn-outline w-full" onclick="openAddCategory()">+ Tambah Kategori Baru</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="settings-2" style="width:18px;height:18px;color:var(--accent);"></i> Konfigurasi WhatsApp</h3></div>
+        <div class="card-body">
           <div class="form-group">
             <label>Template Pesan WhatsApp</label>
             <textarea class="form-input" id="settings-wa-template" rows="8" style="resize:none; font-size:12px; font-family:monospace;">${waTemplate}</textarea>
@@ -1371,6 +1417,89 @@ function renderSettings(el) {
     </div>
     <style>.responsive-grid{display:grid; grid-template-columns:1fr 1fr;} @media(max-width:768px){.responsive-grid{grid-template-columns:1fr;}}</style>
   `;
+}
+
+// ─── LOGIKA KATEGORI ───
+let editingCategoryId = null;
+
+function openAddCategory() {
+  editingCategoryId = null;
+  document.getElementById('cat-name').value = '';
+  document.getElementById('cat-color').value = '#6B3F1A';
+  document.getElementById('cat-icon').value = 'coffee';
+  document.getElementById('modal-category-title').textContent = 'Tambah Kategori';
+  openModal('modal-category');
+}
+
+async function editCategory(id) {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return;
+  editingCategoryId = id;
+  document.getElementById('cat-name').value = cat.name;
+  document.getElementById('cat-color').value = cat.color || '#6B3F1A';
+  document.getElementById('cat-icon').value = cat.icon || 'coffee';
+  document.getElementById('modal-category-title').textContent = 'Edit Kategori';
+  openModal('modal-category');
+}
+
+async function saveCategory() {
+  const name = document.getElementById('cat-name').value.trim();
+  const color = document.getElementById('cat-color').value;
+  const icon = document.getElementById('cat-icon').value;
+  
+  if (!name) { showToast('Nama kategori wajib diisi!', 'error'); return; }
+
+  const data = { name, color, icon };
+  let errorSave;
+
+  if (editingCategoryId) {
+    const { error: err } = await db.from('categories').update(data).eq('id', editingCategoryId);
+    errorSave = err;
+  } else {
+    const { error: err } = await db.from('categories').insert([data]);
+    errorSave = err;
+  }
+
+  if (!errorSave) {
+    showToast('Kategori berhasil disimpan!', 'success');
+    await loadCategories();
+    closeModal('modal-category');
+    renderSettings(document.getElementById('page-content'));
+  } else {
+    console.error('Save category error:', errorSave);
+    showToast('Gagal menyimpan kategori! Cek console untuk detail.', 'error');
+  }
+}
+
+async function deleteCategory(id) {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return;
+
+  // Cek apakah ada produk yang pakai kategori ini
+  const { count, error: countErr } = await db.from('products').select('*', { count: 'exact', head: true }).eq('category', cat.name).eq('active', true);
+  
+  if (count > 0) {
+    showToast(`Tidak bisa menghapus! Ada ${count} produk yang masih menggunakan kategori ini.`, 'error');
+    return;
+  }
+
+  showConfirmDialog({
+    title: 'Hapus Kategori?',
+    message: `Hapus kategori "${cat.name}"? Tindakan ini tidak bisa dibatalkan.`,
+    icon: 'trash-2',
+    confirmText: 'Ya, Hapus',
+    cancelText: 'Batal',
+    onConfirm: async () => {
+      const { error } = await db.from('categories').delete().eq('id', id);
+      if (!error) {
+        showToast('Kategori dihapus!', 'success');
+        await loadCategories();
+        renderSettings(document.getElementById('page-content'));
+      } else {
+        showToast('Gagal menghapus kategori!', 'error');
+      }
+    }
+  });
 }
 
 function renderManual(el) {

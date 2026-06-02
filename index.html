@@ -435,6 +435,35 @@
   </div>
 </div>
 
+<!-- Modal Kategori -->
+<div class="modal-overlay" id="modal-category">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header">
+      <h3 id="modal-category-title">Kelola Kategori</h3>
+      <button class="modal-close" onclick="closeModal('modal-category')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nama Kategori</label>
+        <input type="text" class="form-input" id="cat-name" placeholder="Misal: Snack">
+      </div>
+      <div class="form-group">
+        <label>Warna Tombol</label>
+        <input type="color" class="form-input" id="cat-color" value="#6B3F1A" style="height:40px; padding:2px;">
+      </div>
+      <div class="form-group">
+        <label>Ikon (Nama Lucide)</label>
+        <input type="text" class="form-input" id="cat-icon" value="coffee" placeholder="Misal: coffee, utencils, pizza">
+        <p style="font-size:10px; color:var(--text-muted); margin-top:4px;">Cari nama ikon di lucide.dev</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-category')">Batal</button>
+      <button class="btn btn-brown" onclick="saveCategory()">Simpan Kategori</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="js/supabase-config.js"></script>
 <script src="js/scripts.js?v=1.1"></script>
