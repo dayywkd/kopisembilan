@@ -16,19 +16,18 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
         run: |
-          if [ -z "$DB_HOST" ] || [ -z "$PGPASSWORD" ]; then
-            echo "Error: SUPABASE_DB_HOST atau SUPABASE_DB_PASSWORD belum diatur di GitHub Secrets!"
+          if [ -z "$DB_HOST" ] || [ -z "$PGPASSWORD" ] || [ -z "$PROJECT_ID" ]; then
+            echo "Error: Host, Password, atau Project ID belum diatur di GitHub Secrets!"
             exit 1
           fi
           mkdir -p backups
-          # Menggunakan Docker agar pg_dump selalu versi yang tepat dan stabil
-          # Menggunakan port 6543 karena ini adalah Transaction Pooler yang mendukung IPv4 (Gratis)
           docker run --rm \
             -e PGPASSWORD="$PGPASSWORD" \
             -v $(pwd)/backups:/backups \
             postgres:15 \
-            pg_dump -h "$DB_HOST" -U postgres -d postgres -p 6543 --schema=public --no-owner --no-privileges -f /backups/backup_$(date +%Y-%m-%d).sql
+            pg_dump -h "$DB_HOST" -U "postgres.$PROJECT_ID" -d postgres -p 6543 --schema=public --no-owner --no-privileges -f /backups/backup_$(date +%Y-%m-%d).sql
 
       - name: Commit and Push Backup
         run: |
