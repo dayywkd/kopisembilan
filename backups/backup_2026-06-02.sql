@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict VWCfOMaTwqXJ1bX6ccW5ZwDOawZ94lTeMlGW7XxiHTlPhfbQM4DdwLgD9gSq7TL
+\restrict MUc10TlasNhrSItf7sl1LbWlKxek2LTSmuvM44NNVEAN7BkRBTgzHT34bs0xca7
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.10 (Debian 17.10-1.pgdg13+1)
@@ -477,6 +477,7 @@ COPY public.activity_logs (id, created_at, user_id, user_name, user_role, action
 112	2026-06-02 23:44:42.595783+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260602-7142, Total: Rp 71.000
 113	2026-06-02 23:44:58.245498+00	1	Admin Utama	admin	Update Transaksi	ID: TXN-20260602-7142, Total: Rp 109.000
 114	2026-06-02 23:45:03.261318+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260602-7142
+115	2026-06-02 23:50:33.33736+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260602-2625
 \.
 
 
@@ -612,8 +613,6 @@ COPY public.transaction_items (id, transaction_id, product_id, qty, price, selec
 34	TXN-20260602-9285	13	1	28000	[]	
 35	TXN-20260602-9285	12	1	25000	[]	
 36	TXN-20260602-2528	1	1	28000	[]	
-37	TXN-20260602-2625	12	1	25000	[]	
-38	TXN-20260602-2625	11	1	25000	[]	
 39	TXN-20260602-6595	13	1	28000	[]	
 40	TXN-20260602-6595	43	1	25000	[]	
 41	TXN-20260602-6595	16	1	18000	[]	
@@ -688,7 +687,6 @@ TXN-20260602-9031	2026-06-02 07:37:05.798724+00		161000	qris	Lunas	tambahan orde
 TXN-20260602-2528	2026-06-02 08:48:54.128564+00		28000	cash	Lunas		Kasir	100000	72000
 TXN-20260602-6595	2026-06-02 09:10:37.490516+00		71000	qris	Lunas		Kasir	0	0
 TXN-20260602-9930	2026-06-02 09:16:30.367742+00		81000	qris	Lunas		Kasir	0	0
-TXN-20260602-2625	2026-06-02 08:59:11.019954+00		50000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-3027	2026-06-02 09:53:44.719146+00		43000	cash	Lunas		Kasir	50000	7000
 TXN-20260602-3045	2026-06-02 09:58:22.357298+00		28000	cash	Lunas		Kasir	30000	2000
 TXN-20260602-2195	2026-06-02 10:09:34.261925+00		51000	qris	Lunas		Kasir	0	0
@@ -730,7 +728,7 @@ COPY public.users (id, name, username, password_hash, role, active, created_at, 
 -- Name: activity_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.activity_logs_id_seq', 114, true);
+SELECT pg_catalog.setval('public.activity_logs_id_seq', 115, true);
 
 
 --
@@ -982,5 +980,5 @@ CREATE POLICY "Transaksi aman" ON public.transactions TO authenticated USING (tr
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VWCfOMaTwqXJ1bX6ccW5ZwDOawZ94lTeMlGW7XxiHTlPhfbQM4DdwLgD9gSq7TL
+\unrestrict MUc10TlasNhrSItf7sl1LbWlKxek2LTSmuvM44NNVEAN7BkRBTgzHT34bs0xca7
 
