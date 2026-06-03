@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict MUc10TlasNhrSItf7sl1LbWlKxek2LTSmuvM44NNVEAN7BkRBTgzHT34bs0xca7
+\restrict QqfB7kVgeqFbkG2RKr9W2T3oJ2AikeN8FSD8DPi6G1blrgaWGkRashGwnvmD4J4
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.10 (Debian 17.10-1.pgdg13+1)
@@ -478,6 +478,87 @@ COPY public.activity_logs (id, created_at, user_id, user_name, user_role, action
 113	2026-06-02 23:44:58.245498+00	1	Admin Utama	admin	Update Transaksi	ID: TXN-20260602-7142, Total: Rp 109.000
 114	2026-06-02 23:45:03.261318+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260602-7142
 115	2026-06-02 23:50:33.33736+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260602-2625
+116	2026-06-03 03:05:35.426838+00	2	Kasir	kasir	Login Berhasil	User Kasir masuk ke sistem
+117	2026-06-03 03:05:35.839127+00	2	Kasir	kasir	Login Berhasil	User Kasir masuk ke sistem
+118	2026-06-03 03:23:07.073544+00	2	Kasir	kasir	Transaksi Baru	ID: TXN-20260603-4658, Total: Rp 48.000
+119	2026-06-03 03:23:44.146052+00	2	Kasir	kasir	Transaksi Baru	ID: TXN-20260603-1966, Total: Rp 28.000
+120	2026-06-03 03:31:11.823047+00	1	Admin Utama	admin	Login Berhasil	User Admin Utama masuk ke sistem
+121	2026-06-03 04:44:38.602117+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-2140, Total: Rp 51.000
+122	2026-06-03 05:07:51.164863+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-8230, Total: Rp 112.000
+123	2026-06-03 06:09:55.884226+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-9205, Total: Rp 53.000
+124	2026-06-03 06:26:26.960013+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-9062, Total: Rp 54.000
+125	2026-06-03 06:39:43.140765+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-7824, Total: Rp 48.000
+126	2026-06-03 06:52:08.209662+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-2494, Total: Rp 18.000
+127	2026-06-03 07:41:35.694735+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-2151, Total: Rp 76.000
+128	2026-06-03 08:00:41.870813+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-7302, Total: Rp 30.000
+129	2026-06-03 08:19:03.19999+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-5017, Total: Rp 53.000
+130	2026-06-03 08:44:29.553308+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-9191, Total: Rp 25.000
+131	2026-06-03 08:45:12.539999+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-9888, Total: Rp 15.000
+132	2026-06-03 09:35:16.533152+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-8126, Total: Rp 18.000
+133	2026-06-03 09:44:40.057438+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-6775, Total: Rp 58.000
+134	2026-06-03 10:25:34.617835+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-1549, Total: Rp 78.000
+135	2026-06-03 10:39:25.830631+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3896, Total: Rp 296.000
+136	2026-06-03 10:54:28.672334+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-1825, Total: Rp 68.000
+137	2026-06-03 10:54:28.834406+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-6301, Total: Rp 68.000
+138	2026-06-03 10:58:43.468317+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3296, Total: Rp 36.000
+139	2026-06-03 11:10:39.490651+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-2974, Total: Rp 30.000
+140	2026-06-03 11:11:31.325062+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3190, Total: Rp 30.000
+141	2026-06-03 11:33:55.730783+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-6415, Total: Rp 50.000
+142	2026-06-03 11:37:47.434128+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-1310, Total: Rp 130.000
+143	2026-06-03 12:02:56.539088+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-8301, Total: Rp 50.000
+144	2026-06-03 12:03:50.279036+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-5774, Total: Rp 38.000
+145	2026-06-03 12:05:09.686419+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-9927, Total: Rp 50.000
+146	2026-06-03 12:05:10.085652+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3461, Total: Rp 50.000
+147	2026-06-03 12:06:07.169121+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260603-3461
+148	2026-06-03 12:49:00.948462+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-7829, Total: Rp 30.000
+149	2026-06-03 12:49:01.106731+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3730, Total: Rp 30.000
+150	2026-06-03 12:55:41.916967+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-9783, Total: Rp 60.000
+151	2026-06-03 13:19:17.031178+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-1137, Total: Rp 28.000
+152	2026-06-03 13:32:37.414241+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-1858, Total: Rp 61.000
+153	2026-06-03 13:42:02.78436+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-6492, Total: Rp 28.000
+154	2026-06-03 14:18:47.659571+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-6853, Total: Rp 56.000
+155	2026-06-03 14:27:09.96821+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-7608, Total: Rp 28.000
+156	2026-06-03 14:58:20.666934+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3905, Total: Rp 192.000
+157	2026-06-03 15:41:48.607797+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260603-1549
+158	2026-06-03 16:40:33.193246+00	2	Kasir	kasir	Login Berhasil	User Kasir masuk ke sistem
+159	2026-06-03 16:40:59.526428+00	1	Admin Utama	admin	Login Berhasil	User Admin Utama masuk ke sistem
+160	2026-06-03 17:20:55.004539+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-3366, Total: Rp 38.000
+161	2026-06-03 17:21:14.460293+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260603-3366
+162	2026-06-03 17:49:33.706552+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-2109, Total: Rp 114.000
+163	2026-06-03 17:49:58.293678+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260603-2109
+164	2026-06-03 17:56:28.978065+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260603-8251, Total: Rp 220.000
+165	2026-06-03 17:56:43.407133+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260603-8251
+166	2026-06-03 18:35:53.416216+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260604-3280\nTotal: Rp 71.000\nMetode: CASH\nStatus: Belum Bayar\nItem:\n- Split - Specialty x1 (Rp 38.000)\n- Cappuccino - Specialty x1 (Rp 33.000)
+167	2026-06-03 18:36:14.873128+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 71.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Split - Specialty x1\n- Cappuccino - Specialty x1
+168	2026-06-03 18:39:04.874548+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 71.000\nStatus: Belum Bayar\nMetode: cash\nItem Aktif:\n- Split - Specialty x1\n- Cappuccino - Specialty x1
+169	2026-06-03 18:42:05.323749+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 71.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Split - Specialty x1\n- Cappuccino - Specialty x1
+170	2026-06-03 18:42:51.180733+00	1	Admin Utama	admin	Update Transaksi	ID: TXN-20260604-3280\nTotal: Rp 104.000\nMetode: CASH\nStatus: Lunas\nItem:\n- Split - Specialty x1 (Rp 38.000)\n- Cappuccino - Specialty x1 (Rp 33.000)\n- Cappuccino - Specialty x1 (Rp 33.000)
+171	2026-06-03 18:43:02.390079+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 104.000\nStatus: Belum Bayar\nMetode: cash\nItem Aktif:\n- Split - Specialty x1\n- Cappuccino - Specialty x1\n- Cappuccino - Specialty x1
+172	2026-06-03 18:43:09.573549+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 104.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Split - Specialty x1\n- Cappuccino - Specialty x1\n- Cappuccino - Specialty x1
+173	2026-06-03 18:44:45.705739+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 142.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Split - Specialty x2\n- Cappuccino - Specialty x1\n- Cappuccino - Specialty x1
+174	2026-06-03 18:45:03.980029+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 175.000\nStatus: Belum Bayar\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x1\n- Cappuccino - Specialty x2\n- Split - Specialty x2
+175	2026-06-03 18:45:09.922975+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 175.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x1\n- Split - Specialty x2\n- Cappuccino - Specialty x2
+176	2026-06-03 18:48:57.056445+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 175.000\nStatus: Belum Bayar\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x1\n- Split - Specialty x2\n- Cappuccino - Specialty x2
+177	2026-06-03 18:49:28.904302+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 175.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x1\n- Split - Specialty x2\n- Cappuccino - Specialty x2
+178	2026-06-03 18:49:41.911357+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 175.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x1\n- Split - Specialty x2\n- Cappuccino - Specialty x2
+179	2026-06-03 18:50:53.282322+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 284.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x2\n- Split - Specialty x4\n- Cappuccino - Specialty x2
+180	2026-06-03 18:51:14.454449+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 322.000\nStatus: Belum Bayar\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x2\n- Cappuccino - Specialty x2\n- Split - Specialty x5
+181	2026-06-03 18:51:28.406458+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 322.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x2\n- Cappuccino - Specialty x2\n- Split - Specialty x5
+182	2026-06-03 19:12:27.513816+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260604-1677\nTotal: Rp 63.000\nMetode: CASH\nStatus: Lunas\nItem:\n- Dirty - Specialty x1 (Rp 38.000)\n- Hazelnut - Regular x1 (Rp 25.000)
+183	2026-06-03 19:12:45.270749+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-1677\nTotal Baru: Rp 101.000\nStatus: Belum Bayar\nMetode: cash\nItem Aktif:\n- Dirty - Specialty x2\n- Hazelnut - Regular x1
+184	2026-06-03 19:20:35.644474+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-1677\nTotal Baru: Rp 101.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Hazelnut - Regular x1\n- Dirty - Specialty x2
+185	2026-06-03 19:20:44.892255+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-1677\nTotal Baru: Rp 101.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Hazelnut - Regular x1\n- Dirty - Specialty x2
+186	2026-06-03 19:20:48.474204+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260604-1677
+187	2026-06-03 19:21:26.211813+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 322.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x2\n- Cappuccino - Specialty x2\n- Split - Specialty x5
+188	2026-06-03 19:26:10.099076+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-3280\nTotal Baru: Rp 355.000\nStatus: Lunas\nMetode: cash\nItem Aktif:\n- Cappuccino - Specialty x3\n- Cappuccino - Specialty x2\n- Split - Specialty x5
+189	2026-06-03 19:26:45.886312+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260604-1997\nTotal: Rp 38.000\nMetode: QRIS\nStatus: Lunas\nCatatan: -\nItem:\n- Split - Specialty x1 (Rp 38.000)
+190	2026-06-03 19:28:56.014579+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260604-2117\nTotal: Rp 38.000\nMetode: TRANSFER\nStatus: Lunas\nCatatan: -\nItem:\n- Dirty - Specialty x1 (Rp 38.000)
+191	2026-06-03 19:29:34.602817+00	1	Admin Utama	admin	Edit Transaksi & Pesanan	ID: TXN-20260604-2117\nTotal Baru: Rp 38.000\nStatus: Lunas\nMetode: transfer\nCatatan Transaksi Baru: test\nItem Aktif:\n- Dirty - Specialty x1 [Note: test, No Sugar]
+192	2026-06-03 19:34:20.460966+00	1	Admin Utama	admin	Transaksi Baru	ID: TXN-20260604-6921\nTotal: Rp 38.000\nMetode: TRANSFER\nStatus: Lunas\nCatatan Transaksi: -\nItem:\n- Dirty - Specialty x1 (Rp 38.000) [Note: test]
+193	2026-06-03 19:34:38.462707+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260604-6921
+194	2026-06-03 19:34:41.544452+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260604-2117
+195	2026-06-03 19:34:48.415307+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260604-1997
+196	2026-06-03 19:34:51.72456+00	1	Admin Utama	admin	Hapus Transaksi	ID: TXN-20260604-3280
 \.
 
 
@@ -490,9 +571,9 @@ COPY public.categories (id, name, color, icon, created_at) FROM stdin;
 2	Regular Coffee	#8B5320	coffee	2026-06-02 05:48:51.052597+00
 3	Non-Coffee	#C8602A	cup-soda	2026-06-02 05:48:51.052597+00
 4	Signature	#2D5A27	glass-water	2026-06-02 05:48:51.052597+00
-8	Beans	#6b3f1a	coffee	2026-06-02 05:57:13.900113+00
 9	Dessert	#ff0084	dessert	2026-06-02 09:07:59.404036+00
 10	Snack	#ffd900	pizza	2026-06-02 09:11:07.573245+00
+8	Beans	#6b3f1a	bean	2026-06-02 05:57:13.900113+00
 \.
 
 
@@ -665,6 +746,72 @@ COPY public.transaction_items (id, transaction_id, product_id, qty, price, selec
 92	TXN-20260602-4843	16	1	18000	[]	
 93	TXN-20260602-4843	16	1	18000	[]	
 94	TXN-20260602-4843	16	1	18000	[]	
+118	TXN-20260603-4658	8	1	30000	[]	
+119	TXN-20260603-4658	16	1	18000	[]	
+120	TXN-20260603-1966	24	1	28000	[]	
+121	TXN-20260603-2140	13	1	28000	[]	
+122	TXN-20260603-2140	42	1	23000	[]	
+123	TXN-20260603-8230	13	1	28000	[]	
+124	TXN-20260603-8230	13	1	28000	[]	
+125	TXN-20260603-8230	13	1	28000	[]	
+126	TXN-20260603-8230	13	1	28000	[]	
+127	TXN-20260603-9205	13	1	28000	[]	
+128	TXN-20260603-9205	14	1	25000	[]	
+129	TXN-20260603-9062	16	1	18000	[]	
+130	TXN-20260603-9062	16	1	18000	[]	
+131	TXN-20260603-9062	16	1	18000	[]	
+132	TXN-20260603-7824	15	1	25000	[]	
+133	TXN-20260603-7824	18	1	23000	[]	
+134	TXN-20260603-2494	16	1	18000	[]	
+135	TXN-20260603-2151	6	1	38000	[]	
+136	TXN-20260603-2151	7	1	38000	[]	
+137	TXN-20260603-7302	8	1	30000	[]	
+138	TXN-20260603-5017	62	1	35000	[]	
+139	TXN-20260603-5017	16	1	18000	[]	
+140	TXN-20260603-9191	12	1	25000	[]	
+141	TXN-20260603-9888	9	1	15000	[]	
+142	TXN-20260603-8126	16	1	18000	[]	
+143	TXN-20260603-6775	3	1	33000	[]	
+144	TXN-20260603-6775	14	1	25000	[]	
+148	TXN-20260603-3896	60	1	148000	[]	
+149	TXN-20260603-3896	60	1	148000	[]	
+150	TXN-20260603-6301	8	1	30000	[]	
+151	TXN-20260603-6301	6	1	38000	[]	
+152	TXN-20260603-1825	8	1	30000	[]	
+153	TXN-20260603-1825	6	1	38000	[]	
+154	TXN-20260603-3296	16	1	18000	[]	
+155	TXN-20260603-3296	16	1	18000	[]	
+156	TXN-20260603-2974	8	1	30000	[]	
+157	TXN-20260603-3190	8	1	30000	[]	
+158	TXN-20260603-6415	15	1	25000	[]	
+159	TXN-20260603-6415	15	1	25000	[]	
+160	TXN-20260603-1310	1	1	28000	[]	
+161	TXN-20260603-1310	16	1	18000	[]	
+162	TXN-20260603-1310	13	1	28000	[]	
+163	TXN-20260603-1310	42	1	23000	[]	
+164	TXN-20260603-1310	3	1	33000	[]	
+165	TXN-20260603-8301	15	1	25000	[]	
+166	TXN-20260603-8301	11	1	25000	[]	
+167	TXN-20260603-5774	7	1	38000	[]	
+168	TXN-20260603-9927	11	1	25000	[]	
+169	TXN-20260603-9927	14	1	25000	[]	
+170	TXN-20260603-7829	8	1	30000	[]	
+171	TXN-20260603-3730	8	1	30000	[]	
+172	TXN-20260603-9783	8	1	30000	[]	
+173	TXN-20260603-9783	8	1	30000	[]	
+174	TXN-20260603-1137	13	1	28000	[]	
+175	TXN-20260603-1858	6	1	38000	[]	
+176	TXN-20260603-1858	42	1	23000	[]	
+177	TXN-20260603-6492	13	1	28000	[]	
+178	TXN-20260603-6853	13	1	28000	[]	
+179	TXN-20260603-6853	13	1	28000	[]	
+180	TXN-20260603-7608	13	1	28000	[]	
+181	TXN-20260603-3905	24	1	28000	[]	
+182	TXN-20260603-3905	24	1	28000	[]	
+183	TXN-20260603-3905	8	1	30000	[]	
+184	TXN-20260603-3905	8	1	30000	[]	
+185	TXN-20260603-3905	7	1	38000	[]	
+186	TXN-20260603-3905	7	1	38000	[]	
 \.
 
 
@@ -673,7 +820,9 @@ COPY public.transaction_items (id, transaction_id, product_id, qty, price, selec
 --
 
 COPY public.transactions (id, date, customer_phone, total, payment_method, payment_status, notes, cashier_name, cash_amount, cash_change) FROM stdin;
+TXN-20260603-7824	2026-06-03 06:39:42.625628+00		48000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-8811	2026-06-02 04:45:06.794479+00		86000	qris	Lunas		Kasir	0	0
+TXN-20260603-2494	2026-06-03 06:52:07.595503+00		18000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-6712	2026-06-02 05:53:56.999263+00		131000	qris	Lunas		Kasir	0	0
 TXN-20260602-1933	2026-06-02 05:54:51.07503+00		83000	cash	Lunas		Kasir	83000	0
 TXN-20260602-6579	2026-06-02 06:21:01.201236+00		30000	qris	Lunas		Kasir	0	0
@@ -681,12 +830,17 @@ TXN-20260602-4137	2026-06-02 06:39:33.577646+00		28000	qris	Lunas		Kasir	0	0
 TXN-20260602-1011	2026-06-02 06:57:22.72014+00		50000	cash	Lunas		Kasir	50000	0
 TXN-20260602-4377	2026-06-02 07:38:51.854739+00		15000	qris	Lunas		Kasir	0	0
 TXN-20260602-8454	2026-06-02 07:40:31.452193+00	085336688839	25000	qris	Lunas		Kasir	0	0
+TXN-20260603-2151	2026-06-03 07:41:35.210667+00		76000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-2976	2026-06-02 08:35:15.518736+00		98000	qris	Lunas		Kasir	0	0
+TXN-20260603-7302	2026-06-03 08:00:41.166569+00		30000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-5017	2026-06-03 08:19:02.578195+00		53000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-9191	2026-06-03 08:44:28.687542+00		25000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-9285	2026-06-02 08:43:33.349634+00		116000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-9031	2026-06-02 07:37:05.798724+00		161000	qris	Lunas	tambahan orderan\nlatte ice 1\nfilter padma 1\nbuterscot 1\ngula aren 1	Kasir	0	0
 TXN-20260602-2528	2026-06-02 08:48:54.128564+00		28000	cash	Lunas		Kasir	100000	72000
 TXN-20260602-6595	2026-06-02 09:10:37.490516+00		71000	qris	Lunas		Kasir	0	0
 TXN-20260602-9930	2026-06-02 09:16:30.367742+00		81000	qris	Lunas		Kasir	0	0
+TXN-20260603-9888	2026-06-03 08:45:11.731324+00		15000	qris	Lunas		Admin Utama	0	0
 TXN-20260602-3027	2026-06-02 09:53:44.719146+00		43000	cash	Lunas		Kasir	50000	7000
 TXN-20260602-3045	2026-06-02 09:58:22.357298+00		28000	cash	Lunas		Kasir	30000	2000
 TXN-20260602-2195	2026-06-02 10:09:34.261925+00		51000	qris	Lunas		Kasir	0	0
@@ -711,6 +865,34 @@ TXN-20260602-2711	2026-06-02 13:16:02.92426+00		94000	cash	Lunas		Kasir	100000	6
 TXN-20260602-5783	2026-06-02 13:45:11.328447+00		60000	qris	Lunas		Kasir	0	0
 TXN-20260602-7750	2026-06-02 14:49:14.390035+00		68000	qris	Lunas		Kasir	0	0
 TXN-20260602-4843	2026-06-02 15:08:32.056166+00		54000	qris	Lunas		Kasir	0	0
+TXN-20260603-8126	2026-06-03 09:35:16.084269+00		18000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-6775	2026-06-03 09:44:39.32687+00		58000	cash	Lunas		Admin Utama	100000	42000
+TXN-20260603-3896	2026-06-03 10:39:25.155538+00		296000	cash	Lunas		Admin Utama	300000	4000
+TXN-20260603-1825	2026-06-03 10:54:28.03887+00		68000	cash	Lunas		Admin Utama	68000	0
+TXN-20260603-6301	2026-06-03 10:54:28.188052+00		68000	cash	Lunas		Admin Utama	68000	0
+TXN-20260603-3296	2026-06-03 10:58:42.833459+00		36000	cash	Lunas		Admin Utama	50000	14000
+TXN-20260603-4658	2026-06-03 03:23:06.165772+00		48000	qris	Lunas		Kasir	0	0
+TXN-20260603-1966	2026-06-03 03:23:43.673784+00		28000	qris	Lunas		Kasir	0	0
+TXN-20260603-2140	2026-06-03 04:44:37.835025+00		51000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-8230	2026-06-03 05:07:50.359903+00	085780468795	112000	cash	Lunas		Admin Utama	150000	38000
+TXN-20260603-9205	2026-06-03 06:09:55.391341+00		53000	cash	Lunas		Admin Utama	53000	0
+TXN-20260603-9062	2026-06-03 06:26:26.352855+00	087787490227	54000	cash	Lunas		Admin Utama	100000	46000
+TXN-20260603-2974	2026-06-03 11:10:39.006936+00		30000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-3190	2026-06-03 11:11:30.937013+00		30000	cash	Lunas		Admin Utama	30000	0
+TXN-20260603-6415	2026-06-03 11:33:55.247082+00		50000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-1310	2026-06-03 11:37:46.818515+00		130000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-8301	2026-06-03 12:02:55.823978+00		50000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-5774	2026-06-03 12:03:49.629635+00		38000	cash	Lunas		Admin Utama	50000	12000
+TXN-20260603-9927	2026-06-03 12:05:09.240995+00		50000	cash	Lunas		Admin Utama	50000	0
+TXN-20260603-7829	2026-06-03 12:49:00.040735+00		30000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-3730	2026-06-03 12:49:00.430104+00		30000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-9783	2026-06-03 12:55:41.475249+00		60000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-1137	2026-06-03 13:19:16.301369+00		28000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-1858	2026-06-03 13:32:36.457818+00		61000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-6492	2026-06-03 13:42:02.197998+00		28000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-6853	2026-06-03 14:18:47.041689+00		56000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-7608	2026-06-03 14:27:09.033601+00		28000	qris	Lunas		Admin Utama	0	0
+TXN-20260603-3905	2026-06-03 14:58:20.004658+00	+62 857-9166-5041	192000	qris	Lunas		Admin Utama	0	0
 \.
 
 
@@ -728,7 +910,7 @@ COPY public.users (id, name, username, password_hash, role, active, created_at, 
 -- Name: activity_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.activity_logs_id_seq', 115, true);
+SELECT pg_catalog.setval('public.activity_logs_id_seq', 196, true);
 
 
 --
@@ -756,7 +938,7 @@ SELECT pg_catalog.setval('public.products_id_seq', 62, true);
 -- Name: transaction_items_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.transaction_items_id_seq', 117, true);
+SELECT pg_catalog.setval('public.transaction_items_id_seq', 201, true);
 
 
 --
@@ -980,5 +1162,5 @@ CREATE POLICY "Transaksi aman" ON public.transactions TO authenticated USING (tr
 -- PostgreSQL database dump complete
 --
 
-\unrestrict MUc10TlasNhrSItf7sl1LbWlKxek2LTSmuvM44NNVEAN7BkRBTgzHT34bs0xca7
+\unrestrict QqfB7kVgeqFbkG2RKr9W2T3oJ2AikeN8FSD8DPi6G1blrgaWGkRashGwnvmD4J4
 
