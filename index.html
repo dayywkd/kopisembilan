@@ -7,6 +7,7 @@
 <link rel="icon" type="image/jpeg" href="logo.jpg">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
@@ -222,7 +223,7 @@
 
         <div id="cash-input-wrap" class="form-group">
           <label>Jumlah Dibayar (Tunai)</label>
-          <input type="number" class="form-input" id="cash-input" placeholder="0" oninput="calcChange()">
+          <input type="text" inputmode="numeric" class="form-input" id="cash-input" placeholder="0" oninput="formatPriceInput(this); calcChange();">
         </div>
 
         <div id="change-display" style="padding:12px;background:var(--green-light);border-radius:8px;display:none; margin-top:10px;">
@@ -254,7 +255,7 @@
       </div>
       <div class="form-group">
         <label>Harga Dasar (Rp)</label>
-        <input type="number" class="form-input" id="prod-price" placeholder="0">
+        <input type="text" inputmode="numeric" class="form-input" id="prod-price" placeholder="0" oninput="formatPriceInput(this)">
       </div>
       <div class="form-group">
         <label>Kategori</label>
@@ -397,16 +398,34 @@
         </div>
         <div class="form-group">
           <label>Status Pembayaran</label>
-          <select class="select-input" id="edit-txn-status">
+          <select class="select-input" id="edit-txn-status" onchange="toggleEditCashInput()">
             <option value="Lunas">Lunas</option>
             <option value="Belum Bayar">Belum Bayar</option>
           </select>
         </div>
       </div>
+      
+      <div id="edit-cash-input-wrap" class="form-group" style="display:none;">
+        <label>Jumlah Dibayar (Tunai)</label>
+        <input type="text" inputmode="numeric" class="form-input" id="edit-txn-cash-input" placeholder="0" oninput="formatPriceInput(this); calcEditChange();">
+      </div>
+
+      <div id="edit-change-display" style="padding:12px;background:var(--green-light);border-radius:8px;display:none; margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:var(--green);font-weight:600;">Kembalian:</span>
+          <span style="color:var(--green);font-weight:700;font-size:18px;" id="edit-txn-change-amount">Rp 0</span>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Catatan Transaksi</label>
         <textarea class="form-input" id="edit-txn-notes" rows="2" style="resize:none;"></textarea>
       </div>
+      <div style="background:var(--brown-800); color:white; padding:15px; border-radius:12px; margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; font-weight:600; text-transform:uppercase; opacity:0.8;">Total Transaksi Baru</span>
+        <span id="edit-txn-total-display" style="font-size:20px; font-weight:700;">Rp 0</span>
+      </div>
+
       <div class="order-edit-section" style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <label style="font-weight:600; margin-bottom:0;">Daftar Pesanan</label>
@@ -476,6 +495,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="js/supabase-config.js"></script>
 <script src="js/scripts.js?v=1.1"></script>
 </body>

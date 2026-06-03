@@ -322,19 +322,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 28px;
+  padding: 10px 24px; /* Lebih ramping */
   background: var(--card);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .top-bar h2 {
   font-family: 'DM Serif Display', serif;
-  font-size: 20px;
+  font-size: 18px;
   color: var(--brown-800);
 }
 .page-content {
   flex: 1;
-  padding: 28px;
+  padding: 16px 28px 28px;
   overflow-y: auto;
 }
 
@@ -618,42 +618,46 @@ body {
 .pos-layout {
   display: grid;
   grid-template-columns: 1fr 340px;
-  gap: 20px;
-  height: calc(100vh - 80px);
+  gap: 16px;
+  min-height: calc(100vh - 100px);
+  height: auto;
+  align-items: start;
+  align-content: start;
 }
 .menu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 16px;
   align-content: start;
-  padding: 10px 5px; /* Tambah padding agar hover tidak terpotong */
+  padding: 5px 0;
 }
 .cashier-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  display: flex;
+  flex-direction: column; /* Baris bertumpuk vertikal */
+  align-items: stretch;
   gap: 12px;
-  align-items: center;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 12px 16px;
   box-shadow: var(--shadow);
+  margin-bottom: 12px;
 }
 .cashier-category-row {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
+  flex-wrap: wrap; /* Turun ke bawah jika tidak muat */
+  justify-content: flex-start;
 }
 .cashier-search {
-  flex: 0 0 auto;
-  min-width: 0;
+  width: 100%;
 }
 .cashier-search .search-input {
   height: 42px;
   border-radius: var(--radius-sm);
   background: var(--cream);
   padding-right: 42px;
+  width: 100%;
 }
 .cashier-search .search-input:focus {
   background: #fff;
@@ -1207,7 +1211,7 @@ body {
 @media (max-width: 1024px) {
   .pos-layout {
     grid-template-columns: 1fr 340px;
-    height: calc(100vh - 120px);
+    height: auto;
     gap: 16px;
   }
 }
@@ -1223,6 +1227,15 @@ body {
 }
 
 @media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+    position: relative;
+    width: 100%;
+  }
+  .app-shell {
+    width: 100%;
+    overflow-x: hidden;
+  }
   .toast-container {
     top: 20px;
     bottom: auto;
@@ -1232,79 +1245,101 @@ body {
   .toast {
     max-width: none;
   }
-  .page-content { padding: 16px; }
+  .page-content { 
+    padding: 10px 12px 24px; /* Padding lebih ramping */
+    width: 100%;
+    box-sizing: border-box;
+  }
   .top-bar {
-    padding: 12px 16px;
-    gap: 12px;
+    padding: 10px 12px;
+    gap: 10px;
   }
-  .top-bar h2 { font-size: 18px; }
-  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .dashboard-hero { margin-bottom: 16px; }
-  .dashboard-hero h2 { font-size: 26px; }
-  .dashboard-hero p { font-size: 13px; line-height: 1.5; }
-  .dashboard-grid,
-  .dashboard-grid-primary,
-  .dashboard-grid-secondary {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-  .dashboard-card-header { align-items: flex-start; }
-  .period-tabs { width: 100%; overflow-x: auto; white-space: nowrap; padding-bottom: 4px; }
-  .period-tab {
-    flex: 1;
-    padding: 10px 16px;
-    min-width: 100px;
-  }
-  .dashboard-chart-body {
-    height: 240px;
-    padding: 8px 10px 14px;
-  }
-  .stat-card { padding: 14px; }
-  .stat-card .value { font-size: 22px; }
+  .top-bar h2 { font-size: 16px; }
+  
   .pos-layout {
-    grid-template-columns: 1fr;
-    height: auto;
-    gap: 16px;
     display: flex;
     flex-direction: column;
-    padding-bottom: 80px; /* Space for fixed cart */
+    width: 100%;
+    gap: 12px;
+    margin-top: 0;
+    padding-bottom: 80px;
   }
+  
+  /* Hilangkan div pembungkus atau pastikan tidak meluap */
+  .pos-layout > div {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
   .cashier-toolbar {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+    width: 100%;
+    box-sizing: border-box;
   }
   .cashier-category-row {
     overflow-x: auto;
     flex-wrap: nowrap;
-    padding-bottom: 8px;
+    padding: 4px 0;
     -webkit-overflow-scrolling: touch;
+    width: 100%;
+    display: flex;
   }
   .cashier-category-row .btn {
     white-space: nowrap;
     flex: 0 0 auto;
-    padding: 10px 20px;
+    padding: 8px 14px;
+    font-size: 11px;
   }
+  .cashier-search {
+    flex: 1;
+    width: 100%;
+  }
+  .cashier-search .search-input {
+    height: 38px;
+    font-size: 13px;
+    padding-left: 36px;
+  }
+  
   .menu-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    max-height: none !important;
-    overflow: visible !important;
-    padding-bottom: 0 !important;
+    grid-template-columns: repeat(2, 1fr) !important; /* Paksa 2 kolom */
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
   }
+  .menu-card {
+    padding: 12px 6px;
+    gap: 8px;
+    min-height: 120px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .menu-card .icon-circle {
+    width: 36px; height: 36px;
+    font-size: 14px;
+  }
+  .menu-card .mname { 
+    font-size: 11px; 
+    line-height: 1.2;
+    height: 2.4em; /* Batasi 2 baris agar rapi */
+    overflow: hidden;
+  }
+  .menu-card .mprice { font-size: 12px; margin-top: 4px; }
+
   .cart-panel { 
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    z-index: 500;
+    z-index: 1000;
     background: white;
     border-top: 1px solid var(--border);
-    box-shadow: 0 -10px 30px rgba(0,0,0,0.15);
-    height: 72px; /* Collapsed height */
-    min-height: auto;
-    border-radius: 20px 20px 0 0;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    flex-direction: column;
+    box-shadow: 0 -5px 20px rgba(0,0,0,0.15);
+    height: 60px;
+    border-radius: 16px 16px 0 0;
   }
   .cart-panel.expanded {
     height: 80vh;
@@ -1434,5 +1469,53 @@ body {
   .dashboard-list-row,
   .payment-summary-row {
     align-items: flex-start;
+  }
+
+  /* Optimasi Dashboard Mobile */
+  .dashboard-grid, .dashboard-grid-primary, .dashboard-grid-secondary {
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+  }
+  .dashboard-hero h2 { font-size: 20px; }
+  .dashboard-hero p { font-size: 11px; }
+  .dashboard-chart-body {
+    height: 300px !important; /* Beri ruang lebih untuk grafik */
+    padding: 10px 5px;
+  }
+  .dashboard-card-header h3 { font-size: 14px; }
+  .stat-card .value { font-size: 22px; }
+  .item-title { font-size: 12px; }
+  .payment-summary-row span { font-size: 12px; }
+}
+
+@media (max-width: 520px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .login-card {
+    padding: 28px 22px;
+    border-radius: 16px;
+  }
+  .menu-card {
+    padding: 16px 10px;
+  }
+  .menu-card .icon-circle {
+    width: 44px;
+    height: 44px;
+  }
+  .menu-card .mname {
+    font-size: 12px;
+  }
+  .table th,
+  .table td {
+    padding: 12px 10px;
+    font-size: 11px;
+  }
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    top: 16px;
+    bottom: auto;
+  }
+  .toast {
+    max-width: none;
   }
 }

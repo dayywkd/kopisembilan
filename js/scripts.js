@@ -15,7 +15,8 @@ let revenueChartInstance = null;
 let activeCashierCategory = 'Semua';
 let cashierSearchQuery = '';
 let cartItemSeq = 0;
-let storeInfo = { name: 'KopiSembilan', address: 'Jl. Kopi Nomor 9, Jember, Jawa Timur', phone: '085855180131' };
+let isProcessingPayment = false;
+let storeInfo = { name: 'KopiSembilan', address: 'Jl. Kopi Nomor 9, Tuban, Jawa Timur', phone: '085855180131' };
 let waTemplate = `*INVOICE [NAMA_TOKO]*
 ID: [ID_TXN]
 Tanggal: [TANGGAL]
@@ -300,6 +301,8 @@ async function loadProducts() {
     if (currentTitle === 'Dashboard') renderDashboard(content);
     if (currentTitle === 'Inventaris Produk') renderInventory(content);
     if (currentTitle === 'Kasir / POS') renderCashier(content);
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 }
 
@@ -371,8 +374,8 @@ function renderCashier(el) {
   cashierSearchQuery = cashierSearchQuery || '';
   el.innerHTML = `
     <div class="pos-layout">
-      <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden; grid-column: 1 / -1;">
-        ${editingTransactionId ? `
+      ${editingTransactionId ? `
+        <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden; grid-column: 1 / -1; margin-bottom: 8px;">
           <div style="background: var(--brown-50); border: 1px solid var(--brown-200); padding: 12px 16px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
             <div style="display: flex; align-items: center; gap: 10px; color: var(--brown-800); font-weight: 600;">
               <i data-lucide="edit-3" style="width: 20px; height: 20px;"></i>
@@ -385,8 +388,8 @@ function renderCashier(el) {
               <i data-lucide="x-circle" style="width:14px;height:14px;"></i> Batalkan Edit
             </button>
           </div>
-        ` : ''}
-      </div>
+        </div>
+      ` : ''}
       <div style="display:flex;flex-direction:column;gap:16px;overflow:hidden;">
         <div class="cashier-toolbar">
           <div class="cashier-category-row">
@@ -434,6 +437,7 @@ function renderCashier(el) {
     </div>
   `;
   updateCartUI();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function renderMenuItems(cat, query = '') {
@@ -530,17 +534,28 @@ function addMenuToCart(productId) {
   const product = cashierProducts.find(p => String(p.id) === String(productId));
   if (!product) return;
 
-  cart.push({
-    cartId: ++cartItemSeq,
-    productId: product.id,
-    name: product.name,
-    emoji: product.emoji,
-    basePrice: product.base_price,
-    totalPrice: product.base_price,
-    qty: 1,
-    variants: [],
-    note: ''
-  });
+  // Cek apakah item yang SAMA PERSIS (tanpa catatan & varian) sudah ada di keranjang
+  const existingItem = cart.find(c => 
+    c.productId === product.id && 
+    (c.note === '' || !c.note) && 
+    (!c.variants || c.variants.length === 0)
+  );
+
+  if (existingItem) {
+    existingItem.qty += 1;
+  } else {
+    cart.push({
+      cartId: ++cartItemSeq,
+      productId: product.id,
+      name: product.name,
+      emoji: product.emoji,
+      basePrice: product.base_price,
+      totalPrice: product.base_price,
+      qty: 1,
+      variants: [],
+      note: ''
+    });
+  }
 
   updateCartUI();
   showToast(product.name + ' ditambahkan', 'success');
@@ -566,26 +581,6 @@ function updateCartUI() {
     
     return;
   }
-
-  const getCategoryColor = (category) => {
-    switch(category) {
-      case 'Specialty Coffee': return '#D4A05A';
-      case 'Regular Coffee': return '#8B5320';
-      case 'Signature': return '#2D5A27';
-      case 'Non-Coffee': return '#C8602A';
-      default: return '#6B3F1A';
-    }
-  };
-
-  const getCategoryIcon = (category) => {
-    switch(category) {
-      case 'Specialty Coffee': return 'coffee';
-      case 'Regular Coffee': return 'coffee';
-      case 'Signature': return 'glass-water';
-      case 'Non-Coffee': return 'cup-soda';
-      default: return 'coffee';
-    }
-  };
 
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   cartEl.innerHTML = cart.map((c) => {
@@ -783,7 +778,24 @@ function processPhoneAction(sendNow) {
 
 function openPayment() {
   resetPaymentModalForCheckout();
-  const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
+  
+  // Kelompokkan item yang identik untuk pratinjau struk
+  const groupedCart = cart.reduce((acc, item) => {
+    const existing = acc.find(i => 
+      i.productId === item.productId && 
+      i.totalPrice === item.totalPrice && 
+      (i.note || '') === (item.note || '') && 
+      JSON.stringify(i.variants || []) === JSON.stringify(item.variants || [])
+    );
+    if (existing) {
+      existing.qty += item.qty;
+    } else {
+      acc.push({ ...item });
+    }
+    return acc;
+  }, []);
+
+  const total = groupedCart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const now = new Date();
   const txnId = 'TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
   
@@ -799,13 +811,13 @@ function openPayment() {
       <div style="font-size:12px;">Kasir: ${currentUser ? currentUser.name : 'Staf'}</div>
       <div style="font-size:12px;">ID: ${txnId}</div>
       <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
-      ${cart.map(c => `
+      ${groupedCart.map(c => `
         <div style="margin-bottom:6px;">
           <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
             <span>${c.name} x${c.qty}</span>
             <span>${fmtRp(c.totalPrice * c.qty)}</span>
           </div>
-          ${c.variants.length > 0 ? `<div style="font-size:10px; color:#666; font-style:italic;">${c.variants.map(v => v.name).join(', ')}</div>` : ''}
+          ${c.variants && c.variants.length > 0 ? `<div style="font-size:10px; color:#666; font-style:italic;">${c.variants.map(v => v.name).join(', ')}</div>` : ''}
           ${c.note ? `<div style="font-size:10px; color:#888;">Note: ${c.note}</div>` : ''}
         </div>
       `).join('')}
@@ -832,7 +844,7 @@ function openPayment() {
 
 function calcChange() {
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
-  const paid = parseInt(document.getElementById('cash-input').value) || 0;
+  const paid = parsePrice(document.getElementById('cash-input').value);
   const changeEl = document.getElementById('change-display');
   const changeAmtEl = document.getElementById('change-amount');
   if (paid >= total) {
@@ -890,6 +902,13 @@ function cancelCashierEdit() {
 }
 
 async function confirmPayment(sendWA = false) {
+  if (isProcessingPayment) return;
+
+  if (cart.length === 0) {
+    showToast('Keranjang sudah kosong!', 'error');
+    return;
+  }
+
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const phoneEl = document.getElementById('customer-phone');
   const phone = phoneEl ? phoneEl.value.trim() : '';
@@ -897,8 +916,8 @@ async function confirmPayment(sendWA = false) {
   const note = document.getElementById('txn-note').value.trim();
   const now = new Date();
   
-  // Gunakan ID lama jika sedang edit, jika tidak buat ID baru
-  const txnId = editingTransactionId || ('TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
+  // Gunakan ID lama jika sedang edit, jika tidak buat ID baru (Gunakan tanggal Indonesia)
+  const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
 
   if (sendWA && !phone) {
     showToast('Masukkan nomor WA untuk kirim struk!', 'error');
@@ -909,10 +928,12 @@ async function confirmPayment(sendWA = false) {
   let cashAmount = 0;
   let cashChange = 0;
   if (selectedPaymentMethod === 'cash') {
-    cashAmount = parseInt(document.getElementById('cash-input').value) || 0;
+    cashAmount = parsePrice(document.getElementById('cash-input').value);
     if (cashAmount < total && status === 'Lunas') { showToast('Jumlah bayar kurang!', 'error'); return; }
     cashChange = cashAmount - total;
   }
+
+  isProcessingPayment = true;
 
   try {
     let txnResult;
@@ -966,7 +987,17 @@ async function confirmPayment(sendWA = false) {
     if (sendWA && phone) sendWhatsAppReceipt(phone, txnId, total, cart);
 
     showToast(editingTransactionId ? 'Transaksi diperbarui!' : 'Transaksi Berhasil!', 'success');
-    addActivityLog(editingTransactionId ? 'Update Transaksi' : 'Transaksi Baru', `ID: ${txnId}, Total: ${fmtRp(total)}`);
+    
+    // Buat detail log yang sangat rinci termasuk catatan per item
+    const itemsSummary = cart.map(c => {
+      let itemLine = `- ${c.name} x${c.qty} (${fmtRp(c.totalPrice)})`;
+      if (c.note) itemLine += ` [Note: ${c.note}]`;
+      return itemLine;
+    }).join('\n');
+
+    const logDetails = `ID: ${txnId}\nTotal: ${fmtRp(total)}\nMetode: ${selectedPaymentMethod.toUpperCase()}\nStatus: ${status}\nCatatan Transaksi: ${note || '-'}\nItem:\n${itemsSummary}`;
+
+    addActivityLog(editingTransactionId ? 'Update Transaksi' : 'Transaksi Baru', logDetails);
     
     // Reset state
     editingTransactionId = null;
@@ -983,6 +1014,8 @@ async function confirmPayment(sendWA = false) {
   } catch (e) {
     console.error(e);
     showToast('Terjadi kesalahan sistem!', 'error');
+  } finally {
+    isProcessingPayment = false;
   }
 }
 
@@ -995,7 +1028,22 @@ function formatPhoneWA(phone) {
 }
 
 function sendWhatsAppReceipt(phone, txnId, total, items) {
-  const itemsText = items.map(c => {
+  // Kelompokkan item yang identik (Nama, Harga, Catatan) untuk pesan WA
+  const groupedItems = items.reduce((acc, item) => {
+    const existing = acc.find(i => 
+      i.name === item.name && 
+      i.totalPrice === item.totalPrice && 
+      (i.note || '') === (item.note || '')
+    );
+    if (existing) {
+      existing.qty += item.qty;
+    } else {
+      acc.push({ ...item });
+    }
+    return acc;
+  }, []);
+
+  const itemsText = groupedItems.map(c => {
     let text = `• ${c.name} x${c.qty} = ${fmtRp(c.totalPrice * c.qty)}`;
     if (c.note) text += `\n  Note: ${c.note}`;
     return text;
@@ -1016,8 +1064,16 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
 // ══════════════════════════════════════════════
 // REPORTS
 // ══════════════════════════════════════════════
+// Helper untuk mendapatkan tanggal format YYYY-MM-DD di zona waktu Indonesia
+function getIndoDate(date = new Date()) {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Jakarta' }).format(date);
+}
+
 async function renderReport(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat data laporan...</div>`;
+  
+  // Ambil tanggal hari ini di zona waktu Indonesia
+  const today = getIndoDate();
   
   let txns = [];
   try {
@@ -1033,14 +1089,18 @@ async function renderReport(el) {
     console.error('Report load fail', e);
   }
 
-  const renderContent = (status = 'Semua', method = 'Semua') => {
+  const renderContent = (dateFilter = today, status = 'Semua', method = 'Semua') => {
     const filtered = txns.filter(t => {
+      // Bandingkan tanggal transaksi di zona waktu Indonesia
+      const tDate = getIndoDate(new Date(t.date));
+      const matchesDate = !dateFilter || tDate === dateFilter;
       const matchesStatus = status === 'Semua' || t.payment_status === status;
       const matchesMethod = method === 'Semua' || t.payment_method === method;
-      return matchesStatus && matchesMethod;
+      return matchesDate && matchesStatus && matchesMethod;
     });
-    window.currentReportTxns = filtered; // Simpan untuk export CSV
-    const totalRev = filtered.reduce((s, t) => s + t.total, 0);
+    
+    window.currentReportTxns = filtered; 
+    const totalRev = filtered.filter(t => t.payment_status === 'Lunas').reduce((s, t) => s + (Number(t.total) || 0), 0);
     const avgTxn = filtered.length ? Math.round(totalRev / filtered.length) : 0;
     const lunasCount = filtered.filter(t => t.payment_status === 'Lunas').length;
     const methodLabel = {
@@ -1050,26 +1110,31 @@ async function renderReport(el) {
       card: 'Debit Card'
     };
 
-    const rows = filtered.map(t => `
-      <tr>
-        <td><span style="font-family:monospace; font-size:11px;">${t.id}</span></td>
-        <td>${new Date(t.date).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
-        <td>${t.customer_phone || '-'}</td>
-        <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
-        <td><span class="badge ${t.payment_status === 'Lunas' ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
-        <td style="font-weight:600;">${fmtRp(t.total)}</td>
-        <td style="font-size:11px; color:var(--text-muted);">${t.payment_method === 'cash' ? fmtRp(t.cash_amount || 0) : '-'}</td>
-        <td style="font-size:11px; color:var(--text-muted);">${t.payment_method === 'cash' ? fmtRp(t.cash_change || 0) : '-'}</td>
-        <td>
-          <div style="display:flex; gap:6px;">
-            <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
-            <button class="btn btn-outline btn-sm" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
-            <button class="btn btn-red btn-sm" onclick="deleteTransaction('${t.id}')" title="Hapus Transaksi"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
-            ${t.customer_phone ? `<button class="btn btn-green btn-sm" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
-          </div>
-        </td>
-      </tr>
-    `).join('');
+    const rows = filtered.map(t => {
+      const isLunas = t.payment_status === 'Lunas';
+      const isCash = t.payment_method === 'cash';
+      
+      return `
+        <tr>
+          <td><span style="font-family:monospace; font-size:11px;">${t.id}</span></td>
+          <td>${new Date(t.date).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
+          <td>${t.customer_phone || '-'}</td>
+          <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
+          <td><span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
+          <td style="font-weight:600;">${fmtRp(t.total)}</td>
+          <td style="font-size:11px; color:var(--text-muted);">${(isLunas && isCash) ? fmtRp(t.cash_amount || 0) : '-'}</td>
+          <td style="font-size:11px; color:var(--text-muted);">${(isLunas && isCash && (t.cash_change || 0) > 0) ? fmtRp(t.cash_change) : (isLunas && isCash ? 'Pas' : '-')}</td>
+          <td>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
+              <button class="btn btn-outline btn-sm" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
+              <button class="btn btn-red btn-sm" onclick="deleteTransaction('${t.id}')" title="Hapus Transaksi"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
+              ${t.customer_phone ? `<button class="btn btn-green btn-sm" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
     
     return `
       <div class="report-summary">
@@ -1098,7 +1163,7 @@ async function renderReport(el) {
         <div style="overflow-x:auto;">
           <table class="table">
             <thead><tr><th>ID</th><th>Waktu</th><th>WhatsApp</th><th>Metode</th><th>Status</th><th>Total</th><th>Bayar</th><th>Kembali</th><th>Aksi</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="9" style="text-align:center;">Tidak ada data transaksi</td></tr>'}</tbody>
+            <tbody>${rows || `<tr><td colspan="9" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada transaksi pada tanggal ${dateFilter}</td></tr>`}</tbody>
           </table>
         </div>
       </div>
@@ -1107,39 +1172,61 @@ async function renderReport(el) {
 
   el.innerHTML = `
     <div class="filter-bar">
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-        <span style="font-size:13px; font-weight:600; color:var(--text-muted);">FILTER:</span>
-        <select class="select-input" id="report-status-filter" onchange="applyReportFilters()">
-          <option value="Semua">Semua Status</option>
-          <option value="Lunas">Lunas</option>
-          <option value="Belum Bayar">Belum Bayar</option>
-        </select>
-        <select class="select-input" id="report-method-filter" onchange="applyReportFilters()">
-          <option value="Semua">Semua Metode</option>
-          <option value="cash">Tunai</option>
-          <option value="qris">QRIS</option>
-          <option value="transfer">Transfer</option>
-          <option value="card">Debit Card</option>
-        </select>
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; font-weight:600; color:var(--text-muted);">TANGGAL:</span>
+          <input type="date" class="form-input" id="report-date-filter" value="${today}" onchange="applyReportFilters()" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:auto;">
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; font-weight:600; color:var(--text-muted);">STATUS:</span>
+          <select class="select-input" id="report-status-filter" onchange="applyReportFilters()" style="padding:6px 10px; font-size:13px;">
+            <option value="Semua">Semua Status</option>
+            <option value="Lunas">Lunas</option>
+            <option value="Belum Bayar">Belum Bayar</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; font-weight:600; color:var(--text-muted);">METODE:</span>
+          <select class="select-input" id="report-method-filter" onchange="applyReportFilters()" style="padding:6px 10px; font-size:13px;">
+            <option value="Semua">Semua Metode</option>
+            <option value="cash">Tunai</option>
+            <option value="qris">QRIS</option>
+            <option value="transfer">Transfer</option>
+            <option value="card">Debit Card</option>
+          </select>
+        </div>
       </div>
       <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export CSV</button>
     </div>
-    <div id="report-container">${renderContent('Semua', 'Semua')}</div>
+    <div id="report-container">${renderContent(today, 'Semua', 'Semua')}</div>
   `;
+  
+  if (typeof flatpickr !== 'undefined') {
+    flatpickr('#report-date-filter', {
+      dateFormat: 'Y-m-d',
+      defaultDate: today,
+      onChange: (selectedDates, dateStr) => {
+        applyReportFilters();
+      }
+    });
+  }
+  
   if (typeof lucide !== 'undefined') lucide.createIcons();
-  window.renderReportTable = (status = 'Semua', method = 'Semua') => {
-    const html = renderContent(status, method);
+  
+  window.renderReportTable = (date = today, status = 'Semua', method = 'Semua') => {
+    const html = renderContent(date, status, method);
     if (typeof lucide !== 'undefined') {
-      // Jalankan setelah DOM terupdate
       requestAnimationFrame(() => lucide.createIcons());
     }
     return html;
   };
+  
   window.applyReportFilters = () => {
+    const date = document.getElementById('report-date-filter')?.value;
     const status = document.getElementById('report-status-filter')?.value || 'Semua';
     const method = document.getElementById('report-method-filter')?.value || 'Semua';
     const container = document.getElementById('report-container');
-    if (container) container.innerHTML = window.renderReportTable(status, method);
+    if (container) container.innerHTML = window.renderReportTable(date, status, method);
   };
 }
 
@@ -1205,26 +1292,6 @@ function renderInventory(el) {
 function renderInventoryRows(data) {
   if (!data || data.length === 0) return '<tr><td colspan="4" style="text-align:center; padding:30px; color:var(--text-muted);">Belum ada produk terdaftar.</td></tr>';
   
-  const getCategoryColor = (category) => {
-    switch(category) {
-      case 'Specialty Coffee': return '#D4A05A';
-      case 'Regular Coffee': return '#8B5320';
-      case 'Signature': return '#2D5A27';
-      case 'Non-Coffee': return '#C8602A';
-      default: return '#6B3F1A';
-    }
-  };
-
-  const getCategoryIcon = (category) => {
-    switch(category) {
-      case 'Specialty Coffee': return 'coffee';
-      case 'Regular Coffee': return 'coffee';
-      case 'Signature': return 'glass-water';
-      case 'Non-Coffee': return 'cup-soda';
-      default: return 'coffee';
-    }
-  };
-
   return data.map(p => {
     const bgColor = getCategoryColor(p.category);
     const icon = getCategoryIcon(p.category);
@@ -1285,7 +1352,7 @@ function editProduct(id) {
 
 async function saveProduct() {
   const name = document.getElementById('prod-name').value.trim();
-  const price = parseInt(document.getElementById('prod-price').value);
+  const price = parsePrice(document.getElementById('prod-price').value);
   const cat = document.getElementById('prod-category').value;
   if (!name || isNaN(price)) { showToast('Nama and harga wajib diisi!', 'error'); return; }
 
@@ -1302,7 +1369,12 @@ async function saveProduct() {
 
   if (!error) {
     showToast(editingProductId ? 'Produk diperbarui!' : 'Produk ditambahkan!', 'success');
-    addActivityLog(editingProductId ? 'Edit Produk' : 'Tambah Produk', `Nama: ${name}, Kategori: ${cat}, Harga: ${fmtRp(price)}`);
+    
+    const logDetails = editingProductId 
+      ? `Update Produk: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}\nID: ${editingProductId}`
+      : `Tambah Produk Baru: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}`;
+    
+    addActivityLog(editingProductId ? 'Edit Produk' : 'Tambah Produk', logDetails);
     await loadProducts();
     closeModal('modal-product');
   } else {
@@ -1311,20 +1383,21 @@ async function saveProduct() {
 }
 
 async function deleteProduct(id) {
+  const product = products.find(p => p.id === id);
+  const productName = product ? product.name : 'Unknown';
+
   showConfirmDialog({
     title: 'Hapus Produk?',
-    message: 'Produk ini akan dinonaktifkan dari sistem (histori transaksi tetap aman).',
+    message: `Hapus "${productName}"? Produk ini akan dinonaktifkan dari sistem (histori transaksi tetap aman).`,
     icon: 'trash-2',
     confirmText: 'Ya, Hapus',
     cancelText: 'Batal',
     onConfirm: async () => {
-      // Gunakan "Soft Delete" dengan mengubah status active menjadi false
-      // Ini agar histori transaksi lama tidak rusak/error
       const { error } = await db.from('products').update({ active: false }).eq('id', id);
       
       if (!error) {
         showToast('Produk berhasil dihapus!', 'success');
-        addActivityLog('Hapus Produk', `ID: ${id}`);
+        addActivityLog('Hapus Produk', `Produk: ${productName}\nID: ${id}\nStatus: Dinonaktifkan (Soft Delete)`);
         await loadProducts();
       } else {
         console.error('Delete Error:', error);
@@ -1508,35 +1581,6 @@ function renderSettings(el) {
       </div>
     </div>
     <style>.responsive-grid{display:grid; grid-template-columns:1fr 1fr;} @media(max-width:768px){.responsive-grid{grid-template-columns:1fr;}}</style>
-    
-    <div class="card" style="grid-column: 1 / -1; margin-top: 20px;">
-      <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="database" style="width:18px;height:18px;color:var(--accent);"></i> Backup & Pemulihan Data</h3></div>
-      <div class="card-body">
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;" class="responsive-grid">
-          <div>
-            <h4 style="margin-bottom:8px; font-size:14px; color:var(--brown-800);">Backup Manual</h4>
-            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Unduh seluruh data sistem (Menu, Transaksi, Pengguna) ke dalam satu file untuk cadangan lokal.</p>
-            <button class="btn btn-brown w-full" onclick="downloadSystemBackup()" style="display:flex; align-items:center; justify-content:center; gap:8px;">
-              <i data-lucide="download-cloud" style="width:18px;height:18px;"></i> Unduh Backup (JSON)
-            </button>
-          </div>
-          <div>
-            <h4 style="margin-bottom:8px; font-size:14px; color:var(--brown-800);">Ekspor Data Menu</h4>
-            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Ekspor daftar menu dan harga ke dalam format CSV agar dapat dibuka di Excel.</p>
-            <button class="btn btn-outline w-full" onclick="exportMenuToCSV()" style="display:flex; align-items:center; justify-content:center; gap:8px;">
-              <i data-lucide="file-spreadsheet" style="width:18px;height:18px;"></i> Ekspor Menu (CSV)
-            </button>
-          </div>
-        </div>
-        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
-          <div style="background:var(--brown-50); padding:12px; border-radius:8px; border:1px dashed var(--brown-200);">
-            <p style="font-size:11px; color:var(--brown-700); line-height:1.5;">
-              <strong>Info Backup Otomatis:</strong> Sistem ini sudah dilengkapi dengan pencadangan harian otomatis ke server GitHub setiap pukul 00:00 WIB. Backup manual di atas berguna sebagai cadangan tambahan di perangkat Anda sendiri.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
   `;
 }
 
@@ -1641,7 +1685,24 @@ function renderManual(el) {
 async function viewTxnDetail(id) {
   const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
   if (error || !txn) { showToast('Gagal memuat detail transaksi!', 'error'); return; }
-  let itemHtml = txn.transaction_items.map(i => `
+
+  // Kelompokkan item identik untuk tampilan detail
+  const groupedItems = txn.transaction_items.reduce((acc, item) => {
+    const existing = acc.find(i => 
+      i.product_id === item.product_id && 
+      i.price === item.price && 
+      (i.item_note || '') === (item.item_note || '') && 
+      JSON.stringify(i.selected_variants || []) === JSON.stringify(item.selected_variants || [])
+    );
+    if (existing) {
+      existing.qty += item.qty;
+    } else {
+      acc.push({ ...item });
+    }
+    return acc;
+  }, []);
+
+  let itemHtml = groupedItems.map(i => `
     <div style="padding:10px; border-bottom:1px solid var(--border);"><div style="display:flex; justify-content:space-between; gap:12px; font-weight:600;"><span style="display:flex; align-items:center; gap:6px;"><i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name} x${i.qty}</span><span>${fmtRp(i.price * i.qty)}</span></div>${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}</div>
   `).join('');
   const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${new Date(txn.date).toLocaleString('id-ID')}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>Metode:</strong> ${txn.payment_method.toUpperCase()}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div>${txn.payment_method === 'cash' ? `<div style="display:flex; justify-content:space-between; font-size:13px; margin-top:4px;"><span>BAYAR</span><span>${fmtRp(txn.cash_amount || 0)}</span></div><div style="display:flex; justify-content:space-between; font-size:13px; margin-top:2px;"><span>KEMBALI</span><span>${fmtRp(txn.cash_change || 0)}</span></div>` : ''}</div>`;
@@ -1658,14 +1719,11 @@ async function viewTxnDetail(id) {
   `;
 }
 
-function getRevenueSeries(txns, period) {
-  const now = new Date();
+function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
+  const refDate = new Date(selectedDateStr + 'T12:00:00');
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
   const dateKey = (date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return getIndoDate(date);
   };
 
   if (period === 'daily') {
@@ -1673,8 +1731,9 @@ function getRevenueSeries(txns, period) {
     const values = labels.map(() => 0);
     txns.forEach(t => {
       const d = new Date(t.date);
-      if (d.toDateString() === now.toDateString()) {
-        const hour = d.getHours();
+      if (getIndoDate(d) === selectedDateStr) {
+        // Ambil jam dalam zona waktu Jakarta
+        const hour = parseInt(new Intl.DateTimeFormat('id-ID', { hour: 'numeric', hour12: false, timeZone: 'Asia/Jakarta' }).format(d));
         if (hour >= 8 && hour < 10) values[0] += Number(t.total) || 0;
         else if (hour >= 10 && hour < 12) values[1] += Number(t.total) || 0;
         else if (hour >= 12 && hour < 14) values[2] += Number(t.total) || 0;
@@ -1685,11 +1744,11 @@ function getRevenueSeries(txns, period) {
         else if (hour >= 22) values[7] += Number(t.total) || 0;
       }
     });
-    return { labels, values, title: 'Pendapatan Hari Ini' };
+    return { labels, values, title: `Pendapatan Tanggal ${selectedDateStr}` };
   }
 
   if (period === 'yearly') {
-    const startYear = now.getFullYear() - 4;
+    const startYear = refDate.getFullYear() - 4;
     const labels = Array.from({ length: 5 }, (_, i) => String(startYear + i));
     const values = labels.map(() => 0);
     txns.forEach(t => {
@@ -1705,16 +1764,16 @@ function getRevenueSeries(txns, period) {
     const values = labels.map(() => 0);
     txns.forEach(t => {
       const d = new Date(t.date);
-      if (d.getFullYear() === now.getFullYear()) values[d.getMonth()] += Number(t.total) || 0;
+      if (d.getFullYear() === refDate.getFullYear()) values[d.getMonth()] += Number(t.total) || 0;
     });
-    return { labels, values, title: 'Pendapatan Bulanan' };
+    return { labels, values, title: `Pendapatan Bulanan (${refDate.getFullYear()})` };
   }
 
   const labels = [];
   const keys = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
+    const d = new Date(refDate);
+    d.setDate(refDate.getDate() - i);
     labels.push(d.toLocaleDateString('id-ID', { weekday: 'short' }));
     keys.push(dateKey(d));
   }
@@ -1724,14 +1783,17 @@ function getRevenueSeries(txns, period) {
     const idx = keys.indexOf(key);
     if (idx >= 0) values[idx] += Number(t.total) || 0;
   });
-  return { labels, values, title: 'Pendapatan Mingguan' };
+  return { labels, values, title: `Pendapatan Mingguan (s/d ${selectedDateStr})` };
 }
 
 function renderDashboardRevenueChart(period = 'weekly') {
   const ctx = document.getElementById('revenueChart');
   if (!ctx || typeof Chart === 'undefined') return;
 
-  const series = getRevenueSeries(window.dashboardTxns || [], period);
+  const dateInput = document.getElementById('dashboard-date-filter');
+  const selectedDateStr = dateInput ? dateInput.value : getIndoDate();
+
+  const series = getRevenueSeries(window.dashboardTxns || [], period, selectedDateStr);
   const titleEl = document.getElementById('revenue-chart-title');
   if (titleEl) titleEl.innerHTML = `<i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> ${series.title}`;
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -1772,6 +1834,7 @@ function renderDashboardRevenueChart(period = 'weekly') {
 let activeDashboardPeriod = 'daily';
 
 async function renderDashboard(el) {
+  const today = getIndoDate();
   el.innerHTML = `
     <div class="dashboard-hero">
       <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px;">
@@ -1779,11 +1842,17 @@ async function renderDashboard(el) {
           <h2>Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
           <p>Berikut adalah ringkasan performa KopiSembilan.</p>
         </div>
-        <div class="period-tabs" style="background:var(--brown-50); padding:4px; border-radius:12px; border:1px solid var(--brown-100);">
-          <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')">Hari Ini</button>
-          <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')">Mingguan</button>
-          <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')">Bulanan</button>
-          <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')">Tahunan</button>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px; background:white; padding:6px 12px; border-radius:12px; border:1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+            <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
+            <input type="date" class="form-input" id="dashboard-date-filter" value="${today}" onchange="renderDashboardContent()" style="border:none; padding:0; font-size:13px; width:auto; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
+          </div>
+          <div class="period-tabs" style="background:var(--brown-50); padding:4px; border-radius:12px; border:1px solid var(--brown-100);">
+            <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')">Harian</button>
+            <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')">Mingguan</button>
+            <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')">Bulanan</button>
+            <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')">Tahunan</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1791,6 +1860,16 @@ async function renderDashboard(el) {
       <div style="text-align:center; padding:40px; color:var(--text-muted);">Memuat data dashboard...</div>
     </div>
   `;
+  
+  if (typeof flatpickr !== 'undefined') {
+    flatpickr('#dashboard-date-filter', {
+      dateFormat: 'Y-m-d',
+      defaultDate: today,
+      onChange: (selectedDates, dateStr) => {
+        renderDashboardContent();
+      }
+    });
+  }
   
   let txns = [];
   try {
@@ -1815,25 +1894,33 @@ function renderDashboardContent() {
   if (!area) return;
 
   const txns = window.dashboardTxns || [];
-  const now = new Date();
+  const dateInput = document.getElementById('dashboard-date-filter');
+  const selectedDateStr = dateInput ? dateInput.value : getIndoDate();
+  
+  // Buat objek Date referensi dari tanggal yang dipilih (tengah hari agar aman dari DST/offset)
+  const refDate = new Date(selectedDateStr + 'T12:00:00');
   
   const filteredTxns = txns.filter(t => {
     const d = new Date(t.date);
+    const dIndo = getIndoDate(d);
+    
     if (activeDashboardPeriod === 'daily') {
-      return d.toDateString() === now.toDateString();
+      return dIndo === selectedDateStr;
     } else if (activeDashboardPeriod === 'weekly') {
-      const weekAgo = new Date(now);
-      weekAgo.setDate(now.getDate() - 7);
-      return d >= weekAgo;
+      const weekAgo = new Date(refDate);
+      weekAgo.setDate(refDate.getDate() - 7);
+      return d >= weekAgo && d <= new Date(selectedDateStr + 'T23:59:59');
     } else if (activeDashboardPeriod === 'monthly') {
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return d.getMonth() === refDate.getMonth() && d.getFullYear() === refDate.getFullYear();
     } else if (activeDashboardPeriod === 'yearly') {
-      return d.getFullYear() === now.getFullYear();
+      return d.getFullYear() === refDate.getFullYear();
     }
     return true;
   });
 
-  const totalRev = filteredTxns.reduce((s, t) => s + (Number(t.total) || 0), 0);
+  const totalRev = filteredTxns
+    .filter(t => t.payment_status === 'Lunas')
+    .reduce((s, t) => s + (Number(t.total) || 0), 0);
   const totalCount = filteredTxns.length;
 
   const itemCounts = {};
@@ -1961,7 +2048,18 @@ function updateClock() {
   const el = document.getElementById('current-datetime');
   if (el) {
     const now = new Date();
-    el.textContent = now.toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: 'short' }) + ' ' + now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = now.toLocaleDateString('id-ID', { 
+      weekday: 'short', 
+      day: '2-digit', 
+      month: 'short',
+      timeZone: 'Asia/Jakarta'
+    });
+    const timeStr = now.toLocaleTimeString('id-ID', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      timeZone: 'Asia/Jakarta'
+    });
+    el.textContent = `${dateStr} ${timeStr}`;
   }
 }
 setInterval(updateClock, 1000);
@@ -2043,6 +2141,42 @@ function syncShortcutChips(targetId) {
 let currentEditingTxnItems = [];
 let currentEditingTxn = null;
 
+function toggleEditCashInput() {
+  const status = document.getElementById('edit-txn-status').value;
+  const method = document.getElementById('edit-txn-method').value;
+  const wrap = document.getElementById('edit-cash-input-wrap');
+  
+  if (status === 'Lunas' && method === 'cash') {
+    wrap.style.display = 'block';
+    calcEditChange();
+  } else {
+    wrap.style.display = 'none';
+    const display = document.getElementById('edit-change-display');
+    if (display) display.style.display = 'none';
+  }
+}
+
+function calcEditChange() {
+  const status = document.getElementById('edit-txn-status').value;
+  const method = document.getElementById('edit-txn-method').value;
+  if (status !== 'Lunas' || method !== 'cash') return;
+
+  const newTotal = currentEditingTxnItems.reduce((sum, item) => {
+    return sum + (item.removed ? 0 : item.price * item.qty);
+  }, 0);
+  
+  const paid = parsePrice(document.getElementById('edit-txn-cash-input').value);
+  const changeEl = document.getElementById('edit-change-display');
+  const changeAmtEl = document.getElementById('edit-txn-change-amount');
+  
+  if (paid >= newTotal) {
+    if (changeEl) changeEl.style.display = 'block';
+    if (changeAmtEl) changeAmtEl.textContent = fmtRp(paid - newTotal);
+  } else {
+    if (changeEl) changeEl.style.display = 'none';
+  }
+}
+
 async function editTransaction(id) {
   try {
     const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
@@ -2055,6 +2189,9 @@ async function editTransaction(id) {
     document.getElementById('edit-txn-method').value = txn.payment_method || 'cash';
     document.getElementById('edit-txn-status').value = txn.payment_status || 'Lunas';
     document.getElementById('edit-txn-notes').value = txn.notes || '';
+    
+    const cashInput = document.getElementById('edit-txn-cash-input');
+    if (cashInput) cashInput.value = txn.cash_amount || '';
 
     currentEditingTxnItems = txn.transaction_items.map(i => ({
       id: i.id,
@@ -2068,15 +2205,22 @@ async function editTransaction(id) {
     }));
 
     renderEditTxnItems();
+    toggleEditCashInput(); // Panggil ini untuk set visibilitas input tunai
     openModal('modal-edit-txn');
   } catch (e) { showToast('Terjadi kesalahan!', 'error'); }
 }
 
 function renderEditTxnItems() {
   const container = document.getElementById('edit-txn-items-list');
+  const totalDisplay = document.getElementById('edit-txn-total-display');
   if (!container) return;
 
   const visibleItems = currentEditingTxnItems.filter(i => !i.removed);
+  const newTotal = currentEditingTxnItems.reduce((sum, item) => {
+    return sum + (item.removed ? 0 : item.price * item.qty);
+  }, 0);
+
+  if (totalDisplay) totalDisplay.textContent = fmtRp(newTotal);
   
   if (visibleItems.length === 0) {
     container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Tidak ada item dalam pesanan.</div>';
@@ -2102,6 +2246,7 @@ function renderEditTxnItems() {
   }).join('');
   
   if (typeof lucide !== 'undefined') lucide.createIcons();
+  calcEditChange(); // Update kembalian saat item berubah
 }
 
 function changeEditItemQty(idx, delta) {
@@ -2129,6 +2274,7 @@ async function saveTransactionEdit() {
   const method = document.getElementById('edit-txn-method').value;
   const status = document.getElementById('edit-txn-status').value;
   const notes = document.getElementById('edit-txn-notes').value.trim();
+  const cashAmount = parsePrice(document.getElementById('edit-txn-cash-input').value);
 
   try {
     // 1. Hitung total baru berdasarkan item yang diedit
@@ -2137,19 +2283,16 @@ async function saveTransactionEdit() {
     }, 0);
 
     // 2. Hitung ulang kembalian jika metode pembayaran tunai
-    let cashChange = currentEditingTxn ? (currentEditingTxn.cash_change || 0) : 0;
-    if (currentEditingTxn && currentEditingTxn.payment_method === 'cash') {
-      const cashAmount = currentEditingTxn.cash_amount || 0;
-      // Jika total baru lebih kecil, kembalian bertambah
-      // Jika total baru lebih besar, kembalian berkurang
-      cashChange = cashAmount - newTotal;
-      if (cashChange < 0 && status === 'Lunas') {
-        showToast('Peringatan: Total pesanan melebihi jumlah bayar!', 'error');
-        // Jangan batalkan save, tapi beri tahu user
+    let cashChange = 0;
+    if (method === 'cash' && status === 'Lunas') {
+      const numCashAmount = Number(cashAmount) || 0;
+      const numNewTotal = Number(newTotal) || 0;
+      
+      if (numCashAmount < numNewTotal) {
+        showToast('Jumlah bayar kurang!', 'error');
+        return;
       }
-    } else if (method !== 'cash') {
-      // Jika berubah ke non-tunai, reset info tunai
-      cashChange = 0;
+      cashChange = numCashAmount - numNewTotal;
     }
 
     // 3. Update transaksi utama
@@ -2159,13 +2302,10 @@ async function saveTransactionEdit() {
       payment_status: status,
       notes: notes,
       total: newTotal,
+      cash_amount: method === 'cash' ? cashAmount : 0,
       cash_change: cashChange
     };
     
-    if (method !== 'cash') {
-      updateData.cash_amount = 0;
-    }
-
     const { error: txnErr } = await db.from('transactions').update(updateData).eq('id', id);
 
     if (txnErr) throw txnErr;
@@ -2182,7 +2322,18 @@ async function saveTransactionEdit() {
     }
 
     showToast('Transaksi dan pesanan diperbarui!', 'success');
-    addActivityLog('Edit Transaksi & Pesanan', `ID: ${id}, Total Baru: ${fmtRp(newTotal)}`);
+    
+    // Log detail edit transaksi termasuk catatan per item
+    const itemsSummary = currentEditingTxnItems
+      .filter(i => !i.removed)
+      .map(i => {
+        let itemLine = `- ${i.name} x${i.qty}`;
+        if (i.item_note) itemLine += ` [Note: ${i.item_note}]`;
+        return itemLine;
+      }).join('\n');
+    const logDetails = `ID: ${id}\nTotal Baru: ${fmtRp(newTotal)}\nStatus: ${status}\nMetode: ${method}\nCatatan Transaksi Baru: ${notes || '-'}\nItem Aktif:\n${itemsSummary}`;
+    
+    addActivityLog('Edit Transaksi & Pesanan', logDetails);
     closeModal('modal-edit-txn');
     
     // Refresh laporan jika sedang di halaman laporan
@@ -2302,35 +2453,145 @@ function downloadReceiptImage(txnId) {
 async function renderLogs(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat log aktivitas...</div>`;
   
-  let logs = [];
-  try {
-    const { data, error } = await db.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100);
-    if (!error && data) logs = data;
-  } catch(e) { console.error('Load logs fail', e); }
+  const today = getIndoDate();
+  
+  const loadData = async (dateFilter = today) => {
+    let logs = [];
+    try {
+      // Filter berdasarkan range waktu 00:00:00 sampai 23:59:59 (WIB)
+      const start = `${dateFilter}T00:00:00+07:00`;
+      const end = `${dateFilter}T23:59:59+07:00`;
+      
+      const { data, error } = await db
+        .from('activity_logs')
+        .select('*')
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .order('created_at', { ascending: false });
+        
+      if (!error && data) logs = data;
+    } catch(e) { console.error('Load logs fail', e); }
+    
+    window.activityLogs = logs;
+    return logs;
+  };
 
-  const rows = logs.map(l => `
-    <tr>
-      <td><div style="font-size:12px; color:var(--text-muted);">${new Date(l.created_at).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</div></td>
-      <td><strong>${l.user_name}</strong> <span class="badge ${l.user_role === 'admin' ? 'badge-amber' : 'badge-blue'}" style="font-size:9px; padding:1px 6px;">${l.user_role.toUpperCase()}</span></td>
-      <td><span style="font-weight:600; color:var(--brown-800);">${l.action}</span></td>
-      <td><div style="font-size:11px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeAttr(l.details || '')}">${l.details || '-'}</div></td>
-    </tr>
-  `).join('');
+  const renderTable = (logs) => {
+    const rows = logs.map(l => `
+      <tr>
+        <td><div style="font-size:12px; color:var(--text-muted);">${new Date(l.created_at).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</div></td>
+        <td><strong>${l.user_name}</strong> <span class="badge ${l.user_role === 'admin' ? 'badge-amber' : 'badge-blue'}" style="font-size:9px; padding:1px 6px;">${l.user_role.toUpperCase()}</span></td>
+        <td><span style="font-weight:600; color:var(--brown-800);">${l.action}</span></td>
+        <td><div style="font-size:11px; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.details || '-'}</div></td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="viewLogDetail(${l.id})" title="Lihat Detail">
+            <i data-lucide="eye" style="width:14px;height:14px;"></i>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+    
+    return rows || `<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada aktivitas pada tanggal ${document.getElementById('log-date-filter')?.value || today}</td></tr>`;
+  };
 
   el.innerHTML = `
     <div class="inv-actions">
-      <div style="flex:1;"><h3 style="font-family:'DM Serif Display'; font-size:20px; color:var(--brown-800);">Riwayat Aktivitas</h3><p style="font-size:12px; color:var(--text-muted);">Memantau 100 tindakan terakhir yang dilakukan di sistem.</p></div>
+      <div style="flex:1;">
+        <h3 style="font-family:'DM Serif Display'; font-size:20px; color:var(--brown-800);">Riwayat Aktivitas</h3>
+        <p style="font-size:12px; color:var(--text-muted);">Memantau tindakan yang dilakukan di sistem.</p>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; background:white; padding:6px 12px; border-radius:12px; border:1px solid var(--border); margin-right:12px;">
+        <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
+        <input type="date" class="form-input" id="log-date-filter" value="${today}" style="border:none; padding:0; font-size:13px; width:auto; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
+      </div>
       <button class="btn btn-outline btn-sm" onclick="showPage('logs')"><i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Refresh</button>
     </div>
     <div class="card">
       <div style="overflow-x:auto;">
         <table class="table">
-          <thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Detail</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="4" style="text-align:center; padding:30px;">Belum ada catatan aktivitas.</td></tr>'}</tbody>
+          <thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Detail Singkat</th><th>Aksi</th></tr></thead>
+          <tbody id="log-table-body"></tbody>
         </table>
       </div>
     </div>
   `;
+
+  const tbody = document.getElementById('log-table-body');
+  
+  // Inisialisasi Flatpickr
+  if (typeof flatpickr !== 'undefined') {
+    flatpickr('#log-date-filter', {
+      dateFormat: 'Y-m-d',
+      defaultDate: today,
+      onChange: async (selectedDates, dateStr) => {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:30px;">Memuat data...</td></tr>';
+        const logs = await loadData(dateStr);
+        tbody.innerHTML = renderTable(logs);
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+    });
+  }
+
+  // Load data awal
+  const logs = await loadData(today);
+  tbody.innerHTML = renderTable(logs);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+/**
+ * Menampilkan detail lengkap dari satu entri log aktivitas
+ */
+function viewLogDetail(id) {
+  const log = (window.activityLogs || []).find(l => l.id === id);
+  if (!log) return;
+  
+  const detailHtml = `
+    <div style="font-family:'DM Sans', sans-serif; font-size:13px; line-height:1.6; color:var(--text);">
+      <div style="background:var(--brown-50); padding:15px; border-radius:12px; border:1px solid var(--brown-100); margin-bottom:15px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text-muted); font-weight:600;">WAKTU</span>
+          <span style="font-weight:600;">${new Date(log.created_at).toLocaleString('id-ID', {day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'})}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text-muted); font-weight:600;">PENGGUNA</span>
+          <span style="font-weight:600;">${log.user_name} (${log.user_role.toUpperCase()})</span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:var(--text-muted); font-weight:600;">JENIS AKSI</span>
+          <span style="badge badge-brown" style="padding:2px 8px; border-radius:4px;">${log.action}</span>
+        </div>
+      </div>
+      
+      <div style="margin-top:20px;">
+        <h4 style="font-size:12px; color:var(--text-muted); font-weight:700; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+          <i data-lucide="info" style="width:14px;height:14px;"></i> Detail Informasi Lengkap
+        </h4>
+        <div style="background:white; padding:15px; border-radius:12px; border:1px solid var(--border); min-height:80px; word-break:break-word; white-space:pre-wrap; font-family:monospace; font-size:12px; color:var(--brown-900);">
+          ${log.details || 'Tidak ada detail tambahan yang tercatat.'}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  const preview = document.getElementById('receipt-preview');
+  if (preview) preview.innerHTML = detailHtml;
+  
+  const modal = document.getElementById('modal-payment');
+  if (modal) {
+    modal.classList.add('open');
+    const title = modal.querySelector('.modal-header h3');
+    if (title) title.innerHTML = `<i data-lucide="activity" style="width:20px;height:20px;color:var(--brown-800);"></i> Detail Aktivitas`;
+    
+    // Sembunyikan input pembayaran
+    const payInputs = modal.querySelector('.modal-body > div:nth-child(2)');
+    if (payInputs) payInputs.style.display = 'none';
+    
+    const footer = modal.querySelector('.modal-footer');
+    if (footer) {
+      footer.innerHTML = `<button class="btn btn-brown w-full" onclick="closeModal('modal-payment')">Tutup Detail</button>`;
+    }
+  }
+  
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -2345,79 +2606,6 @@ async function addActivityLog(action, details = '') {
       details: details
     }]);
     if (error) console.error('Add log error:', error.message, error.details);
-  } catch(e) { console.error('Add log fail', e); }
-}
-
-/**
- * Mengunduh seluruh data sistem sebagai file JSON untuk backup manual
- */
-async function downloadSystemBackup() {
-  showToast('Menyiapkan file backup...', 'info');
-  try {
-    const tables = ['products', 'categories', 'users', 'transactions', 'transaction_items', 'settings'];
-    const backupData = {
-      timestamp: new Date().toISOString(),
-      store: storeInfo.name,
-      data: {}
-    };
-
-    for (const table of tables) {
-      const { data, error } = await db.from(table).select('*');
-      if (!error) {
-        backupData.data[table] = data;
-      }
+    } catch(e) { console.error('Add log fail', e); }
     }
-
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Backup_KopiSembilan_${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    showToast('Backup berhasil diunduh!', 'success');
-    addActivityLog('Backup Sistem', 'Unduh file JSON backup manual');
-  } catch (e) {
-    console.error('Backup error:', e);
-    showToast('Gagal membuat backup!', 'error');
-  }
-}
-
-/**
- * Mengekspor daftar menu ke format CSV agar mudah dibuka di Excel
- */
-function exportMenuToCSV() {
-  if (!products || products.length === 0) {
-    showToast('Tidak ada data menu untuk diekspor', 'error');
-    return;
-  }
-
-  let csvContent = "data:text/csv;charset=utf-8,";
-  csvContent += "ID,Nama Menu,Kategori,Harga Dasar,Status Aktif\n";
-
-  products.forEach(p => {
-    const row = [
-      p.id,
-      `"${p.name}"`,
-      `"${p.category}"`,
-      p.base_price,
-      p.active ? 'Aktif' : 'Non-Aktif'
-    ];
-    csvContent += row.join(",") + "\n";
-  });
-
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `Daftar_Menu_KopiSembilan_${new Date().toISOString().slice(0,10)}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  showToast('Daftar menu berhasil diekspor!', 'success');
-  addActivityLog('Ekspor Menu', 'Unduh file CSV daftar menu');
-}
 
