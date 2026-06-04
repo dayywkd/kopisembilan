@@ -807,7 +807,7 @@ function openPayment() {
         <p style="font-size:11px; color:#666;">${storeInfo.address}</p>
       </div>
       <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
-      <div style="font-size:12px; display:flex; justify-content:space-between;"><span>${now.toLocaleDateString('id-ID')}</span><span>${now.toLocaleTimeString('id-ID')}</span></div>
+      <div style="font-size:12px; display:flex; justify-content:space-between;"><span>${getIndoDateTime(now, { dateStyle: 'medium' })}</span><span>${getIndoTimeString(now)}</span></div>
       <div style="font-size:12px;">Kasir: ${currentUser ? currentUser.name : 'Staf'}</div>
       <div style="font-size:12px;">ID: ${txnId}</div>
       <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
@@ -1052,7 +1052,7 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
   let message = waTemplate
     .replace('[NAMA_TOKO]', storeInfo.name)
     .replace('[ID_TXN]', txnId)
-    .replace('[TANGGAL]', new Date().toLocaleDateString('id-ID'))
+    .replace('[TANGGAL]', getIndoDateTime(new Date(), { dateStyle: 'medium' }))
     .replace('[ITEMS]', itemsText)
     .replace('[TOTAL]', fmtRp(total));
 
@@ -1064,9 +1064,27 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
 // ══════════════════════════════════════════════
 // REPORTS
 // ══════════════════════════════════════════════
-// Helper untuk mendapatkan tanggal format YYYY-MM-DD di zona waktu Indonesia
+// Helper untuk mendapatkan tanggal/waktu di zona waktu Indonesia
 function getIndoDate(date = new Date()) {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Jakarta' }).format(date);
+}
+
+function getIndoDateTime(date = new Date(), options = {}) {
+  const defaultOptions = {
+    timeZone: 'Asia/Jakarta',
+    ...options
+  };
+  return new Intl.DateTimeFormat('id-ID', defaultOptions).format(date);
+}
+
+function getIndoTimeString(date = new Date(), options = {}) {
+  const defaultOptions = {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...options
+  };
+  return new Intl.DateTimeFormat('id-ID', defaultOptions).format(date);
 }
 
 async function renderReport(el) {
@@ -1117,7 +1135,7 @@ async function renderReport(el) {
       return `
         <tr>
           <td><span style="font-family:monospace; font-size:11px;">${t.id}</span></td>
-          <td>${new Date(t.date).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
+          <td>${getIndoDateTime(new Date(t.date), {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
           <td>${t.customer_phone || '-'}</td>
           <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
           <td><span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
@@ -1242,7 +1260,7 @@ function exportToCSV() {
   txns.forEach(t => {
     const row = [
       t.id,
-      new Date(t.date).toLocaleString('id-ID').replace(/,/g, ''),
+      getIndoDateTime(new Date(t.date)).replace(/,/g, ''),
       t.customer_phone || '-',
       t.payment_method,
       t.payment_status,
@@ -1257,7 +1275,7 @@ function exportToCSV() {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", "Laporan_KopiSembilan_" + new Date().toISOString().slice(0,10) + ".csv");
+  link.setAttribute("download", "Laporan_KopiSembilan_" + getIndoDate() + ".csv");
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1705,7 +1723,7 @@ async function viewTxnDetail(id) {
   let itemHtml = groupedItems.map(i => `
     <div style="padding:10px; border-bottom:1px solid var(--border);"><div style="display:flex; justify-content:space-between; gap:12px; font-weight:600;"><span style="display:flex; align-items:center; gap:6px;"><i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name} x${i.qty}</span><span>${fmtRp(i.price * i.qty)}</span></div>${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}</div>
   `).join('');
-  const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${new Date(txn.date).toLocaleString('id-ID')}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>Metode:</strong> ${txn.payment_method.toUpperCase()}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div>${txn.payment_method === 'cash' ? `<div style="display:flex; justify-content:space-between; font-size:13px; margin-top:4px;"><span>BAYAR</span><span>${fmtRp(txn.cash_amount || 0)}</span></div><div style="display:flex; justify-content:space-between; font-size:13px; margin-top:2px;"><span>KEMBALI</span><span>${fmtRp(txn.cash_change || 0)}</span></div>` : ''}</div>`;
+  const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${getIndoDateTime(new Date(txn.date))}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>Metode:</strong> ${txn.payment_method.toUpperCase()}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div>${txn.payment_method === 'cash' ? `<div style="display:flex; justify-content:space-between; font-size:13px; margin-top:4px;"><span>BAYAR</span><span>${fmtRp(txn.cash_amount || 0)}</span></div><div style="display:flex; justify-content:space-between; font-size:13px; margin-top:2px;"><span>KEMBALI</span><span>${fmtRp(txn.cash_change || 0)}</span></div>` : ''}</div>`;
   document.getElementById('receipt-preview').innerHTML = detailHtml;
   if (typeof lucide !== 'undefined') lucide.createIcons();
   document.getElementById('modal-payment').classList.add('open');
@@ -1722,9 +1740,9 @@ async function viewTxnDetail(id) {
 function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
   const refDate = new Date(selectedDateStr + 'T12:00:00');
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  const dateKey = (date) => {
-    return getIndoDate(date);
-  };
+  
+  const getJakartaYear = (d) => parseInt(new Intl.DateTimeFormat('id-ID', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d));
+  const getJakartaMonth = (d) => parseInt(new Intl.DateTimeFormat('id-ID', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(d)) - 1;
 
   if (period === 'daily') {
     const labels = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
@@ -1748,12 +1766,12 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
   }
 
   if (period === 'yearly') {
-    const startYear = refDate.getFullYear() - 4;
+    const startYear = getJakartaYear(refDate) - 4;
     const labels = Array.from({ length: 5 }, (_, i) => String(startYear + i));
     const values = labels.map(() => 0);
     txns.forEach(t => {
       const d = new Date(t.date);
-      const idx = d.getFullYear() - startYear;
+      const idx = getJakartaYear(d) - startYear;
       if (idx >= 0 && idx < values.length) values[idx] += Number(t.total) || 0;
     });
     return { labels, values, title: 'Pendapatan Tahunan' };
@@ -1764,9 +1782,9 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
     const values = labels.map(() => 0);
     txns.forEach(t => {
       const d = new Date(t.date);
-      if (d.getFullYear() === refDate.getFullYear()) values[d.getMonth()] += Number(t.total) || 0;
+      if (getJakartaYear(d) === getJakartaYear(refDate)) values[getJakartaMonth(d)] += Number(t.total) || 0;
     });
-    return { labels, values, title: `Pendapatan Bulanan (${refDate.getFullYear()})` };
+    return { labels, values, title: `Pendapatan Bulanan (${getJakartaYear(refDate)})` };
   }
 
   const labels = [];
@@ -1774,12 +1792,12 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date(refDate);
     d.setDate(refDate.getDate() - i);
-    labels.push(d.toLocaleDateString('id-ID', { weekday: 'short' }));
-    keys.push(dateKey(d));
+    labels.push(getIndoDateTime(d, { weekday: 'short' }));
+    keys.push(getIndoDate(d));
   }
   const values = labels.map(() => 0);
   txns.forEach(t => {
-    const key = dateKey(new Date(t.date));
+    const key = getIndoDate(new Date(t.date));
     const idx = keys.indexOf(key);
     if (idx >= 0) values[idx] += Number(t.total) || 0;
   });
@@ -1909,11 +1927,18 @@ function renderDashboardContent() {
     } else if (activeDashboardPeriod === 'weekly') {
       const weekAgo = new Date(refDate);
       weekAgo.setDate(refDate.getDate() - 7);
-      return d >= weekAgo && d <= new Date(selectedDateStr + 'T23:59:59');
+      const weekAgoStr = getIndoDate(weekAgo);
+      return dIndo >= weekAgoStr && dIndo <= selectedDateStr;
     } else if (activeDashboardPeriod === 'monthly') {
-      return d.getMonth() === refDate.getMonth() && d.getFullYear() === refDate.getFullYear();
+      const dMonth = new Intl.DateTimeFormat('id-ID', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const dYear = new Intl.DateTimeFormat('id-ID', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const refMonth = new Intl.DateTimeFormat('id-ID', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      const refYear = new Intl.DateTimeFormat('id-ID', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      return dMonth === refMonth && dYear === refYear;
     } else if (activeDashboardPeriod === 'yearly') {
-      return d.getFullYear() === refDate.getFullYear();
+      const dYear = new Intl.DateTimeFormat('id-ID', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const refYear = new Intl.DateTimeFormat('id-ID', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      return dYear === refYear;
     }
     return true;
   });
@@ -1972,7 +1997,7 @@ function renderDashboardContent() {
     <div class="dashboard-list-row">
       <div class="recent-transaction-main">
         <div class="recent-transaction-id">${t.id}</div>
-        <div class="item-meta">${new Date(t.date).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})} - ${t.payment_method.toUpperCase()}</div>
+        <div class="item-meta">${getIndoTimeString(new Date(t.date))} - ${t.payment_method.toUpperCase()}</div>
       </div>
       <div class="recent-transaction-total">
         <div>${fmtRp(t.total)}</div>
@@ -2479,7 +2504,7 @@ async function renderLogs(el) {
   const renderTable = (logs) => {
     const rows = logs.map(l => `
       <tr>
-        <td><div style="font-size:12px; color:var(--text-muted);">${new Date(l.created_at).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</div></td>
+        <td><div style="font-size:12px; color:var(--text-muted);">${getIndoDateTime(new Date(l.created_at), {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</div></td>
         <td><strong>${l.user_name}</strong> <span class="badge ${l.user_role === 'admin' ? 'badge-amber' : 'badge-blue'}" style="font-size:9px; padding:1px 6px;">${l.user_role.toUpperCase()}</span></td>
         <td><span style="font-weight:600; color:var(--brown-800);">${l.action}</span></td>
         <td><div style="font-size:11px; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.details || '-'}</div></td>
@@ -2550,7 +2575,7 @@ function viewLogDetail(id) {
       <div style="background:var(--brown-50); padding:15px; border-radius:12px; border:1px solid var(--brown-100); margin-bottom:15px;">
         <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
           <span style="color:var(--text-muted); font-weight:600;">WAKTU</span>
-          <span style="font-weight:600;">${new Date(log.created_at).toLocaleString('id-ID', {day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'})}</span>
+          <span style="font-weight:600;">${getIndoDateTime(new Date(log.created_at), {day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'})}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
           <span style="color:var(--text-muted); font-weight:600;">PENGGUNA</span>
