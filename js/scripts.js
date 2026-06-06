@@ -813,8 +813,9 @@ function openPayment() {
       <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
       ${groupedCart.map(c => `
         <div style="margin-bottom:6px;">
-          <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
-            <span>${c.name} x${c.qty}</span>
+          <div style="font-size:12px; font-weight:600;">${c.name}</div>
+          <div style="display:flex; justify-content:space-between; font-size:12px;">
+            <span>${c.qty} x ${fmtRp(c.totalPrice)}</span>
             <span>${fmtRp(c.totalPrice * c.qty)}</span>
           </div>
           ${c.variants && c.variants.length > 0 ? `<div style="font-size:10px; color:#666; font-style:italic;">${c.variants.map(v => v.name).join(', ')}</div>` : ''}
@@ -1044,7 +1045,7 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
   }, []);
 
   const itemsText = groupedItems.map(c => {
-    let text = `• ${c.name} x${c.qty} = ${fmtRp(c.totalPrice * c.qty)}`;
+    let text = `• ${c.name}\n  ${c.qty} x ${fmtRp(c.totalPrice)} = ${fmtRp(c.totalPrice * c.qty)}`;
     if (c.note) text += `\n  Note: ${c.note}`;
     return text;
   }).join('\n');
@@ -1721,7 +1722,17 @@ async function viewTxnDetail(id) {
   }, []);
 
   let itemHtml = groupedItems.map(i => `
-    <div style="padding:10px; border-bottom:1px solid var(--border);"><div style="display:flex; justify-content:space-between; gap:12px; font-weight:600;"><span style="display:flex; align-items:center; gap:6px;"><i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name} x${i.qty}</span><span>${fmtRp(i.price * i.qty)}</span></div>${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}</div>
+    <div style="padding:10px; border-bottom:1px solid var(--border);">
+      <div style="font-weight:600; display:flex; align-items:center; gap:6px;">
+        <i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name}
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:12px; font-size:12px;">
+        <span>${i.qty} x ${fmtRp(i.price)}</span>
+        <span>${fmtRp(i.price * i.qty)}</span>
+      </div>
+      ${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}
+      ${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}
+    </div>
   `).join('');
   const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${getIndoDateTime(new Date(txn.date))}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>Metode:</strong> ${txn.payment_method.toUpperCase()}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div>${txn.payment_method === 'cash' ? `<div style="display:flex; justify-content:space-between; font-size:13px; margin-top:4px;"><span>BAYAR</span><span>${fmtRp(txn.cash_amount || 0)}</span></div><div style="display:flex; justify-content:space-between; font-size:13px; margin-top:2px;"><span>KEMBALI</span><span>${fmtRp(txn.cash_change || 0)}</span></div>` : ''}</div>`;
   document.getElementById('receipt-preview').innerHTML = detailHtml;
