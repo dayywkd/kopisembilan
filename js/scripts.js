@@ -1177,14 +1177,28 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
     const modalInput = document.getElementById('phone-modal-input');
     if (modalInput) modalInput.value = '';
     
+    const footer = document.querySelector('#modal-phone .modal-footer');
+    const originalFooterHTML = footer ? footer.innerHTML : '';
+    
+    if (footer) {
+      // Ubah tampilan footer secara dinamis karena jenis kiriman sudah diketahui
+      footer.innerHTML = `
+        <div style="display:flex; gap:10px; width:100%; margin-top:10px;">
+          <button class="btn btn-outline" style="flex:1;" onclick="processPhoneAction('none')">Batal</button>
+          <button class="btn btn-brown" style="flex:1;" onclick="processPhoneAction('send')">Simpan & Lanjutkan</button>
+        </div>
+      `;
+    }
+
     // Ubah sementara aksi tombol di modal-phone untuk keperluan ini
     const originalProcess = window.processPhoneAction;
     
     // Kita buat wrapper agar saat disubmit dari modal, proses ini berlanjut
     window.processPhoneAction = async function(mode) {
       if (mode === 'none') {
-        showToast("Pengiriman dibatalkan, nomor WA tidak diisi.", "info");
+        showToast("Pengiriman dibatalkan.", "info");
         closeModal('modal-phone');
+        if (footer) footer.innerHTML = originalFooterHTML; // Kembalikan footer
         window.processPhoneAction = originalProcess; // Kembalikan ke fungsi asli
         return;
       }
@@ -1210,14 +1224,15 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
         }
       }
       
-      // Lanjutkan pengiriman
-      if (mode === 'image' || (mode !== 'text' && type === 'image')) {
+      // Lanjutkan pengiriman (type diambil dari scope luar wrapper)
+      if (type === 'image') {
          sendWhatsAppImageReceipt(targetPhone, txnId, total, items);
       } else {
          sendWhatsAppReceipt(targetPhone, txnId, total, items);
       }
       
-      // Kembalikan ke fungsi asli
+      // Kembalikan ke fungsi asli dan footer asli
+      if (footer) footer.innerHTML = originalFooterHTML;
       window.processPhoneAction = originalProcess;
     };
     
