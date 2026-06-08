@@ -1166,6 +1166,39 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
   window.open(waUrl, '_blank');
 }
 
+/**
+ * Meminta nomor WA jika belum ada, menyimpannya, lalu mengirim struk
+ */
+async function promptAndSendWA(type, phone, txnId, total, items) {
+  let targetPhone = phone;
+  
+  if (!targetPhone) {
+    targetPhone = prompt("Nomor WhatsApp pelanggan kosong.\\nMasukkan nomor WhatsApp untuk mengirim struk:");
+    
+    if (!targetPhone) {
+      showToast("Pengiriman dibatalkan, nomor WA tidak diisi.", "info");
+      return;
+    }
+    
+    // Simpan ke database agar tidak perlu dimasukkan lagi nanti
+    const { error } = await db.from('transactions').update({ customer_phone: targetPhone }).eq('id', txnId);
+    if (!error) {
+      showToast("Nomor WA berhasil disimpan.", "success");
+      // Perbarui juga data di laporan yang sedang tampil
+      if (window.currentReportTxns) {
+        const txnInReport = window.currentReportTxns.find(t => t.id === txnId);
+        if (txnInReport) txnInReport.customer_phone = targetPhone;
+      }
+    }
+  }
+  
+  if (type === 'image') {
+    sendWhatsAppImageReceipt(targetPhone, txnId, total, items);
+  } else {
+    sendWhatsAppReceipt(targetPhone, txnId, total, items);
+  }
+}
+
 // ══════════════════════════════════════════════
 // REPORTS
 // ══════════════════════════════════════════════
@@ -1892,10 +1925,10 @@ async function viewTxnDetail(id) {
     const formattedItems = JSON.stringify(groupedItems.map(i => ({ name: i.products?.name, qty: i.qty, totalPrice: i.price, note: i.item_note }))).replace(/"/g, '&quot;');
     footer.innerHTML = `
       <div style="display:flex; gap:10px; width:100%; flex-wrap:wrap; justify-content:center; padding-top:10px;">
-        <button class="btn btn-green" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="sendWhatsAppImageReceipt('${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+        <button class="btn btn-green" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('image', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
           <i data-lucide="image" style="width:16px;height:16px;"></i> WA Gambar
         </button>
-        <button class="btn btn-outline" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="sendWhatsAppReceipt('${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+        <button class="btn btn-outline" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('text', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
           <i data-lucide="message-square" style="width:16px;height:16px;"></i> WA Teks
         </button>
         <button class="btn btn-red" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="closeModal('modal-payment')">
@@ -2030,7 +2063,7 @@ async function renderDashboard(el) {
       <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px;">
         <div>
           <h2>Halo, ${currentUser ? currentUser.name : 'User'}!</h2>
-          <p>Berikut adalah ringkasan performa KopiSembilan.</p>
+          <p>Berikut adalah ringkasan performa Toko Kopi Sembilan.</p>
         </div>
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
           <div style="display:flex; align-items:center; gap:8px; background:white; padding:6px 12px; border-radius:12px; border:1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
@@ -2554,11 +2587,6 @@ async function resendWhatsAppReceipt(id) {
     showToast('Gagal memuat data transaksi!', 'error'); 
     return; 
   }
-  
-  if (!txn.customer_phone) {
-    showToast('Nomor WhatsApp tidak tersimpan untuk transaksi ini!', 'error');
-    return;
-  }
 
   // Format item agar sesuai dengan yang diharapkan sendWhatsAppReceipt
   const formattedItems = txn.transaction_items.map(i => ({
@@ -2568,7 +2596,7 @@ async function resendWhatsAppReceipt(id) {
     note: i.item_note
   }));
 
-  sendWhatsAppReceipt(txn.customer_phone, txn.id, txn.total, formattedItems);
+  promptAndSendWA('text', txn.customer_phone || '', txn.id, txn.total, formattedItems);
 }
 
 /**
