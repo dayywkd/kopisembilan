@@ -328,13 +328,18 @@
         <p style="font-size:11px; color:var(--text-muted); margin-top:8px;">Struk akan dikirimkan ke nomor ini melalui WhatsApp.</p>
       </div>
     </div>
-    <div class="modal-footer" style="flex-direction:column; gap:8px;">
-      <button class="btn btn-green w-full" style="display:flex; align-items:center; justify-content:center; gap:8px;" onclick="processPhoneAction(true)">
-        <i data-lucide="send" style="width:18px;height:18px;"></i> Kirim Sekarang
-      </button>
-      <div style="display:flex; gap:8px; width:100%;">
+    <div class="modal-footer" style="flex-direction:column; gap:10px; padding-top:10px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; width:100%;">
+        <button class="btn btn-green" style="display:flex; align-items:center; justify-content:center; gap:6px; padding:12px 6px; font-size:13px;" onclick="processPhoneAction('image')">
+          <i data-lucide="image" style="width:16px;height:16px;"></i> Kirim Gambar
+        </button>
+        <button class="btn btn-blue" style="display:flex; align-items:center; justify-content:center; gap:6px; padding:12px 6px; font-size:13px;" onclick="processPhoneAction('text')">
+          <i data-lucide="message-square" style="width:16px;height:16px;"></i> Kirim Teks
+        </button>
+      </div>
+      <div style="display:flex; gap:10px; width:100%;">
         <button class="btn btn-outline" style="flex:1;" onclick="closeModal('modal-phone')">Batal</button>
-        <button class="btn btn-brown" style="flex:1;" onclick="processPhoneAction(false)">Simpan Saja</button>
+        <button class="btn btn-brown" style="flex:1;" onclick="processPhoneAction('none')">Lewati & Selesai</button>
       </div>
     </div>
   </div>

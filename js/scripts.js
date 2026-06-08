@@ -717,15 +717,17 @@ function resetPaymentModalForCheckout() {
 
   const footer = document.querySelector('#modal-payment .modal-footer');
   if (footer) {
-  footer.innerHTML = `
-    <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
-    <div style="display:flex; gap:8px; width:100%;">
-      <button class="btn btn-green" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="confirmPaymentWithWA()">
-        <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA
-      </button>
-      <button class="btn btn-brown" style="flex:1.5;" onclick="confirmPayment(false)">Selesai</button>
-    </div>
-  `;
+    footer.innerHTML = `
+      <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
+      <div style="display:flex; gap:8px; width:100%;">
+        <button class="btn btn-green" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="confirmPaymentWithWA()">
+          <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA
+        </button>
+        <button class="btn btn-brown" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="confirmPayment('none')">
+          <i data-lucide="check" style="width:18px;height:18px;"></i> Selesai
+        </button>
+      </div>
+    `;
   }
 
   selectedPaymentMethod = 'cash';
@@ -758,14 +760,14 @@ function confirmPaymentWithWA() {
 
 /**
  * Memproses aksi dari modal input nomor WA
- * @param {boolean} sendNow 
+ * @param {string} mode - 'image', 'text', or 'none'
  */
-function processPhoneAction(sendNow) {
+function processPhoneAction(mode) {
   const modalInput = document.getElementById('phone-modal-input');
   const phoneEl = document.getElementById('customer-phone');
   const phone = modalInput ? modalInput.value.trim() : '';
 
-  if (!phone) {
+  if (mode !== 'none' && !phone) {
     showToast("Nomor WhatsApp wajib diisi!", "error");
     if (modalInput) modalInput.focus();
     return;
@@ -773,11 +775,37 @@ function processPhoneAction(sendNow) {
 
   if (phoneEl) phoneEl.value = phone;
   closeModal('modal-phone');
-  confirmPayment(sendNow);
+  confirmPayment(mode);
 }
 
 function openPayment() {
   resetPaymentModalForCheckout();
+  
+  const statusSelect = document.getElementById('payment-status');
+  if (statusSelect) {
+    statusSelect.onchange = () => updateReceiptPreviewContent();
+  }
+
+  updateReceiptPreviewContent();
+
+  const cashIn = document.getElementById('cash-input');
+  const custPhone = document.getElementById('customer-phone');
+  const txnNote = document.getElementById('txn-note');
+  const changeDisp = document.getElementById('change-display');
+
+  if (cashIn) cashIn.value = '';
+  if (custPhone) custPhone.value = '';
+  if (txnNote) txnNote.value = '';
+  if (changeDisp) changeDisp.style.display = 'none';
+  
+  openModal('modal-payment');
+}
+
+/**
+ * Fungsi untuk memperbarui isi pratinjau struk
+ */
+function updateReceiptPreviewContent() {
+  const status = document.getElementById('payment-status')?.value || 'Lunas';
   
   // Kelompokkan item yang identik untuk pratinjau struk
   const groupedCart = cart.reduce((acc, item) => {
@@ -797,50 +825,59 @@ function openPayment() {
 
   const total = groupedCart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const now = new Date();
-  const txnId = 'TXN-' + now.toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
+  const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
   
   const preview = document.getElementById('receipt-preview');
   if (preview) {
     preview.innerHTML = `
-      <div style="text-align:center; margin-bottom:10px;">
-        <h2 style="font-family:'DM Serif Display';">${storeInfo.name}</h2>
-        <p style="font-size:11px; color:#666;">${storeInfo.address}</p>
-      </div>
-      <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
-      <div style="font-size:12px; display:flex; justify-content:space-between;"><span>${getIndoDateTime(now, { dateStyle: 'medium' })}</span><span>${getIndoTimeString(now)}</span></div>
-      <div style="font-size:12px;">Kasir: ${currentUser ? currentUser.name : 'Staf'}</div>
-      <div style="font-size:12px;">ID: ${txnId}</div>
-      <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
-      ${groupedCart.map(c => `
-        <div style="margin-bottom:6px;">
-          <div style="font-size:12px; font-weight:600;">${c.name}</div>
-          <div style="display:flex; justify-content:space-between; font-size:12px;">
-            <span>${c.qty} x ${fmtRp(c.totalPrice)}</span>
-            <span>${fmtRp(c.totalPrice * c.qty)}</span>
-          </div>
-          ${c.variants && c.variants.length > 0 ? `<div style="font-size:10px; color:#666; font-style:italic;">${c.variants.map(v => v.name).join(', ')}</div>` : ''}
-          ${c.note ? `<div style="font-size:10px; color:#888;">Note: ${c.note}</div>` : ''}
+      <div class="receipt" id="receipt-capture">
+        <div class="receipt-header">
+          <div class="receipt-logo">${storeInfo.name}</div>
+          <p style="font-size:10px; color:#666; margin:0;">${storeInfo.address}</p>
+          <p style="font-size:10px; color:#666; margin:0;">WA: ${storeInfo.phone}</p>
         </div>
-      `).join('')}
-      <hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">
-      <div style="display:flex; justify-content:space-between; font-weight:700; font-size:14px;">
-        <span>TOTAL</span>
-        <span>${fmtRp(total)}</span>
+        
+        <div class="receipt-info">
+          <span>Tgl: ${getIndoDateTime(now, { dateStyle: 'medium' })}</span>
+          <span>Jam: ${getIndoTimeString(now)}</span>
+        </div>
+        <div class="receipt-info">
+          <span>ID: ${txnId}</span>
+          <span>Kasir: ${currentUser ? currentUser.name : 'Kasir'}</span>
+        </div>
+        
+        <hr class="receipt-divider">
+        
+        <div class="receipt-items">
+          ${groupedCart.map(c => `
+            <div class="receipt-item">
+              <div class="receipt-item-name">${c.name}</div>
+              <div class="receipt-item-details">
+                <span>${c.qty} x ${fmtRp(c.totalPrice)}</span>
+                <span>${fmtRp(c.totalPrice * c.qty)}</span>
+              </div>
+              ${c.variants && c.variants.length > 0 ? `<div style="font-size:10px; color:#666; font-style:italic; margin-left:10px;">- ${c.variants.map(v => v.name).join(', ')}</div>` : ''}
+              ${c.note ? `<div style="font-size:10px; color:#888; margin-left:10px;">* ${c.note}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        
+        <hr class="receipt-divider">
+        
+        <div class="receipt-total-row">
+          <span>TOTAL</span>
+          <span>${fmtRp(total)}</span>
+        </div>
+        
+        ${status === 'Belum Bayar' ? `<div class="receipt-status">BELUM LUNAS</div>` : ''}
+        
+        <div class="receipt-footer">
+          <p style="margin:2px 0;">Terima Kasih Atas Kunjungan Anda</p>
+          <p style="margin:10px 0 0; font-weight:bold; letter-spacing:1px;">KOPI SEMBILAN</p>
+        </div>
       </div>
     `;
   }
-
-  const cashIn = document.getElementById('cash-input');
-  const custPhone = document.getElementById('customer-phone');
-  const txnNote = document.getElementById('txn-note');
-  const changeDisp = document.getElementById('change-display');
-
-  if (cashIn) cashIn.value = '';
-  if (custPhone) custPhone.value = '';
-  if (txnNote) txnNote.value = '';
-  if (changeDisp) changeDisp.style.display = 'none';
-  
-  openModal('modal-payment');
 }
 
 function calcChange() {
@@ -902,7 +939,10 @@ function cancelCashierEdit() {
   });
 }
 
-async function confirmPayment(sendWA = false) {
+/**
+ * @param {string} sendMode - 'image', 'text', or 'none'
+ */
+async function confirmPayment(sendMode = 'none') {
   if (isProcessingPayment) return;
 
   if (cart.length === 0) {
@@ -920,7 +960,7 @@ async function confirmPayment(sendWA = false) {
   // Gunakan ID lama jika sedang edit, jika tidak buat ID baru (Gunakan tanggal Indonesia)
   const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
 
-  if (sendWA && !phone) {
+  if (sendMode !== 'none' && !phone) {
     showToast('Masukkan nomor WA untuk kirim struk!', 'error');
     if (phoneEl) phoneEl.focus();
     return;
@@ -931,7 +971,7 @@ async function confirmPayment(sendWA = false) {
   if (selectedPaymentMethod === 'cash') {
     cashAmount = parsePrice(document.getElementById('cash-input').value);
     if (cashAmount < total && status === 'Lunas') { showToast('Jumlah bayar kurang!', 'error'); return; }
-    cashChange = cashAmount - total;
+    cashChange = Math.max(0, cashAmount - total);
   }
 
   isProcessingPayment = true;
@@ -985,7 +1025,11 @@ async function confirmPayment(sendWA = false) {
     const { error: itemsErr } = await db.from('transaction_items').insert(itemsToInsert);
     if (itemsErr) throw itemsErr;
 
-    if (sendWA && phone) sendWhatsAppReceipt(phone, txnId, total, cart);
+    if (sendMode === 'image' && phone) {
+      sendWhatsAppImageReceipt(phone, txnId, total, cart);
+    } else if (sendMode === 'text' && phone) {
+      sendWhatsAppReceipt(phone, txnId, total, cart);
+    }
 
     showToast(editingTransactionId ? 'Transaksi diperbarui!' : 'Transaksi Berhasil!', 'success');
     
@@ -1026,6 +1070,66 @@ function formatPhoneWA(phone) {
   else if (nomor.startsWith('8')) nomor = '62' + nomor;
   else if (nomor.startsWith('+')) nomor = nomor.replace('+', '');
   return nomor;
+}
+
+/**
+ * Mengirim struk sebagai gambar ke WhatsApp menggunakan html2canvas dan Web Share API
+ */
+async function sendWhatsAppImageReceipt(phone, txnId, total, items) {
+  const element = document.getElementById('receipt-capture');
+  if (!element) {
+    // Fallback ke teks jika elemen capture tidak ditemukan
+    sendWhatsAppReceipt(phone, txnId, total, items);
+    return;
+  }
+
+  showToast('Menyiapkan gambar struk...', 'info');
+
+  try {
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: true
+    });
+
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], `struk-${txnId}.png`, { type: 'image/png' });
+      
+      // Cek apakah browser mendukung sharing file
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `Struk ${storeInfo.name}`,
+            text: `Struk Belanja #${txnId} - Total: ${fmtRp(total)}`
+          });
+        } catch (shareErr) {
+          console.log("Share cancelled or failed", shareErr);
+          // Fallback 1: Download
+          downloadCanvas(canvas, `struk-${txnId}.png`);
+          sendWhatsAppReceipt(phone, txnId, total, items);
+        }
+      } else {
+        // Fallback 2: Desktop / Browser Tanpa Share API
+        downloadCanvas(canvas, `struk-${txnId}.png`);
+        sendWhatsAppReceipt(phone, txnId, total, items);
+        showToast('Gambar struk diunduh. Silakan lampirkan manual.', 'info');
+      }
+    }, 'image/png');
+  } catch (err) {
+    console.error('Capture error:', err);
+    sendWhatsAppReceipt(phone, txnId, total, items);
+  }
+}
+
+function downloadCanvas(canvas, filename) {
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = canvas.toDataURL('image/png');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function sendWhatsAppReceipt(phone, txnId, total, items) {
@@ -1721,31 +1825,88 @@ async function viewTxnDetail(id) {
     return acc;
   }, []);
 
-  let itemHtml = groupedItems.map(i => `
-    <div style="padding:10px; border-bottom:1px solid var(--border);">
-      <div style="font-weight:600; display:flex; align-items:center; gap:6px;">
-        <i data-lucide="coffee" style="width:14px;height:14px;flex-shrink:0;"></i>${i.products?.name}
+  const isBelumBayar = txn.payment_status === 'Belum Bayar';
+
+  const detailHtml = `
+    <div class="receipt" id="receipt-capture">
+      <div class="receipt-header">
+        <div class="receipt-logo">${storeInfo.name}</div>
+        <p style="font-size:10px; color:#666; margin:0;">${storeInfo.address}</p>
+        <p style="font-size:10px; color:#666; margin:0;">WA: ${storeInfo.phone}</p>
       </div>
-      <div style="display:flex; justify-content:space-between; gap:12px; font-size:12px;">
-        <span>${i.qty} x ${fmtRp(i.price)}</span>
-        <span>${fmtRp(i.price * i.qty)}</span>
+      
+      <div class="receipt-info">
+        <span>Tgl: ${getIndoDateTime(new Date(txn.date), { dateStyle: 'medium' })}</span>
+        <span>Jam: ${getIndoTimeString(new Date(txn.date))}</span>
       </div>
-      ${i.selected_variants ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}
-      ${i.item_note ? `<div style="font-size:11px; color:var(--brown-500);">Note: ${i.item_note}</div>` : ''}
+      <div class="receipt-info">
+        <span>ID: ${txn.id}</span>
+        <span>Kasir: ${txn.cashier_name}</span>
+      </div>
+      
+      <hr class="receipt-divider">
+      
+      <div class="receipt-items">
+        ${groupedItems.map(i => `
+          <div class="receipt-item">
+            <div class="receipt-item-name">${i.products?.name}</div>
+            <div class="receipt-item-details">
+              <span>${i.qty} x ${fmtRp(i.price)}</span>
+              <span>${fmtRp(i.price * i.qty)}</span>
+            </div>
+            ${i.selected_variants && i.selected_variants.length > 0 ? `<div style="font-size:10px; color:#666; font-style:italic; margin-left:10px;">- ${i.selected_variants.map(v => v.name).join(', ')}</div>` : ''}
+            ${i.item_note ? `<div style="font-size:10px; color:#888; margin-left:10px;">* ${i.item_note}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      
+      <hr class="receipt-divider">
+      
+      <div class="receipt-total-row">
+        <span>TOTAL</span>
+        <span>${fmtRp(txn.total)}</span>
+      </div>
+      
+      ${txn.payment_method === 'cash' && !isBelumBayar ? `
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px; opacity:0.8;"><span>BAYAR (TUNAI)</span><span>${fmtRp(txn.cash_amount || 0)}</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:2px; opacity:0.8;"><span>KEMBALIAN</span><span>${fmtRp(Math.max(0, txn.cash_change || 0))}</span></div>
+      ` : !isBelumBayar ? `<div style="font-size:12px; margin-top:4px; opacity:0.8; text-align:right;">Metode: ${String(txn.payment_method).toUpperCase()}</div>` : ''}
+      
+      ${isBelumBayar ? `<div class="receipt-status">BELUM LUNAS</div>` : ''}
+      
+      <div class="receipt-footer">
+        <p style="margin:2px 0;">Terima Kasih Atas Kunjungan Anda</p>
+        <p style="margin:10px 0 0; font-weight:bold; letter-spacing:1px;">KOPI SEMBILAN</p>
+      </div>
     </div>
-  `).join('');
-  const detailHtml = `<div style="font-family:'Courier New', monospace; font-size:13px;"><p><strong>ID:</strong> ${txn.id}</p><p><strong>Waktu:</strong> ${getIndoDateTime(new Date(txn.date))}</p><p><strong>Kasir:</strong> ${txn.cashier_name}</p><p><strong>Status:</strong> ${txn.payment_status}</p><p><strong>Metode:</strong> ${txn.payment_method.toUpperCase()}</p><p><strong>WA:</strong> ${txn.customer_phone || '-'}</p>${txn.notes ? `<p><strong>Note:</strong> ${txn.notes}</p>` : ''}<hr style="border:none; border-top:1px dashed #ccc; margin:10px 0;">${itemHtml}<div style="display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:10px;"><span>TOTAL</span><span>${fmtRp(txn.total)}</span></div>${txn.payment_method === 'cash' ? `<div style="display:flex; justify-content:space-between; font-size:13px; margin-top:4px;"><span>BAYAR</span><span>${fmtRp(txn.cash_amount || 0)}</span></div><div style="display:flex; justify-content:space-between; font-size:13px; margin-top:2px;"><span>KEMBALI</span><span>${fmtRp(txn.cash_change || 0)}</span></div>` : ''}</div>`;
+  `;
   document.getElementById('receipt-preview').innerHTML = detailHtml;
   if (typeof lucide !== 'undefined') lucide.createIcons();
   document.getElementById('modal-payment').classList.add('open');
   const modalTitle = document.querySelector('#modal-payment .modal-header h3');
-  if (modalTitle) modalTitle.textContent = 'Detail Transaksi';
+  if (modalTitle) modalTitle.innerHTML = `<i data-lucide="eye" style="width:20px;height:20px;color:var(--brown-800);"></i> Detail Transaksi`;
   const payInputs = document.querySelector('#modal-payment .modal-body > div:nth-child(2)');
   if (payInputs) payInputs.style.display = 'none';
   const footer = document.querySelector('#modal-payment .modal-footer');
-  if (footer) footer.innerHTML = `
-    <button class="btn btn-brown w-full" onclick="closeModal('modal-payment'); showPage('report');">Tutup</button>
-  `;
+  if (footer) {
+    const formattedItems = JSON.stringify(groupedItems.map(i => ({ name: i.products?.name, qty: i.qty, totalPrice: i.price, note: i.item_note }))).replace(/"/g, '&quot;');
+    footer.innerHTML = `
+      <div style="display:flex; gap:10px; width:100%; flex-wrap:wrap; justify-content:center; padding-top:10px;">
+        <button class="btn btn-green" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="sendWhatsAppImageReceipt('${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+          <i data-lucide="image" style="width:16px;height:16px;"></i> WA Gambar
+        </button>
+        <button class="btn btn-outline" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="sendWhatsAppReceipt('${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+          <i data-lucide="message-square" style="width:16px;height:16px;"></i> WA Teks
+        </button>
+        <button class="btn btn-red" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="closeModal('modal-payment')">
+          <i data-lucide="x" style="width:16px;height:16px;"></i> Tutup
+        </button>
+      </div>
+    `;
+  }
+  
+  // Render ulang ikon untuk elemen HTML yang baru saja ditambahkan di atas (khususnya header dan footer)
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {

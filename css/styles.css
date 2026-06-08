@@ -1195,6 +1195,99 @@ body {
   to   { transform: translateX(0); opacity: 1; }
 }
 
+/* ─── RECEIPT STYLING ─── */
+.receipt {
+  background: white;
+  padding: 30px 20px;
+  color: #333;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  border-radius: 4px;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.receipt-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.receipt-logo {
+  font-family: 'DM Serif Display', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--brown-900);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  border-bottom: 3px double var(--brown-900);
+  display: inline-block;
+  padding-bottom: 2px;
+}
+
+.receipt-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.receipt-divider {
+  border: none;
+  border-top: 1px dashed #ccc;
+  margin: 12px 0;
+}
+
+.receipt-item {
+  margin-bottom: 8px;
+}
+
+.receipt-item-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.receipt-item-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.receipt-item-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.receipt-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 15px;
+  margin-top: 5px;
+}
+
+.receipt-footer {
+  text-align: center;
+  margin-top: 30px;
+  font-size: 11px;
+  color: #666;
+}
+
+.receipt-status {
+  text-align: center;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 15px 0;
+  letter-spacing: 2px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 4px;
+  display: inline-block;
+  width: 100%;
+}
+
 /* ─── RESPONSIVE UTILITIES ─── */
 .mobile-only { display: none !important; }
 .desktop-only { display: block !important; }
