@@ -1173,23 +1173,57 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
   let targetPhone = phone;
   
   if (!targetPhone) {
-    targetPhone = prompt("Nomor WhatsApp pelanggan kosong.\\nMasukkan nomor WhatsApp untuk mengirim struk:");
+    // Gunakan custom modal alih-alih native prompt
+    const modalInput = document.getElementById('phone-modal-input');
+    if (modalInput) modalInput.value = '';
     
-    if (!targetPhone) {
-      showToast("Pengiriman dibatalkan, nomor WA tidak diisi.", "info");
-      return;
-    }
+    // Ubah sementara aksi tombol di modal-phone untuk keperluan ini
+    const originalProcess = window.processPhoneAction;
     
-    // Simpan ke database agar tidak perlu dimasukkan lagi nanti
-    const { error } = await db.from('transactions').update({ customer_phone: targetPhone }).eq('id', txnId);
-    if (!error) {
-      showToast("Nomor WA berhasil disimpan.", "success");
-      // Perbarui juga data di laporan yang sedang tampil
-      if (window.currentReportTxns) {
-        const txnInReport = window.currentReportTxns.find(t => t.id === txnId);
-        if (txnInReport) txnInReport.customer_phone = targetPhone;
+    // Kita buat wrapper agar saat disubmit dari modal, proses ini berlanjut
+    window.processPhoneAction = async function(mode) {
+      if (mode === 'none') {
+        showToast("Pengiriman dibatalkan, nomor WA tidak diisi.", "info");
+        closeModal('modal-phone');
+        window.processPhoneAction = originalProcess; // Kembalikan ke fungsi asli
+        return;
       }
-    }
+      
+      const newPhone = modalInput ? modalInput.value.trim() : '';
+      if (!newPhone) {
+        showToast("Nomor WhatsApp wajib diisi!", "error");
+        if (modalInput) modalInput.focus();
+        return;
+      }
+      
+      closeModal('modal-phone');
+      targetPhone = newPhone;
+      
+      // Simpan ke database agar tidak perlu dimasukkan lagi nanti
+      const { error } = await db.from('transactions').update({ customer_phone: targetPhone }).eq('id', txnId);
+      if (!error) {
+        showToast("Nomor WA berhasil disimpan.", "success");
+        // Perbarui juga data di laporan yang sedang tampil
+        if (window.currentReportTxns) {
+          const txnInReport = window.currentReportTxns.find(t => t.id === txnId);
+          if (txnInReport) txnInReport.customer_phone = targetPhone;
+        }
+      }
+      
+      // Lanjutkan pengiriman
+      if (mode === 'image' || (mode !== 'text' && type === 'image')) {
+         sendWhatsAppImageReceipt(targetPhone, txnId, total, items);
+      } else {
+         sendWhatsAppReceipt(targetPhone, txnId, total, items);
+      }
+      
+      // Kembalikan ke fungsi asli
+      window.processPhoneAction = originalProcess;
+    };
+    
+    openModal('modal-phone');
+    if (modalInput) setTimeout(() => modalInput.focus(), 200);
+    return; // Eksekusi dilanjutkan di dalam callback
   }
   
   if (type === 'image') {
