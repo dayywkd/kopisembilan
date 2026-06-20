@@ -953,7 +953,7 @@ async function confirmPayment(sendMode = 'none') {
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const phoneEl = document.getElementById('customer-phone');
   const phone = phoneEl ? phoneEl.value.trim() : '';
-  const status = document.getElementById('payment-status').value;
+  const status = document.getElementById('payment-status')?.value || 'Lunas';
   const note = document.getElementById('txn-note').value.trim();
   const now = new Date();
   
