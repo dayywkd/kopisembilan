@@ -249,6 +249,39 @@ async function loadStoreInfo() {
   } catch (e) { console.log('Store info fail', e); }
 }
 
+async function fetchAllTransactions() {
+  let allTxns = [];
+  let from = 0;
+  let to = 999;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const { data, error } = await db
+      .from('transactions')
+      .select('*, transaction_items(*)')
+      .order('date', { ascending: false })
+      .range(from, to);
+      
+    if (error) {
+      console.error('Error fetching transactions batch:', error);
+      break;
+    }
+    
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allTxns = allTxns.concat(data);
+      if (data.length < 1000) {
+        hasMore = false;
+      } else {
+        from += 1000;
+        to += 1000;
+      }
+    }
+  }
+  return allTxns;
+}
+
 async function saveStoreInfo() {
   const name = document.getElementById('settings-store-name').value.trim();
   const address = document.getElementById('settings-store-address').value.trim();
@@ -327,6 +360,7 @@ function showPage(page) {
   
   const content = document.getElementById('page-content');
   if (content) {
+    content.classList.remove('fade-in-up');
     content.innerHTML = '';
     const renders = {
       dashboard: renderDashboard, cashier: renderCashier, inventory: renderInventory,
@@ -334,6 +368,11 @@ function showPage(page) {
       logs: renderLogs
     };
     if (renders[page]) renders[page](content);
+    
+    // Memicu reflow agar animasi terpicu ulang
+    void content.offsetWidth;
+    content.classList.add('fade-in-up');
+    
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
   closeSidebar();
@@ -1052,9 +1091,18 @@ async function confirmPayment(sendMode = 'none') {
     closeModal('modal-payment');
     
     const pageTitle = document.getElementById('page-title').textContent;
-    if (pageTitle === 'Dashboard') renderDashboard(document.getElementById('page-content'));
-    else if (pageTitle.includes('Laporan')) renderReport(document.getElementById('page-content'));
-    else showPage('report');
+    const content = document.getElementById('page-content');
+    if (content) {
+      content.classList.remove('fade-in-up');
+      if (pageTitle === 'Dashboard') renderDashboard(content);
+      else if (pageTitle.includes('Laporan')) renderReport(content);
+      else { showPage('report'); return; }
+      
+      void content.offsetWidth;
+      content.classList.add('fade-in-up');
+    } else {
+      showPage('report');
+    }
 
   } catch (e) {
     console.error(e);
@@ -1282,26 +1330,50 @@ async function renderReport(el) {
   
   let txns = [];
   try {
-    let { data, error } = await db
-      .from('transactions')
-      .select('*, transaction_items(*)')
-      .order('date', { ascending: false });
-    
-    if (!error && data) {
-      txns = data;
-    }
+    txns = await fetchAllTransactions();
   } catch (e) {
     console.error('Report load fail', e);
   }
 
-  const renderContent = (dateFilter = today, status = 'Semua', method = 'Semua') => {
+  let currentSortKey = 'date';
+  let currentSortDirection = 'desc';
+
+  window.toggleReportSort = (key) => {
+    if (currentSortKey === key) {
+      currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSortKey = key;
+      currentSortDirection = 'desc';
+    }
+    window.applyReportFilters();
+  };
+
+  const renderContent = (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
     const filtered = txns.filter(t => {
       // Bandingkan tanggal transaksi di zona waktu Indonesia
       const tDate = getIndoDate(new Date(t.date));
-      const matchesDate = !dateFilter || tDate === dateFilter;
+      const matchesDate = (!startDate || tDate >= startDate) && (!endDate || tDate <= endDate);
       const matchesStatus = status === 'Semua' || t.payment_status === status;
       const matchesMethod = method === 'Semua' || t.payment_method === method;
       return matchesDate && matchesStatus && matchesMethod;
+    });
+    
+    // Lakukan pengurutan (Sorting)
+    filtered.sort((a, b) => {
+      let valA, valB;
+      if (currentSortKey === 'total') {
+        valA = Number(a.total) || 0;
+        valB = Number(b.total) || 0;
+      } else {
+        valA = new Date(a.date).getTime();
+        valB = new Date(b.date).getTime();
+      }
+
+      if (currentSortDirection === 'asc') {
+        return valA - valB;
+      } else {
+        return valB - valA;
+      }
     });
     
     window.currentReportTxns = filtered; 
@@ -1367,8 +1439,24 @@ async function renderReport(el) {
       <div class="card">
         <div style="overflow-x:auto;">
           <table class="table">
-            <thead><tr><th>ID</th><th>Waktu</th><th>WhatsApp</th><th>Metode</th><th>Status</th><th>Total</th><th>Bayar</th><th>Kembali</th><th>Aksi</th></tr></thead>
-            <tbody>${rows || `<tr><td colspan="9" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada transaksi pada tanggal ${dateFilter}</td></tr>`}</tbody>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th onclick="toggleReportSort('date')" style="cursor:pointer; user-select:none; white-space:nowrap;" title="Klik untuk mengurutkan waktu">
+                  Waktu ${currentSortKey === 'date' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}
+                </th>
+                <th>WhatsApp</th>
+                <th>Metode</th>
+                <th>Status</th>
+                <th onclick="toggleReportSort('total')" style="cursor:pointer; user-select:none; white-space:nowrap;" title="Klik untuk mengurutkan total">
+                  Total ${currentSortKey === 'total' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}
+                </th>
+                <th>Bayar</th>
+                <th>Kembali</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>${rows || `<tr><td colspan="9" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada transaksi pada rentang tanggal ${startDate === endDate ? startDate : (startDate + ' s/d ' + endDate)}</td></tr>`}</tbody>
           </table>
         </div>
       </div>
@@ -1379,8 +1467,12 @@ async function renderReport(el) {
     <div class="filter-bar">
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:13px; font-weight:600; color:var(--text-muted);">TANGGAL:</span>
-          <input type="date" class="form-input" id="report-date-filter" value="${today}" onchange="applyReportFilters()" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:auto;">
+          <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">MULAI TANGGAL:</span>
+          <input type="date" class="form-input" id="report-start-date" value="${today}" onchange="applyReportFilters()" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:130px;">
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">AKHIR TANGGAL:</span>
+          <input type="date" class="form-input" id="report-end-date" value="${today}" onchange="applyReportFilters()" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:130px;">
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:13px; font-weight:600; color:var(--text-muted);">STATUS:</span>
@@ -1403,11 +1495,18 @@ async function renderReport(el) {
       </div>
       <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export CSV</button>
     </div>
-    <div id="report-container">${renderContent(today, 'Semua', 'Semua')}</div>
+    <div id="report-container">${renderContent(today, today, 'Semua', 'Semua')}</div>
   `;
   
   if (typeof flatpickr !== 'undefined') {
-    flatpickr('#report-date-filter', {
+    flatpickr('#report-start-date', {
+      dateFormat: 'Y-m-d',
+      defaultDate: today,
+      onChange: (selectedDates, dateStr) => {
+        applyReportFilters();
+      }
+    });
+    flatpickr('#report-end-date', {
       dateFormat: 'Y-m-d',
       defaultDate: today,
       onChange: (selectedDates, dateStr) => {
@@ -1418,8 +1517,8 @@ async function renderReport(el) {
   
   if (typeof lucide !== 'undefined') lucide.createIcons();
   
-  window.renderReportTable = (date = today, status = 'Semua', method = 'Semua') => {
-    const html = renderContent(date, status, method);
+  window.renderReportTable = (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
+    const html = renderContent(startDate, endDate, status, method);
     if (typeof lucide !== 'undefined') {
       requestAnimationFrame(() => lucide.createIcons());
     }
@@ -1427,11 +1526,12 @@ async function renderReport(el) {
   };
   
   window.applyReportFilters = () => {
-    const date = document.getElementById('report-date-filter')?.value;
+    const startDate = document.getElementById('report-start-date')?.value;
+    const endDate = document.getElementById('report-end-date')?.value;
     const status = document.getElementById('report-status-filter')?.value || 'Semua';
     const method = document.getElementById('report-method-filter')?.value || 'Semua';
     const container = document.getElementById('report-container');
-    if (container) container.innerHTML = window.renderReportTable(date, status, method);
+    if (container) container.innerHTML = window.renderReportTable(startDate, endDate, status, method);
   };
 }
 
@@ -1874,10 +1974,12 @@ async function deleteCategory(id) {
 
 function renderManual(el) {
   const guides = [
-    { title: 'Memulai Transaksi Baru', content: 'Klik menu <strong>Kasir / POS</strong>, lalu pilih produk. Gunakan fitur Note untuk instruksi khusus.' },
-    { title: 'Mengirim Struk via WhatsApp', content: 'Di modal pembayaran, masukkan nomor WhatsApp pelanggan. Klik <strong>Kirim WA</strong> untuk membuka WhatsApp dengan invoice otomatis.' },
-    { title: 'Manajemen Template WA', content: 'Buka <strong>Pengaturan</strong> untuk mengubah format pesan struk. Gunakan kode seperti [ITEMS] agar daftar pesanan muncul otomatis.' },
-    { title: 'Memantau Laporan', content: 'Halaman Laporan menampilkan pendapatan secara real-time. Anda dapat memfilter transaksi berdasarkan periode waktu.' }
+    { title: 'Memulai Transaksi Baru', content: 'Klik menu <strong>Kasir / POS</strong>, lalu pilih produk. Gunakan fitur Note untuk instruksi khusus serta pilihan variasi menu.' },
+    { title: 'Mengirim Struk via WhatsApp', content: 'Di modal pembayaran, masukkan nomor WhatsApp pelanggan. Klik <strong>Kirim WA</strong> untuk membuka WhatsApp dengan invoice otomatis dalam bentuk Teks maupun Gambar Struk.' },
+    { title: 'Filter Rentang Tanggal Laporan', content: 'Buka menu <strong>Laporan</strong>, atur <strong>Mulai Tanggal</strong> dan <strong>Akhir Tanggal</strong> untuk melihat transaksi dalam kurun waktu tertentu (harian, mingguan, atau bulanan penuh), lalu ekspor menggunakan tombol **Export CSV**.' },
+    { title: 'Mengurutkan Tabel Laporan (Sorting)', content: 'Di halaman Laporan, klik judul kolom <strong>Waktu</strong> atau <strong>Total</strong> pada tabel transaksi untuk mengurutkan data dari terbaru ↔ terlama atau nominal terbesar ↔ terkecil.' },
+    { title: 'Sistem Keamanan Status Otomatis', content: 'Sistem dilengkapi pengaman otomatis (*fallback*) sehingga status pembayaran transaksi tidak akan tersimpan kosong di database meskipun terjadi gangguan cache pada browser kasir Anda.' },
+    { title: 'Manajemen Pengaturan Toko', content: 'Buka <strong>Pengaturan</strong> untuk menyesuaikan nama, alamat, no telepon toko, serta format template pesan struk digital WhatsApp Anda.' }
   ];
   const guideHtml = guides.map((g, i) => `
     <div class="card" style="margin-bottom:12px;"><div class="card-body" style="padding:16px;"><div style="display:flex; gap:12px; align-items:flex-start;"><div style="width:28px; height:28px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">${i+1}</div><div><h4 style="color:var(--brown-900); margin-bottom:4px;">${g.title}</h4><p style="font-size:13px; color:var(--text-muted); line-height:1.6;">${g.content}</p></div></div></div></div>
@@ -2145,8 +2247,7 @@ async function renderDashboard(el) {
   
   let txns = [];
   try {
-    let { data } = await db.from('transactions').select('*, transaction_items(*)').order('date', { ascending: false });
-    if (data) txns = data;
+    txns = await fetchAllTransactions();
   } catch(e) { console.error('Dashboard load fail', e); }
   window.dashboardTxns = txns;
 
@@ -2354,6 +2455,16 @@ window.onload = async () => {
   const savedSession = localStorage.getItem('ks_session');
   if (savedSession) {
     try { setupUserSession(JSON.parse(savedSession)); } catch (e) { localStorage.removeItem('ks_session'); }
+  }
+  
+  // Tampilkan Pop-Up Changelog Pembaruan v1.3 sekali saja
+  const APP_VERSION = '1.3';
+  const lastSeenVersion = localStorage.getItem('ks_seen_version');
+  if (lastSeenVersion !== APP_VERSION) {
+    setTimeout(() => {
+      openModal('modal-changelog');
+      localStorage.setItem('ks_seen_version', APP_VERSION);
+    }, 800);
   }
 };
 

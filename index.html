@@ -129,7 +129,7 @@
       </div>
     </div>
 
-    <div class="page-content" id="page-content">
+    <div class="page-content fade-in-up" id="page-content">
       <!-- Dynamic content here -->
     </div>
   </main>
@@ -498,6 +498,71 @@
     </div>
   </div>
 </div>
+
+<!-- Changelog (Pembaruan) Modal -->
+<div class="modal-overlay" id="modal-changelog">
+  <div class="modal" style="max-width:450px;">
+    <div class="modal-header" style="background:var(--brown-900); color:white; border-radius:16px 16px 0 0; padding:20px 24px;">
+      <h3 style="display:flex;align-items:center;gap:10px;color:white;"><i data-lucide="sparkles" style="width:22px;height:22px;color:var(--accent);"></i> Pembaruan Aplikasi v1.3</h3>
+      <button class="modal-close" style="display:flex;align-items:center;justify-content:center;color:white;opacity:0.8;" onclick="closeModal('modal-changelog')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body" style="padding:24px;">
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">Berikut adalah daftar fitur baru dan peningkatan keamanan yang telah berhasil dipasang pada sistem kasir Kopi Sembilan Anda:</p>
+      
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div style="display:flex; gap:12px;">
+          <div style="width:32px; height:32px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; font-size:14px;">1</div>
+          <div>
+            <h4 style="color:var(--brown-900); font-size:13px; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+              <i data-lucide="calendar" style="width:16px;height:16px;color:var(--brown-700);"></i> Filter Laporan Rentang Tanggal
+            </h4>
+            <p style="font-size:12px; color:var(--text-muted); line-height:1.5; margin:0;">Kasir dapat memilih Mulai Tanggal dan Akhir Tanggal terpisah untuk memfilter laporan penjualan secara harian, mingguan, atau bulanan secara presisi untuk diunduh (Export CSV).</p>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:12px;">
+          <div style="width:32px; height:32px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; font-size:14px;">2</div>
+          <div>
+            <h4 style="color:var(--brown-900); font-size:13px; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+              <i data-lucide="bar-chart-2" style="width:16px;height:16px;color:var(--brown-700);"></i> Pengurutan Data Laporan (Sorting)
+            </h4>
+            <p style="font-size:12px; color:var(--text-muted); line-height:1.5; margin:0;">Mengurutkan tabel laporan penjualan secara langsung dengan mengklik judul kolom Waktu (terbaru ↔ terlama) atau Total (terbesar ↔ terkecil) dengan indikator panah dinamis.</p>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:12px;">
+          <div style="width:32px; height:32px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; font-size:14px;">3</div>
+          <div>
+            <h4 style="color:var(--brown-900); font-size:13px; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+              <i data-lucide="shield" style="width:16px;height:16px;color:var(--brown-700);"></i> Proteksi Status Transaksi
+            </h4>
+            <p style="font-size:12px; color:var(--text-muted); line-height:1.5; margin:0;">Menambahkan sistem pengaman otomatis (fallback) agar status transaksi tidak pernah kosong di database jika terjadi glitch/gangguan pada cache browser kasir lama.</p>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px;">
+          <div style="width:32px; height:32px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; font-size:14px;">4</div>
+          <div>
+            <h4 style="color:var(--brown-900); font-size:13px; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+              <i data-lucide="cloud" style="width:16px;height:16px;color:var(--brown-700);"></i> Cadangan Laporan Otomatis (Google Drive)
+            </h4>
+            <p style="font-size:12px; color:var(--text-muted); line-height:1.5; margin:0;">Laporan keuangan bulanan Anda kini akan dicadangkan secara otomatis setiap awal bulan dalam format Google Sheets yang rapi, ber-filter, dan dilengkapi tab ringkasan langsung ke folder Google Drive Anda tanpa perlu menyalakan komputer kasir.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="padding:16px 24px 20px; border-top:1px solid var(--border);">
+      <button class="btn btn-brown w-full" style="padding:12px; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; gap:8px;" onclick="closeModal('modal-changelog')">
+        <i data-lucide="coffee" style="width:16px;height:16px;"></i> Mengerti & Siap Melayani
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating Action Button (FAB) untuk melihat Info Pembaruan -->
+<button id="btn-changelog-fab" onclick="openModal('modal-changelog')" title="Info Pembaruan v1.2">
+  <i data-lucide="sparkles"></i>
+</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
