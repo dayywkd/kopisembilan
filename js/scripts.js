@@ -258,7 +258,7 @@ async function fetchAllTransactions() {
   while (hasMore) {
     const { data, error } = await db
       .from('transactions')
-      .select('*, transaction_items(*)')
+      .select('*, transaction_items(*, products(*))')
       .order('date', { ascending: false })
       .range(from, to);
       
@@ -989,6 +989,12 @@ async function confirmPayment(sendMode = 'none') {
     return;
   }
 
+  // Nonaktifkan tombol secara fisik segera untuk mencegah double-click
+  const payButtons = document.querySelectorAll('#modal-payment button');
+  payButtons.forEach(btn => btn.disabled = true);
+
+  isProcessingPayment = true;
+
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const phoneEl = document.getElementById('customer-phone');
   const phone = phoneEl ? phoneEl.value.trim() : '';
@@ -1002,6 +1008,9 @@ async function confirmPayment(sendMode = 'none') {
   if (sendMode !== 'none' && !phone) {
     showToast('Masukkan nomor WA untuk kirim struk!', 'error');
     if (phoneEl) phoneEl.focus();
+    // Aktifkan kembali tombol jika validasi gagal
+    payButtons.forEach(btn => btn.disabled = false);
+    isProcessingPayment = false;
     return;
   }
 
@@ -1009,11 +1018,15 @@ async function confirmPayment(sendMode = 'none') {
   let cashChange = 0;
   if (selectedPaymentMethod === 'cash') {
     cashAmount = parsePrice(document.getElementById('cash-input').value);
-    if (cashAmount < total && status === 'Lunas') { showToast('Jumlah bayar kurang!', 'error'); return; }
+    if (cashAmount < total && status === 'Lunas') {
+      showToast('Jumlah bayar kurang!', 'error');
+      // Aktifkan kembali tombol jika validasi gagal
+      payButtons.forEach(btn => btn.disabled = false);
+      isProcessingPayment = false;
+      return;
+    }
     cashChange = Math.max(0, cashAmount - total);
   }
-
-  isProcessingPayment = true;
 
   try {
     let txnResult;
@@ -1107,6 +1120,8 @@ async function confirmPayment(sendMode = 'none') {
   } catch (e) {
     console.error(e);
     showToast('Terjadi kesalahan sistem!', 'error');
+    const payButtons = document.querySelectorAll('#modal-payment button');
+    payButtons.forEach(btn => btn.disabled = false);
   } finally {
     isProcessingPayment = false;
   }
@@ -1391,10 +1406,28 @@ async function renderReport(el) {
       const isLunas = t.payment_status === 'Lunas';
       const isCash = t.payment_method === 'cash';
       
+      let itemsText = '';
+      if (t.transaction_items && t.transaction_items.length > 0) {
+        const mergedItems = t.transaction_items.reduce((acc, item) => {
+          const name = item.products?.name || 'Produk';
+          const existing = acc.find(i => i.name === name);
+          if (existing) {
+            existing.qty += item.qty;
+          } else {
+            acc.push({ name: name, qty: item.qty });
+          }
+          return acc;
+        }, []);
+        itemsText = mergedItems.map(item => `${item.name} (x${item.qty})`).join(', ');
+      } else {
+        itemsText = `<span style="color:#d97706; font-weight:600; display:inline-flex; align-items:center; gap:4px;"><i data-lucide="alert-triangle" style="width:14px;height:14px;color:#d97706;"></i> Struk Kosong</span>`;
+      }
+      
       return `
         <tr>
           <td><span style="font-family:monospace; font-size:11px;">${t.id}</span></td>
           <td>${getIndoDateTime(new Date(t.date), {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
+          <td style="font-size:11px; max-width:180px; white-space:normal; word-break:break-word; line-height:1.4;">${itemsText}</td>
           <td>${t.customer_phone || '-'}</td>
           <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
           <td><span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
@@ -1438,13 +1471,14 @@ async function renderReport(el) {
       </div>
       <div class="card">
         <div style="overflow-x:auto;">
-          <table class="table">
+          <table class="table-premium">
             <thead>
               <tr>
                 <th>ID</th>
                 <th onclick="toggleReportSort('date')" style="cursor:pointer; user-select:none; white-space:nowrap;" title="Klik untuk mengurutkan waktu">
                   Waktu ${currentSortKey === 'date' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}
                 </th>
+                <th>Produk / Item</th>
                 <th>WhatsApp</th>
                 <th>Metode</th>
                 <th>Status</th>
@@ -1456,7 +1490,7 @@ async function renderReport(el) {
                 <th>Aksi</th>
               </tr>
             </thead>
-            <tbody>${rows || `<tr><td colspan="9" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada transaksi pada rentang tanggal ${startDate === endDate ? startDate : (startDate + ' s/d ' + endDate)}</td></tr>`}</tbody>
+            <tbody>${rows || `<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada transaksi pada rentang tanggal ${startDate === endDate ? startDate : (startDate + ' s/d ' + endDate)}</td></tr>`}</tbody>
           </table>
         </div>
       </div>
@@ -1493,7 +1527,7 @@ async function renderReport(el) {
           </select>
         </div>
       </div>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export CSV</button>
+      <button class="btn btn-brown btn-sm" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export Excel</button>
     </div>
     <div id="report-container">${renderContent(today, today, 'Semua', 'Semua')}</div>
   `;
@@ -1540,32 +1574,146 @@ function exportToCSV() {
     showToast('Tidak ada data untuk di-export', 'error');
     return;
   }
+  
+  if (typeof ExcelJS === 'undefined') {
+    showToast('Library Excel belum dimuat, coba segarkan halaman!', 'error');
+    return;
+  }
+
   const txns = window.currentReportTxns;
-  let csvContent = "data:text/csv;charset=utf-8,";
-  csvContent += "ID Transaksi,Waktu,WhatsApp,Metode,Status,Total,Bayar,Kembali,Kasir\n";
-  
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Laporan Penjualan');
+
+  // Menentukan kolom dan lebar kolom default yang proporsional
+  worksheet.columns = [
+    { header: 'ID Transaksi', key: 'id', width: 22 },
+    { header: 'Waktu', key: 'date', width: 20 },
+    { header: 'Produk / Item', key: 'products', width: 45 },
+    { header: 'WhatsApp', key: 'phone', width: 18 },
+    { header: 'Metode', key: 'method', width: 12 },
+    { header: 'Status', key: 'status', width: 12 },
+    { header: 'Total', key: 'total', width: 16 },
+    { header: 'Bayar', key: 'cash_amount', width: 16 },
+    { header: 'Kembali', key: 'cash_change', width: 16 },
+    { header: 'Kasir', key: 'cashier', width: 18 }
+  ];
+
   txns.forEach(t => {
-    const row = [
-      t.id,
-      getIndoDateTime(new Date(t.date)).replace(/,/g, ''),
-      t.customer_phone || '-',
-      t.payment_method,
-      t.payment_status,
-      t.total,
-      t.payment_method === 'cash' ? (t.cash_amount || 0) : '-',
-      t.payment_method === 'cash' ? (t.cash_change || 0) : '-',
-      t.cashier_name
-    ];
-    csvContent += row.join(",") + "\n";
+    let productsList = '-';
+    if (t.transaction_items && t.transaction_items.length > 0) {
+      const merged = t.transaction_items.reduce((acc, item) => {
+        const name = item.products?.name || 'Produk';
+        const existing = acc.find(i => i.name === name);
+        if (existing) {
+          existing.qty += item.qty;
+        } else {
+          acc.push({ name: name, qty: item.qty });
+        }
+        return acc;
+      }, []);
+      productsList = merged.map(item => `${item.name} (x${item.qty})`).join(', ');
+    }
+
+    worksheet.addRow({
+      id: t.id,
+      date: getIndoDateTime(new Date(t.date)).replace(/,/g, ''),
+      products: productsList,
+      phone: t.customer_phone || '-',
+      method: t.payment_method.toUpperCase(),
+      status: t.payment_status,
+      total: Number(t.total) || 0,
+      cash_amount: t.payment_method === 'cash' ? (Number(t.cash_amount) || 0) : '-',
+      cash_change: t.payment_method === 'cash' ? (Number(t.cash_change) || 0) : '-',
+      cashier: t.cashier_name
+    });
   });
-  
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", "Laporan_KopiSembilan_" + getIndoDate() + ".csv");
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+
+  // Styling Row Header (Cokelat Tua premium, teks putih, rata tengah)
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 28;
+  headerRow.eachCell((cell) => {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF2D1A0A' } // Cokelat Tua (#2D1A0A)
+    };
+    cell.font = {
+      name: 'Segoe UI',
+      color: { argb: 'FFFFFFFF' }, // Putih
+      bold: true,
+      size: 11
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = {
+      bottom: { style: 'medium', color: { argb: 'FFE0CEAE' } }, // Border Krim
+      top: { style: 'thin', color: { argb: 'FF2D1A0A' } },
+      left: { style: 'thin', color: { argb: 'FFE0CEAE' } },
+      right: { style: 'thin', color: { argb: 'FFE0CEAE' } }
+    };
+  });
+
+  // Styling Row Data (Zebra striping Krim, format mata uang, border tipis)
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Lewati header
+
+    row.height = 24;
+    
+    // Alternating background (Zebra striping)
+    const isEven = rowNumber % 2 === 0;
+    const bgColor = isEven ? 'FFFBF5E8' : 'FFFEFCF6'; // FBF5E8 (Krim-Cokelat) atau FEFCF6 (Krim Lembut)
+    
+    row.eachCell((cell, colNumber) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: bgColor }
+      };
+      cell.font = {
+        name: 'Segoe UI',
+        size: 10,
+        color: { argb: 'FF1A0E05' } // Teks Cokelat Tua
+      };
+      cell.alignment = { vertical: 'middle', wrapText: true };
+      
+      // Border tipis
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE0CEAE' } },
+        left: { style: 'thin', color: { argb: 'FFE0CEAE' } },
+        right: { style: 'thin', color: { argb: 'FFE0CEAE' } }
+      };
+
+      // Alignment kolom tertentu
+      if (colNumber === 1 || colNumber === 2 || colNumber === 4 || colNumber === 5 || colNumber === 6) {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+
+      // Format mata uang untuk kolom Total, Bayar, Kembali (Kolom 7, 8, 9)
+      if (colNumber === 7 || colNumber === 8 || colNumber === 9) {
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '"Rp"#,##0';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        } else {
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        }
+      }
+    });
+  });
+
+  // Generate file XLSX dan trigger download
+  workbook.xlsx.writeBuffer().then((buffer) => {
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Laporan_KopiSembilan_" + getIndoDate() + ".xlsx");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }).catch((e) => {
+    console.error('Gagal mengekspor Excel:', e);
+    showToast('Gagal mengekspor laporan!', 'error');
+  });
 }
 
 

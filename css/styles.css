@@ -1705,3 +1705,58 @@ body {
   }
 }
 
+/* ─── TABLE PREMIUM ─── */
+.table-premium {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.table-premium th {
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #FFFFFF;
+  background: var(--brown-800);
+  border-bottom: 2px solid var(--border);
+  user-select: none;
+}
+.table-premium td {
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  vertical-align: middle;
+  transition: background-color 0.2s ease;
+}
+.table-premium tr:nth-child(odd) td {
+  background: var(--cream);
+}
+.table-premium tr:nth-child(even) td {
+  background: var(--brown-50);
+}
+.table-premium tr:last-child td {
+  border-bottom: none;
+}
+.table-premium tr:hover td {
+  background: var(--brown-100) !important;
+}
+
+/* Lebar kolom spesifik agar pas dan proporsional */
+.table-premium th:nth-child(1), .table-premium td:nth-child(1) { width: 140px; } /* ID */
+.table-premium th:nth-child(2), .table-premium td:nth-child(2) { width: 100px; } /* Waktu */
+.table-premium th:nth-child(3), .table-premium td:nth-child(3) { min-width: 200px; } /* Produk / Item */
+.table-premium th:nth-child(4), .table-premium td:nth-child(4) { width: 120px; } /* WhatsApp */
+.table-premium th:nth-child(5), .table-premium td:nth-child(5) { width: 90px; } /* Metode */
+.table-premium th:nth-child(6), .table-premium td:nth-child(6) { width: 100px; } /* Status */
+.table-premium th:nth-child(7), .table-premium td:nth-child(7) { width: 110px; } /* Total */
+.table-premium th:nth-child(8), .table-premium td:nth-child(8) { width: 100px; } /* Bayar */
+.table-premium th:nth-child(9), .table-premium td:nth-child(9) { width: 100px; } /* Kembali */
+.table-premium th:nth-child(10), .table-premium td:nth-child(10) { width: 130px; } /* Aksi */
+
+
