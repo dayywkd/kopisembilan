@@ -1708,16 +1708,14 @@ body {
 /* ─── TABLE PREMIUM ─── */
 .table-premium {
   width: 100%;
-  border-collapse: separate;
+  border-collapse: collapse;
   border-spacing: 0;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  border: 1px solid var(--border);
 }
+
 .table-premium th {
-  padding: 12px 14px;
+  padding: 14px 16px;
   text-align: left;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -1725,38 +1723,101 @@ body {
   background: var(--brown-800);
   border-bottom: 2px solid var(--border);
   user-select: none;
+  white-space: nowrap;
 }
+
 .table-premium td {
-  padding: 14px 14px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
   color: var(--text);
   vertical-align: middle;
   transition: background-color 0.2s ease;
 }
+
+/* Warna baris selang-seling agar tidak menyatu dengan background krem halaman */
 .table-premium tr:nth-child(odd) td {
-  background: var(--cream);
+  background: #FFFFFF; /* Putih bersih */
 }
+
 .table-premium tr:nth-child(even) td {
-  background: var(--brown-50);
+  background: #FCF9F5; /* Krem sangat tipis */
 }
+
 .table-premium tr:last-child td {
   border-bottom: none;
 }
+
 .table-premium tr:hover td {
-  background: var(--brown-100) !important;
+  background: var(--brown-50) !important; /* Warna hover cokelat muda hangat */
 }
 
 /* Lebar kolom spesifik agar pas dan proporsional */
 .table-premium th:nth-child(1), .table-premium td:nth-child(1) { width: 140px; } /* ID */
 .table-premium th:nth-child(2), .table-premium td:nth-child(2) { width: 100px; } /* Waktu */
-.table-premium th:nth-child(3), .table-premium td:nth-child(3) { min-width: 200px; } /* Produk / Item */
-.table-premium th:nth-child(4), .table-premium td:nth-child(4) { width: 120px; } /* WhatsApp */
+.table-premium th:nth-child(3), .table-premium td:nth-child(3) { min-width: 220px; } /* Produk / Item */
+.table-premium th:nth-child(4), .table-premium td:nth-child(4) { width: 130px; white-space: nowrap; } /* WhatsApp */
 .table-premium th:nth-child(5), .table-premium td:nth-child(5) { width: 90px; } /* Metode */
 .table-premium th:nth-child(6), .table-premium td:nth-child(6) { width: 100px; } /* Status */
 .table-premium th:nth-child(7), .table-premium td:nth-child(7) { width: 110px; } /* Total */
 .table-premium th:nth-child(8), .table-premium td:nth-child(8) { width: 100px; } /* Bayar */
 .table-premium th:nth-child(9), .table-premium td:nth-child(9) { width: 100px; } /* Kembali */
-.table-premium th:nth-child(10), .table-premium td:nth-child(10) { width: 130px; } /* Aksi */
+.table-premium th:nth-child(10), .table-premium td:nth-child(10) { width: 145px; } /* Aksi */
 
+/* Tombol aksi di tabel */
+.btn-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  background: white;
+  color: var(--brown-700);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
 
+.btn-action:hover {
+  background: var(--brown-50);
+  border-color: var(--brown-400);
+  color: var(--brown-900);
+}
+
+.btn-action.delete {
+  background: #B23B3B;
+  color: white;
+  border: none;
+}
+
+.btn-action.delete:hover {
+  background: #8F2E2E;
+}
+
+.btn-action.send-wa {
+  background: #1B7F49;
+  color: white;
+  border: none;
+}
+
+.btn-action.send-wa:hover {
+  background: #145E35;
+}
+
+/* Custom Scrollbar untuk responsive table */
+div::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+div::-webkit-scrollbar-track {
+  background: #FDFBF7;
+}
+div::-webkit-scrollbar-thumb {
+  background: var(--brown-200);
+  border-radius: 4px;
+}
+div::-webkit-scrollbar-thumb:hover {
+  background: var(--brown-400);
+}

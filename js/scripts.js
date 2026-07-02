@@ -997,7 +997,7 @@ async function confirmPayment(sendMode = 'none') {
 
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const phoneEl = document.getElementById('customer-phone');
-  const phone = phoneEl ? phoneEl.value.trim() : '';
+  const phone = phoneEl ? phoneEl.value.replace(/\D/g, '') : '';
   const status = document.getElementById('payment-status')?.value || 'Lunas';
   const note = document.getElementById('txn-note').value.trim();
   const now = new Date();
@@ -1233,7 +1233,7 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
  * Meminta nomor WA jika belum ada, menyimpannya, lalu mengirim struk
  */
 async function promptAndSendWA(type, phone, txnId, total, items) {
-  let targetPhone = phone;
+  let targetPhone = String(phone || '').replace(/\D/g, '');
   
   if (!targetPhone) {
     // Gunakan custom modal alih-alih native prompt
@@ -1266,7 +1266,7 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
         return;
       }
       
-      const newPhone = modalInput ? modalInput.value.trim() : '';
+      const newPhone = modalInput ? modalInput.value.replace(/\D/g, '') : '';
       if (!newPhone) {
         showToast("Nomor WhatsApp wajib diisi!", "error");
         if (modalInput) modalInput.focus();
@@ -1352,6 +1352,19 @@ async function renderReport(el) {
 
   let currentSortKey = 'date';
   let currentSortDirection = 'desc';
+  let currentPageReport = 1;
+  let itemsPerPageReport = 12;
+
+  window.changeReportPage = (page) => {
+    currentPageReport = page;
+    window.applyReportFilters(false);
+  };
+
+  window.changeReportItemsPerPage = (val) => {
+    itemsPerPageReport = parseInt(val) || 12;
+    currentPageReport = 1;
+    window.applyReportFilters(false);
+  };
 
   window.toggleReportSort = (key) => {
     if (currentSortKey === key) {
@@ -1360,7 +1373,7 @@ async function renderReport(el) {
       currentSortKey = key;
       currentSortDirection = 'desc';
     }
-    window.applyReportFilters();
+    window.applyReportFilters(true);
   };
 
   const renderContent = (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
@@ -1399,10 +1412,20 @@ async function renderReport(el) {
       cash: 'Tunai',
       qris: 'QRIS',
       transfer: 'Transfer',
-      card: 'Debit Card'
+      card: 'Debit'
     };
 
-    const rows = filtered.map(t => {
+    // Hitung pagination
+    const totalItems = filtered.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPageReport) || 1;
+    if (currentPageReport > totalPages) currentPageReport = totalPages;
+    if (currentPageReport < 1) currentPageReport = 1;
+
+    const startIndex = (currentPageReport - 1) * itemsPerPageReport;
+    const endIndex = startIndex + itemsPerPageReport;
+    const paginated = filtered.slice(startIndex, endIndex);
+
+    const rows = paginated.map(t => {
       const isLunas = t.payment_status === 'Lunas';
       const isCash = t.payment_method === 'cash';
       
@@ -1418,34 +1441,73 @@ async function renderReport(el) {
           }
           return acc;
         }, []);
-        itemsText = mergedItems.map(item => `${item.name} (x${item.qty})`).join(', ');
+        itemsText = mergedItems.map(item => `<span style="font-weight:600; color:var(--brown-900);">${item.name}</span> <span style="color:var(--text-muted); font-size:11px;">(x${item.qty})</span>`).join(', ');
       } else {
         itemsText = `<span style="color:#d97706; font-weight:600; display:inline-flex; align-items:center; gap:4px;"><i data-lucide="alert-triangle" style="width:14px;height:14px;color:#d97706;"></i> Struk Kosong</span>`;
       }
       
+      const formattedDate = getIndoDateTime(new Date(t.date), {day:'2-digit', month:'short'});
+      const formattedTime = getIndoDateTime(new Date(t.date), {hour:'2-digit', minute:'2-digit'});
+
       return `
         <tr>
-          <td><span style="font-family:monospace; font-size:11px;">${t.id}</span></td>
-          <td>${getIndoDateTime(new Date(t.date), {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
-          <td style="font-size:11px; max-width:180px; white-space:normal; word-break:break-word; line-height:1.4;">${itemsText}</td>
-          <td>${t.customer_phone || '-'}</td>
+          <td><span style="font-family:monospace; font-weight:700; font-size:12px; color:var(--brown-700);">${t.id}</span></td>
+          <td>
+            <div style="display:flex; flex-direction:column; gap:2px; font-size:12px; font-weight:500; line-height:1.2;">
+              <span>${formattedDate}</span>
+              <span style="color:var(--text-muted); font-size:10px;">${formattedTime}</span>
+            </div>
+          </td>
+          <td style="font-size:12px; max-width:240px; white-space:normal; word-break:break-word; line-height:1.45; text-align:left;">${itemsText}</td>
+          <td style="font-family:monospace; font-size:12px; font-weight:600; color:var(--text);">${t.customer_phone || '<span style="color:#cbd5e1; font-weight:400;">-</span>'}</td>
           <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : 'badge-blue'}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
           <td><span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
-          <td style="font-weight:600;">${fmtRp(t.total)}</td>
-          <td style="font-size:11px; color:var(--text-muted);">${(isLunas && isCash) ? fmtRp(t.cash_amount || 0) : '-'}</td>
-          <td style="font-size:11px; color:var(--text-muted);">${(isLunas && isCash && (t.cash_change || 0) > 0) ? fmtRp(t.cash_change) : (isLunas && isCash ? 'Pas' : '-')}</td>
+          <td style="font-weight:700; font-size:13px; color:var(--brown-900); text-align:right;">${fmtRp(t.total)}</td>
+          <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? fmtRp(t.cash_amount || 0) : '<span style="color:#cbd5e1;">-</span>'}</td>
+          <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? ((t.cash_change || 0) > 0 ? fmtRp(t.cash_change) : 'Pas') : '<span style="color:#cbd5e1;">-</span>'}</td>
           <td>
-            <div style="display:flex; gap:6px;">
-              <button class="btn btn-outline btn-sm" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
-              <button class="btn btn-outline btn-sm" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
-              <button class="btn btn-red btn-sm" onclick="deleteTransaction('${t.id}')" title="Hapus Transaksi"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
-              ${t.customer_phone ? `<button class="btn btn-green btn-sm" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
+            <div style="display:flex; gap:6px; justify-content:center;">
+              <button class="btn-action" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
+              <button class="btn-action" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
+              <button class="btn-action delete" onclick="deleteTransaction('${t.id}')" title="Hapus Transaksi"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
+              ${t.customer_phone ? `<button class="btn-action send-wa" onclick="resendWhatsAppReceipt('${t.id}')" title="Kirim WA"><i data-lucide="send" style="width:14px;height:14px;"></i></button>` : ''}
             </div>
           </td>
         </tr>
       `;
     }).join('');
     
+    let paginationHTML = '';
+    if (totalItems > 0) {
+      paginationHTML = `
+        <div class="report-pagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:16px; border-top:1px dashed var(--border); flex-wrap:wrap; gap:12px;">
+          <div style="font-size:13px; color:var(--text-muted); font-weight:500;">
+            Menampilkan ${startIndex + 1} - ${Math.min(endIndex, totalItems)} dari ${totalItems} transaksi
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-outline btn-sm" onclick="changeReportPage(${currentPageReport - 1})" ${currentPageReport === 1 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} style="display:inline-flex; align-items:center; gap:4px; padding:6px 12px; min-height:auto; height:32px;">
+              Sebelumnya
+            </button>
+            <span style="font-size:13px; font-weight:600; color:var(--brown-800); padding:0 8px;">
+              Halaman ${currentPageReport} dari ${totalPages}
+            </span>
+            <button class="btn btn-outline btn-sm" onclick="changeReportPage(${currentPageReport + 1})" ${currentPageReport === totalPages ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} style="display:inline-flex; align-items:center; gap:4px; padding:6px 12px; min-height:auto; height:32px;">
+              Selanjutnya
+            </button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Tampilkan:</span>
+            <select class="select-input" onchange="changeReportItemsPerPage(this.value)" style="padding:4px 8px; font-size:12px; border-radius:6px; height:32px;">
+              <option value="12" ${itemsPerPageReport === 12 ? 'selected' : ''}>12</option>
+              <option value="24" ${itemsPerPageReport === 24 ? 'selected' : ''}>24</option>
+              <option value="48" ${itemsPerPageReport === 48 ? 'selected' : ''}>48</option>
+              <option value="100" ${itemsPerPageReport === 100 ? 'selected' : ''}>100</option>
+            </select>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="report-summary">
         <div class="report-card">
@@ -1469,32 +1531,43 @@ async function renderReport(el) {
           <div class="sub-value">${filtered.length} transaksi cocok</div>
         </div>
       </div>
-      <div class="card">
-        <div style="overflow-x:auto;">
-          <table class="table-premium">
+      
+      <div class="card" style="background:#FFFFFF; padding:0; border:1px solid var(--border); border-radius:14px; box-shadow:0 4px 20px rgba(139,83,32,0.04); overflow:hidden; margin-bottom:20px;">
+        <div style="overflow-x:auto; width:100%;">
+          <table class="table-premium" style="width:100%; border-collapse:collapse; border:none; margin:0;">
             <thead>
               <tr>
-                <th>ID</th>
-                <th onclick="toggleReportSort('date')" style="cursor:pointer; user-select:none; white-space:nowrap;" title="Klik untuk mengurutkan waktu">
-                  Waktu ${currentSortKey === 'date' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}
-                </th>
+                <th style="cursor:pointer;" onclick="toggleReportSort('id')">ID</th>
+                <th style="cursor:pointer;" onclick="toggleReportSort('date')">Waktu ${currentSortKey === 'date' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}</th>
                 <th>Produk / Item</th>
                 <th>WhatsApp</th>
                 <th>Metode</th>
                 <th>Status</th>
-                <th onclick="toggleReportSort('total')" style="cursor:pointer; user-select:none; white-space:nowrap;" title="Klik untuk mengurutkan total">
-                  Total ${currentSortKey === 'total' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}
-                </th>
-                <th>Bayar</th>
-                <th>Kembali</th>
-                <th>Aksi</th>
+                <th style="cursor:pointer; text-align:right;" onclick="toggleReportSort('total')">Total ${currentSortKey === 'total' ? (currentSortDirection === 'asc' ? '▲' : '▼') : '↕'}</th>
+                <th style="text-align:right;">Bayar</th>
+                <th style="text-align:right;">Kembali</th>
+                <th style="text-align:center;">Aksi</th>
               </tr>
             </thead>
-            <tbody>${rows || `<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada transaksi pada rentang tanggal ${startDate === endDate ? startDate : (startDate + ' s/d ' + endDate)}</td></tr>`}</tbody>
+            <tbody>
+              ${rows || `<tr><td colspan="10" style="text-align:center; padding:40px; color:var(--text-muted); background:white;">Tidak ada transaksi pada rentang tanggal ${startDate === endDate ? startDate : (startDate + ' s/d ' + endDate)}</td></tr>`}
+            </tbody>
           </table>
         </div>
       </div>
+
+      ${paginationHTML}
     `;
+  };
+
+  window.toggleReportSort = (key) => {
+    if (currentSortKey === key) {
+      currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSortKey = key;
+      currentSortDirection = 'desc';
+    }
+    window.applyReportFilters(true);
   };
 
   el.innerHTML = `
@@ -1502,15 +1575,15 @@ async function renderReport(el) {
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">MULAI TANGGAL:</span>
-          <input type="date" class="form-input" id="report-start-date" value="${today}" onchange="applyReportFilters()" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:130px;">
+          <input type="date" class="form-input" id="report-start-date" value="${today}" onchange="applyReportFilters(true)" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:130px;">
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">AKHIR TANGGAL:</span>
-          <input type="date" class="form-input" id="report-end-date" value="${today}" onchange="applyReportFilters()" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:130px;">
+          <input type="date" class="form-input" id="report-end-date" value="${today}" onchange="applyReportFilters(true)" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); font-size:13px; width:130px;">
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:13px; font-weight:600; color:var(--text-muted);">STATUS:</span>
-          <select class="select-input" id="report-status-filter" onchange="applyReportFilters()" style="padding:6px 10px; font-size:13px;">
+          <select class="select-input" id="report-status-filter" onchange="applyReportFilters(true)" style="padding:6px 10px; font-size:13px;">
             <option value="Semua">Semua Status</option>
             <option value="Lunas">Lunas</option>
             <option value="Belum Bayar">Belum Bayar</option>
@@ -1518,12 +1591,12 @@ async function renderReport(el) {
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:13px; font-weight:600; color:var(--text-muted);">METODE:</span>
-          <select class="select-input" id="report-method-filter" onchange="applyReportFilters()" style="padding:6px 10px; font-size:13px;">
+          <select class="select-input" id="report-method-filter" onchange="applyReportFilters(true)" style="padding:6px 10px; font-size:13px;">
             <option value="Semua">Semua Metode</option>
             <option value="cash">Tunai</option>
             <option value="qris">QRIS</option>
             <option value="transfer">Transfer</option>
-            <option value="card">Debit Card</option>
+            <option value="card">Debit</option>
           </select>
         </div>
       </div>
@@ -1537,14 +1610,14 @@ async function renderReport(el) {
       dateFormat: 'Y-m-d',
       defaultDate: today,
       onChange: (selectedDates, dateStr) => {
-        applyReportFilters();
+        applyReportFilters(true);
       }
     });
     flatpickr('#report-end-date', {
       dateFormat: 'Y-m-d',
       defaultDate: today,
       onChange: (selectedDates, dateStr) => {
-        applyReportFilters();
+        applyReportFilters(true);
       }
     });
   }
@@ -1559,7 +1632,10 @@ async function renderReport(el) {
     return html;
   };
   
-  window.applyReportFilters = () => {
+  window.applyReportFilters = (resetPage = false) => {
+    if (resetPage) {
+      currentPageReport = 1;
+    }
     const startDate = document.getElementById('report-start-date')?.value;
     const endDate = document.getElementById('report-end-date')?.value;
     const status = document.getElementById('report-status-filter')?.value || 'Semua';
@@ -2808,7 +2884,7 @@ function removeEditItem(idx) {
 
 async function saveTransactionEdit() {
   const id = document.getElementById('edit-txn-id').value;
-  const phone = document.getElementById('edit-txn-phone').value.trim();
+  const phone = document.getElementById('edit-txn-phone').value.replace(/\D/g, '');
   const method = document.getElementById('edit-txn-method').value;
   const status = document.getElementById('edit-txn-status').value;
   const notes = document.getElementById('edit-txn-notes').value.trim();
