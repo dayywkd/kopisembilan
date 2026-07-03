@@ -224,6 +224,7 @@
         <div id="cash-input-wrap" class="form-group">
           <label>Jumlah Dibayar (Tunai)</label>
           <input type="text" inputmode="numeric" class="form-input" id="cash-input" placeholder="0" oninput="formatPriceInput(this); calcChange();">
+          <div class="quick-cash-container" id="quick-cash-list"></div>
         </div>
 
         <div id="change-display" style="padding:12px;background:var(--green-light);border-radius:8px;display:none; margin-top:10px;">
@@ -237,6 +238,28 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-payment')">Batal</button>
       <button class="btn btn-green w-full" style="display:flex; align-items:center; justify-content:center; gap:8px;" onclick="confirmPayment()"><i data-lucide="check-circle" style="width:18px;height:18px;"></i> Selesaikan & Kirim WA</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nominal Uang Kustom -->
+<div class="modal-overlay modal-overlay-center" id="modal-denom-kustom">
+  <div class="modal" style="max-width:320px;">
+    <div class="modal-header">
+      <h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="plus-circle" style="width:20px;height:20px;color:var(--brown-800);"></i> Pecahan Kustom</h3>
+      <button class="modal-close" style="display:flex;align-items:center;justify-content:center;" onclick="closeModal('modal-denom-kustom')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body" style="padding-top:10px;">
+      <div class="form-group">
+        <label style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px; display:block;">Nominal Uang Baru (Rupiah)</label>
+        <input type="text" inputmode="numeric" class="form-input" id="denom-kustom-input" placeholder="Contoh: 75.000" oninput="formatPriceInput(this)">
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; gap:10px; margin-top:10px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeModal('modal-denom-kustom')">Batal</button>
+      <button class="btn btn-brown" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="submitCustomDenomination()">
+        <i data-lucide="plus" style="width:16px;height:16px;"></i> Simpan
+      </button>
     </div>
   </div>
 </div>
@@ -315,7 +338,7 @@
 </div>
 
 <!-- Phone Input Modal -->
-<div class="modal-overlay" id="modal-phone">
+<div class="modal-overlay modal-overlay-center" id="modal-phone">
   <div class="modal" style="max-width:400px;">
     <div class="modal-header">
       <h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="phone" style="width:20px;height:20px;color:var(--brown-800);"></i> Kirim Struk WhatsApp</h3>

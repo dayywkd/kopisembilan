@@ -383,6 +383,7 @@ body {
   margin-bottom: 24px;
 }
 .stat-card {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -899,6 +900,34 @@ body {
 .variant-option:hover { border-color: var(--brown-400); }
 .variant-option.selected { background: var(--brown-700); color: white; border-color: var(--brown-700); }
 .variant-option .price-mod { font-size: 11px; opacity: 0.8; margin-left: 4px; }
+
+/* ─── QUICK CASH BUTTONS ─── */
+.quick-cash-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.quick-cash-option {
+  padding: 6px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 30px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: white;
+  color: var(--brown-800);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.quick-cash-option:hover {
+  border-color: var(--brown-400);
+  background: var(--brown-50);
+  color: var(--brown-900);
+}
+.quick-cash-option:active {
+  transform: scale(0.95);
+}
 
 /* ─── INVENTORY & SEARCH ─── */
 .inv-actions { 
@@ -1821,3 +1850,66 @@ div::-webkit-scrollbar-thumb {
 div::-webkit-scrollbar-thumb:hover {
   background: var(--brown-400);
 }
+
+/* ─── PRIVACY MODE STYLES ─── */
+.btn-privacy-toggle {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.btn-privacy-toggle:hover {
+  background: var(--brown-50);
+  color: var(--brown-800);
+}
+
+.privacy-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(253, 251, 247, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 12px;
+  z-index: 20;
+  transition: opacity 0.3s ease;
+}
+
+.privacy-overlay span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brown-900);
+}
+
+/* ─── CENTERED MODALS ON MOBILE ─── */
+@media (max-width: 992px) {
+  .modal-overlay.modal-overlay-center {
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px !important;
+  }
+  .modal-overlay.modal-overlay-center .modal {
+    border-radius: 16px !important;
+    margin: auto !important;
+    max-height: 85vh !important;
+  }
+}
+

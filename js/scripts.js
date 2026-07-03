@@ -29,6 +29,60 @@ Terima kasih sudah memesan!`;
 
 const DEFAULT_VARIANTS = [];
 
+// ─── STATED PRIVACY UNTUK DASHBOARD ───
+let dashboardPrivacy = {
+  revenue: localStorage.getItem('ks_priv_revenue') === 'true',
+  transactions: localStorage.getItem('ks_priv_transactions') === 'true',
+  products: localStorage.getItem('ks_priv_products') === 'true',
+  chart: localStorage.getItem('ks_priv_chart') === 'true',
+  top_menu: localStorage.getItem('ks_priv_top_menu') === 'true',
+  payment: localStorage.getItem('ks_priv_payment') === 'true',
+  recent: localStorage.getItem('ks_priv_recent') === 'true'
+};
+
+window.toggleDashboardPrivacy = (key) => {
+  dashboardPrivacy[key] = !dashboardPrivacy[key];
+  localStorage.setItem(`ks_priv_${key}`, dashboardPrivacy[key]);
+  renderDashboardContent();
+};
+
+window.toggleAllDashboardPrivacy = () => {
+  const keys = ['revenue', 'transactions', 'products', 'chart', 'top_menu', 'payment', 'recent'];
+  const anyVisible = keys.some(k => !dashboardPrivacy[k]);
+  
+  keys.forEach(k => {
+    dashboardPrivacy[k] = anyVisible;
+    localStorage.setItem(`ks_priv_${k}`, anyVisible);
+  });
+  
+  renderDashboardContent();
+};
+
+window.updateGlobalPrivacyButton = () => {
+  const btn = document.getElementById('btn-privacy-global-toggle');
+  const icon = document.getElementById('icon-privacy-global');
+  if (!btn || !icon) return;
+  
+  const keys = ['revenue', 'transactions', 'products', 'chart', 'top_menu', 'payment', 'recent'];
+  const allHidden = keys.every(k => dashboardPrivacy[k]);
+  
+  if (allHidden) {
+    btn.classList.add('btn-brown');
+    btn.classList.remove('btn-outline');
+    btn.querySelector('span').textContent = 'Sensor Aktif';
+    icon.innerHTML = `<i data-lucide="eye-off" style="width:16px;height:16px;"></i>`;
+    icon.setAttribute('data-lucide', 'eye-off');
+  } else {
+    btn.classList.remove('btn-brown');
+    btn.classList.add('btn-outline');
+    btn.querySelector('span').textContent = 'Mode Privasi';
+    icon.innerHTML = `<i data-lucide="eye" style="width:16px;height:16px;"></i>`;
+    icon.setAttribute('data-lucide', 'eye');
+  }
+  
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+};
+
 // Tambahan fungsi kategori dinamis
 async function loadCategories() {
   try {
@@ -836,7 +890,7 @@ function openPayment() {
   if (custPhone) custPhone.value = '';
   if (txnNote) txnNote.value = '';
   if (changeDisp) changeDisp.style.display = 'none';
-  
+  renderQuickCashButtons();
   openModal('modal-payment');
 }
 
@@ -918,6 +972,74 @@ function updateReceiptPreviewContent() {
     `;
   }
 }
+
+window.renderQuickCashButtons = () => {
+  const container = document.getElementById('quick-cash-list');
+  if (!container) return;
+  
+  const denoms = JSON.parse(localStorage.getItem('ks_quick_cash_denoms') || '[15000, 25000, 30000, 50000, 100000, 150000, 200000]');
+  
+  container.innerHTML = denoms.map(d => `
+    <button type="button" class="quick-cash-option" onclick="quickCash(${d})" oncontextmenu="event.preventDefault(); removeCustomDenomination(${d});" title="Klik untuk menggunakan, klik kanan untuk menghapus">
+      ${Number(d).toLocaleString('id-ID')}
+    </button>
+  `).join('') + `
+    <button type="button" class="quick-cash-option" onclick="addCustomDenomination()" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border-radius:50%; background:var(--brown-50); color:var(--brown-800); border-color:var(--brown-200); font-size:16px; font-weight:700;" title="Tambah Pecahan Kustom">+</button>
+  `;
+};
+
+window.addCustomDenomination = () => {
+  const input = document.getElementById('denom-kustom-input');
+  if (input) input.value = '';
+  openModal('modal-denom-kustom');
+  setTimeout(() => { if (input) input.focus(); }, 150);
+};
+
+window.submitCustomDenomination = () => {
+  const input = document.getElementById('denom-kustom-input');
+  if (!input) return;
+  
+  const val = input.value.trim();
+  const cleanVal = parsePrice(val);
+  
+  if (!cleanVal || cleanVal <= 0) {
+    showToast("Nominal uang tidak valid!", "error");
+    input.focus();
+    return;
+  }
+  
+  let denoms = JSON.parse(localStorage.getItem('ks_quick_cash_denoms') || '[15000, 25000, 30000, 50000, 100000, 150000, 200000]');
+  if (denoms.includes(cleanVal)) {
+    showToast("Pecahan uang tersebut sudah ada!", "info");
+    closeModal('modal-denom-kustom');
+    return;
+  }
+  
+  denoms.push(cleanVal);
+  denoms.sort((a, b) => a - b);
+  
+  localStorage.setItem('ks_quick_cash_denoms', JSON.stringify(denoms));
+  renderQuickCashButtons();
+  closeModal('modal-denom-kustom');
+  showToast(`Pecahan Rp ${cleanVal.toLocaleString('id-ID')} ditambahkan.`, "success");
+};
+
+window.removeCustomDenomination = (denom) => {
+  if (confirm(`Hapus pecahan Rp ${denom.toLocaleString('id-ID')} dari daftar cepat?`)) {
+    let denoms = JSON.parse(localStorage.getItem('ks_quick_cash_denoms') || '[15000, 25000, 30000, 50000, 100000, 150000, 200000]');
+    denoms = denoms.filter(d => d !== denom);
+    localStorage.setItem('ks_quick_cash_denoms', JSON.stringify(denoms));
+    renderQuickCashButtons();
+    showToast("Pecahan berhasil dihapus.", "success");
+  }
+};
+
+window.quickCash = (amount) => {
+  const input = document.getElementById('cash-input');
+  if (!input) return;
+  input.value = Number(amount).toLocaleString('id-ID');
+  calcChange();
+};
 
 function calcChange() {
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
@@ -2441,6 +2563,10 @@ async function renderDashboard(el) {
           <p>Berikut adalah ringkasan performa Toko Kopi Sembilan.</p>
         </div>
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <button class="btn btn-outline" id="btn-privacy-global-toggle" onclick="toggleAllDashboardPrivacy()" title="Sensor/Tampilkan Semua Kotak" style="height:36px; display:inline-flex; align-items:center; justify-content:center; padding:0 12px; border-radius:12px; font-size:13px; font-weight:600; gap:8px;">
+            <i data-lucide="eye" id="icon-privacy-global" style="width:16px;height:16px;"></i>
+            <span>Mode Privasi</span>
+          </button>
           <div style="display:flex; align-items:center; gap:8px; background:white; padding:6px 12px; border-radius:12px; border:1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
             <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
             <input type="date" class="form-input" id="dashboard-date-filter" value="${today}" onchange="renderDashboardContent()" style="border:none; padding:0; font-size:13px; width:auto; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
@@ -2555,7 +2681,7 @@ function renderDashboardContent() {
       <span class="item-qty">${tp.qty} <span>porsi</span></span>
     </div>
   `).join('');
-  if (!topHtml) topHtml = '<div class="empty-state">Belum ada data penjualan periode ini.</div>';
+  if (!topHtml) topHtml = '<div class="empty-state" style="margin:auto; display:flex; align-items:center; justify-content:center; flex:1;">Belum ada data penjualan periode ini.</div>';
 
   const payStats = { cash: 0, qris: 0, transfer: 0, card: 0 };
   filteredTxns.forEach(t => { if (payStats[t.payment_method] !== undefined) payStats[t.payment_method] += Number(t.total) || 0; });
@@ -2584,43 +2710,117 @@ function renderDashboardContent() {
       </div>
     </div>
   `).join('');
-  if (!recentHtml) recentHtml = '<div class="empty-state">Belum ada transaksi periode ini.</div>';
+  if (!recentHtml) recentHtml = '<div class="empty-state" style="margin:auto; display:flex; align-items:center; justify-content:center; flex:1;">Belum ada transaksi periode ini.</div>';
 
   area.innerHTML = `
     <div class="stats-grid dashboard-stats">
-      <div class="stat-card"><div class="label">Total Pendapatan</div><div class="value">${fmtRp(totalRev)}</div><div class="change up"><i data-lucide="trending-up" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Periode terpilih</div></div>
-      <div class="stat-card"><div class="label">Total Transaksi</div><div class="value">${totalCount}</div><div class="change up"><i data-lucide="activity" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Transaksi periode ini</div></div>
-      <div class="stat-card"><div class="label">Produk Terjual</div><div class="value">${Object.values(itemCounts).reduce((a,b)=>a+b, 0)}</div><div class="change up"><i data-lucide="coffee" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Porsi disajikan</div></div>
+      <div class="stat-card">
+        <button class="btn-privacy-toggle" onclick="toggleDashboardPrivacy('revenue')" title="Sembunyikan/Tampilkan Pendapatan">
+          <i data-lucide="${dashboardPrivacy.revenue ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+        </button>
+        <div class="label">Total Pendapatan</div>
+        <div class="value">${dashboardPrivacy.revenue ? 'Rp ••••••' : fmtRp(totalRev)}</div>
+        <div class="change up"><i data-lucide="trending-up" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Periode terpilih</div>
+      </div>
+      <div class="stat-card">
+        <button class="btn-privacy-toggle" onclick="toggleDashboardPrivacy('transactions')" title="Sembunyikan/Tampilkan Transaksi">
+          <i data-lucide="${dashboardPrivacy.transactions ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+        </button>
+        <div class="label">Total Transaksi</div>
+        <div class="value">${dashboardPrivacy.transactions ? '•••' : totalCount}</div>
+        <div class="change up"><i data-lucide="activity" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Transaksi periode ini</div>
+      </div>
+      <div class="stat-card">
+        <button class="btn-privacy-toggle" onclick="toggleDashboardPrivacy('products')" title="Sembunyikan/Tampilkan Produk Terjual">
+          <i data-lucide="${dashboardPrivacy.products ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+        </button>
+        <div class="label">Produk Terjual</div>
+        <div class="value">${dashboardPrivacy.products ? '•••' : Object.values(itemCounts).reduce((a,b)=>a+b, 0)}</div>
+        <div class="change up"><i data-lucide="coffee" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Porsi disajikan</div>
+      </div>
     </div>
 
     <div class="dashboard-grid dashboard-grid-primary">
-      <div class="card">
-        <div class="card-header dashboard-card-header">
-          <h3 id="revenue-chart-title"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Grafik Pendapatan</h3>
+      <div class="card" style="position:relative; display:flex; flex-direction:column;">
+        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <h3 id="revenue-chart-title" style="margin:0; display:flex; align-items:center; gap:8px;">
+            <i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Grafik Pendapatan
+          </h3>
+          <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('chart')" title="Sembunyikan/Tampilkan Grafik">
+            <i data-lucide="${dashboardPrivacy.chart ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+          </button>
         </div>
-        <div class="card-body dashboard-chart-body">
+        <div class="card-body dashboard-chart-body" style="position:relative; flex:1;">
+          ${dashboardPrivacy.chart ? `
+            <div class="privacy-overlay">
+              <i data-lucide="eye-off" style="width:32px;height:32px;color:var(--text-muted);"></i>
+            </div>
+          ` : ''}
           <canvas id="revenueChart"></canvas>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header dashboard-card-header"><h3><i data-lucide="award" style="width:18px;height:18px;color:var(--accent);"></i> Menu Paling Laris</h3></div>
-        <div class="card-body dashboard-list">${topHtml}</div>
+      <div class="card" style="position:relative; display:flex; flex-direction:column;">
+        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <h3 style="margin:0; display:flex; align-items:center; gap:8px;">
+            <i data-lucide="award" style="width:18px;height:18px;color:var(--accent);"></i> Menu Paling Laris
+          </h3>
+          <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('top_menu')" title="Sembunyikan/Tampilkan Menu Terlaris">
+            <i data-lucide="${dashboardPrivacy.top_menu ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+          </button>
+        </div>
+        <div class="card-body dashboard-list" style="position:relative; flex:1; display:flex; flex-direction:column; min-height:280px; box-sizing:border-box;">
+          ${dashboardPrivacy.top_menu ? `
+            <div class="privacy-overlay">
+              <i data-lucide="eye-off" style="width:32px;height:32px;color:var(--text-muted);"></i>
+            </div>
+          ` : ''}
+          ${topHtml}
+        </div>
       </div>
     </div>
 
     <div class="dashboard-grid dashboard-grid-secondary">
-      <div class="card">
-        <div class="card-header dashboard-card-header"><h3><i data-lucide="pie-chart" style="width:18px;height:18px;color:var(--accent);"></i> Ringkasan Pembayaran</h3></div>
-        <div class="card-body payment-summary">${payHtml}</div>
+      <div class="card" style="position:relative; display:flex; flex-direction:column;">
+        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <h3 style="margin:0; display:flex; align-items:center; gap:8px;">
+            <i data-lucide="pie-chart" style="width:18px;height:18px;color:var(--accent);"></i> Ringkasan Pembayaran
+          </h3>
+          <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('payment')" title="Sembunyikan/Tampilkan Ringkasan Pembayaran">
+            <i data-lucide="${dashboardPrivacy.payment ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+          </button>
+        </div>
+        <div class="card-body payment-summary" style="position:relative; flex:1; display:flex; flex-direction:column; justify-content:space-between; min-height:230px; padding:20px 20px 24px; box-sizing:border-box;">
+          ${dashboardPrivacy.payment ? `
+            <div class="privacy-overlay">
+              <i data-lucide="eye-off" style="width:32px;height:32px;color:var(--text-muted);"></i>
+            </div>
+          ` : ''}
+          ${payHtml}
+        </div>
       </div>
-      <div class="card">
-        <div class="card-header dashboard-card-header"><h3><i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> Transaksi Terakhir</h3></div>
-        <div class="card-body dashboard-list">${recentHtml}</div>
+      <div class="card" style="position:relative; display:flex; flex-direction:column;">
+        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <h3 style="margin:0; display:flex; align-items:center; gap:8px;">
+            <i data-lucide="clock" style="width:18px;height:18px;color:var(--accent);"></i> Transaksi Terakhir
+          </h3>
+          <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('recent')" title="Sembunyikan/Tampilkan Transaksi Terakhir">
+            <i data-lucide="${dashboardPrivacy.recent ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+          </button>
+        </div>
+        <div class="card-body dashboard-list" style="position:relative; flex:1; display:flex; flex-direction:column; min-height:230px; box-sizing:border-box;">
+          ${dashboardPrivacy.recent ? `
+            <div class="privacy-overlay">
+              <i data-lucide="eye-off" style="width:32px;height:32px;color:var(--text-muted);"></i>
+            </div>
+          ` : ''}
+          ${recentHtml}
+        </div>
       </div>
     </div>
   `;
   
   if (typeof lucide !== 'undefined') lucide.createIcons();
+  updateGlobalPrivacyButton();
   setTimeout(() => renderDashboardRevenueChart(activeDashboardPeriod), 100);
 }
 
