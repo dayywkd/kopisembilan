@@ -2845,6 +2845,12 @@ async function loadDashboardData() {
           });
         }
       });
+      const totalSold = Object.values(itemCounts).reduce((a,b) => a + b, 0);
+      const soldEl = document.getElementById('stat-products-sold-val');
+      if (soldEl) {
+        soldEl.textContent = dashboardPrivacy.products ? '•••' : totalSold;
+      }
+
       const topProds = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0, 4);
       const isHidden = dashboardPrivacy['top_menu'];
       topSection.innerHTML = topProds.length > 0
@@ -3065,7 +3071,7 @@ async function renderDashboardContent(itemsLoaded = false) {
           <i data-lucide="${dashboardPrivacy.products ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
         </button>
         <div class="label">Produk Terjual</div>
-        <div class="value">${dashboardPrivacy.products ? '•••' : Object.values(itemCounts).reduce((a,b)=>a+b, 0)}</div>
+        <div class="value" id="stat-products-sold-val">${dashboardPrivacy.products ? '•••' : (itemsLoaded ? Object.values(itemCounts).reduce((a,b)=>a+b, 0) : '...')}</div>
         <div class="change up"><i data-lucide="coffee" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Porsi disajikan</div>
       </div>
     </div>
