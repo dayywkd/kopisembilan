@@ -2854,19 +2854,76 @@ async function loadDashboardData() {
 
   if (myLoadId !== dashboardLoadId) return;
 
-  // FASE 2: Load items hanya 50 transaksi terbaru untuk "Menu Paling Laris"
+  const parseSafeDate = (dateStr) => {
+    if (!dateStr) return new Date();
+    if (dateStr instanceof Date) return dateStr;
+    return new Date(String(dateStr).replace(' ', 'T'));
+  };
+
+  const filteredTxns = txns.filter(t => {
+    const d = parseSafeDate(t.date);
+    const dIndo = getIndoDate(d);
+    
+    if (activeDashboardPeriod === 'daily') {
+      return dIndo === selectedDateStr;
+    } else if (activeDashboardPeriod === 'weekly') {
+      const weekAgo = new Date(refDate);
+      weekAgo.setDate(refDate.getDate() - 7);
+      const weekAgoStr = getIndoDate(weekAgo);
+      return dIndo >= weekAgoStr && dIndo <= selectedDateStr;
+    } else if (activeDashboardPeriod === 'monthly') {
+      const dMonth = new Intl.DateTimeFormat('en-US', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const dYear = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const refMonth = new Intl.DateTimeFormat('en-US', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      const refYear = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      return dMonth === refMonth && dYear === refYear;
+    } else if (activeDashboardPeriod === 'yearly') {
+      const dYear = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const refYear = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      return dYear === refYear;
+    }
+    return true;
+  });
+
+  // FASE 2: Load items untuk "Menu Paling Laris" & update Produk Terjual untuk SELURUH transaksi periode terpilih
   const area = document.getElementById('dashboard-content-area');
-  if (area && txns.length > 0) {
-    const topTxns = txns.slice(0, 50);
-    await loadItemsForTransactions(topTxns);
-
-    if (myLoadId !== dashboardLoadId) return;
-
-    // Update hanya elemen "Menu Paling Laris" tanpa re-render seluruh dashboard
+  if (area) {
     const topSection = document.getElementById('dashboard-top-products');
-    if (topSection) {
+    const soldEl = document.getElementById('stat-products-sold-val');
+
+    if (filteredTxns.length === 0) {
+      if (soldEl) soldEl.textContent = dashboardPrivacy.products ? '•••' : '0';
+      if (topSection) {
+        topSection.innerHTML = `
+          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
+            <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
+            <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
+          </div>`;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+    } else {
+      if (topSection) {
+        const sk = (w = '80px', h = '14px') => `<div style="width:${w};height:${h};border-radius:6px;background:#e8ddd3;animation:pulse 1.2s ease-in-out infinite;"></div>`;
+        topSection.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+            ${[1,2,3,4].map(i => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <div style="width:24px; height:24px; border-radius:50%; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
+                  ${sk(`${70 + i*20}px`)}
+                </div>
+                ${sk('45px')}
+              </div>
+            `).join('')}
+          </div>`;
+      }
+
+      await loadItemsForTransactions(filteredTxns);
+
+      if (myLoadId !== dashboardLoadId) return;
+
       const itemCounts = {};
-      topTxns.forEach(t => {
+      filteredTxns.forEach(t => {
         if (t.transaction_items) {
           t.transaction_items.forEach(i => {
             const p = products.find(prod => prod.id === i.product_id);
@@ -2875,30 +2932,30 @@ async function loadDashboardData() {
           });
         }
       });
-      const totalSold = Object.values(itemCounts).reduce((a,b) => a + b, 0);
-      const soldEl = document.getElementById('stat-products-sold-val');
-      if (soldEl) {
-        soldEl.textContent = dashboardPrivacy.products ? '•••' : totalSold;
-      }
 
-      const topProds = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0, 4);
-      const isHidden = dashboardPrivacy['top_menu'];
-      topSection.innerHTML = topProds.length > 0
-        ? topProds.map(([name, qty], idx) => `
-            <div class="dashboard-list-row">
-              <div class="ranked-item">
-                <span class="rank-badge">${idx + 1}</span>
-                <div><div class="item-title">${isHidden ? '••••••' : name}</div></div>
-              </div>
-              <span class="item-qty">${isHidden ? '••' : qty} <span>porsi</span></span>
-            </div>`).join('')
-        : `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
-            <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
-            <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
-          </div>`;
-      if (typeof lucide !== 'undefined') lucide.createIcons();
-    } else {
-      await renderDashboardContent(true);
+      const totalSold = Object.values(itemCounts).reduce((a,b) => a + b, 0);
+      if (soldEl) soldEl.textContent = dashboardPrivacy.products ? '•••' : totalSold;
+
+      if (topSection) {
+        const topProds = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0, 4);
+        const isHidden = dashboardPrivacy['top_menu'];
+        topSection.innerHTML = topProds.length > 0
+          ? topProds.map(([name, qty], idx) => `
+              <div class="dashboard-list-row">
+                <div class="ranked-item">
+                  <span class="rank-badge">${idx + 1}</span>
+                  <div><div class="item-title">${isHidden ? '••••••' : name}</div></div>
+                </div>
+                <span class="item-qty">${isHidden ? '••' : qty} <span>porsi</span></span>
+              </div>`).join('')
+          : `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
+              <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
+              <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
+            </div>`;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      } else {
+        await renderDashboardContent(true);
+      }
     }
   }
 
@@ -3074,7 +3131,7 @@ async function renderDashboardContent(itemsLoaded = false) {
     .map(entry => ({ name: entry[0], qty: entry[1] }));
 
   let topHtml;
-  if (!itemsLoaded) {
+  if (!itemsLoaded && filteredTxns.length > 0) {
     // Fase 1: tampilkan pesan sederhana sambil data dimuat di background
     topHtml = `
       <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:10px; color:var(--text-muted); padding:32px 16px;">
