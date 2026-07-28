@@ -338,6 +338,11 @@ body {
   overflow-y: auto;
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;

@@ -43,7 +43,7 @@ let dashboardPrivacy = {
 window.toggleDashboardPrivacy = (key) => {
   dashboardPrivacy[key] = !dashboardPrivacy[key];
   localStorage.setItem(`ks_priv_${key}`, dashboardPrivacy[key]);
-  renderDashboardContent();
+  renderDashboardContent(true);
 };
 
 window.toggleAllDashboardPrivacy = () => {
@@ -55,7 +55,7 @@ window.toggleAllDashboardPrivacy = () => {
     localStorage.setItem(`ks_priv_${k}`, anyVisible);
   });
   
-  renderDashboardContent();
+  renderDashboardContent(true);
 };
 
 window.updateGlobalPrivacyButton = () => {
@@ -303,37 +303,130 @@ async function loadStoreInfo() {
   } catch (e) { console.log('Store info fail', e); }
 }
 
-async function fetchAllTransactions() {
-  let allTxns = [];
-  let from = 0;
-  let to = 999;
-  let hasMore = true;
-  
-  while (hasMore) {
-    const { data, error } = await db
-      .from('transactions')
-      .select('*, transaction_items(*, products(*))')
-      .order('date', { ascending: false })
-      .range(from, to);
-      
-    if (error) {
-      console.error('Error fetching transactions batch:', error);
-      break;
-    }
-    
-    if (!data || data.length === 0) {
-      hasMore = false;
-    } else {
-      allTxns = allTxns.concat(data);
-      if (data.length < 1000) {
-        hasMore = false;
-      } else {
-        from += 1000;
-        to += 1000;
-      }
-    }
+let transactionCache = {};
+let activeTransactionRequests = {};
+
+function invalidateTransactionCache() {
+  transactionCache = {};
+  activeTransactionRequests = {};
+  window.dashboardTxns = null;
+  // Hapus juga cache items agar data fresh setelah transaksi baru
+  Object.keys(itemsCache).forEach(k => delete itemsCache[k]);
+}
+
+function getProductNameFromItem(item) {
+  if (item && item.products && item.products.name) return item.products.name;
+  if (item && item.product_id && typeof products !== 'undefined' && Array.isArray(products)) {
+    const p = products.find(prod => prod.id === item.product_id);
+    if (p) return p.name;
   }
-  return allTxns;
+  return 'Produk';
+}
+
+// Cache global untuk items — sekali dimuat, tidak pernah fetch ulang selama sesi
+const itemsCache = {};
+
+async function loadItemsForTransactions(targetTxns) {
+  if (!targetTxns || targetTxns.length === 0) return;
+
+  // Ambil hanya transaksi yang BENAR-BENAR belum ada itemsnya di cache global
+  const missingTxns = targetTxns.filter(t => {
+    if (t.transaction_items) return false; // sudah ada di objek
+    if (itemsCache[t.id] !== undefined) {
+      t.transaction_items = itemsCache[t.id]; // ambil dari cache global
+      return false;
+    }
+    return true;
+  });
+  if (missingTxns.length === 0) return;
+
+  const txnIds = missingTxns.map(t => t.id);
+  const batchSize = 200;
+  const batchPromises = [];
+
+  for (let i = 0; i < txnIds.length; i += batchSize) {
+    const batchIds = txnIds.slice(i, i + batchSize);
+    batchPromises.push(
+      db.from('transaction_items')
+        .select('id, transaction_id, product_id, qty, price, selected_variants, item_note')
+        .in('transaction_id', batchIds)
+    );
+  }
+
+  const results = await Promise.all(batchPromises);
+  let allItems = [];
+  results.forEach(res => {
+    if (res.data) allItems = allItems.concat(res.data);
+  });
+
+  const itemMap = {};
+  allItems.forEach(item => {
+    if (!itemMap[item.transaction_id]) itemMap[item.transaction_id] = [];
+    itemMap[item.transaction_id].push(item);
+  });
+
+  missingTxns.forEach(t => {
+    const items = itemMap[t.id] || [];
+    t.transaction_items = items;
+    itemsCache[t.id] = items; // simpan ke cache global
+  });
+}
+
+async function fetchTransactionsByRange(startDateStr, endDateStr, isDashboard = false) {
+  // Gunakan cache key bersama agar Dashboard dan Laporan berbagi cache
+  const cacheKey = `${startDateStr || 'all'}_${endDateStr || 'all'}_full`;
+  const now = Date.now();
+
+  if (transactionCache[cacheKey] && (now - transactionCache[cacheKey].timestamp < 60000)) {
+    return transactionCache[cacheKey].data;
+  }
+
+  if (activeTransactionRequests[cacheKey]) {
+    return await activeTransactionRequests[cacheKey];
+  }
+
+  const requestPromise = (async () => {
+    try {
+      const buildQuery = (from, to) => {
+        let q = db.from('transactions').select('*').order('date', { ascending: false });
+        if (startDateStr) q = q.gte('date', `${startDateStr}T00:00:00`);
+        if (endDateStr) q = q.lte('date', `${endDateStr}T23:59:59.999`);
+        return q.range(from, to);
+      };
+
+      // Batch 1: Ambil data pertama (cepat, hanya 1 request)
+      const { data: firstBatch, error: firstErr } = await buildQuery(0, 999);
+      if (firstErr) {
+        console.error('Error fetching transactions:', firstErr);
+        transactionCache[cacheKey] = { data: [], timestamp: Date.now() };
+        return [];
+      }
+
+      let txns = firstBatch || [];
+
+      // Hanya lanjutkan fetch tambahan jika batch pertama penuh (ada > 1000 data)
+      // Fetch batch berikutnya secara sekuensial sampai habis — hindari 10x fan-out buta
+      while (txns.length % 1000 === 0 && txns.length > 0) {
+        const from = txns.length;
+        const { data: nextBatch, error: nextErr } = await buildQuery(from, from + 999);
+        if (nextErr || !nextBatch || nextBatch.length === 0) break;
+        txns = txns.concat(nextBatch);
+        if (nextBatch.length < 1000) break;
+      }
+
+      transactionCache[cacheKey] = { data: txns, timestamp: Date.now() };
+      return txns;
+    } finally {
+      delete activeTransactionRequests[cacheKey];
+    }
+  })();
+
+  activeTransactionRequests[cacheKey] = requestPromise;
+  return await requestPromise;
+}
+
+async function fetchAllTransactions() {
+  return await fetchTransactionsByRange(null, null, false);
 }
 
 async function saveStoreInfo() {
@@ -1222,6 +1315,7 @@ async function confirmPayment(sendMode = 'none') {
     editingTransactionId = null;
     cart = [];
     cartItemSeq = 0;
+    invalidateTransactionCache();
     updateCartUI();
     closeModal('modal-payment');
     
@@ -1467,7 +1561,7 @@ async function renderReport(el) {
   
   let txns = [];
   try {
-    txns = await fetchAllTransactions();
+    txns = await fetchTransactionsByRange(today, today);
   } catch (e) {
     console.error('Report load fail', e);
   }
@@ -1498,7 +1592,7 @@ async function renderReport(el) {
     window.applyReportFilters(true);
   };
 
-  const renderContent = (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
+  const renderContent = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
     const filtered = txns.filter(t => {
       // Bandingkan tanggal transaksi di zona waktu Indonesia
       const tDate = getIndoDate(new Date(t.date));
@@ -1547,6 +1641,8 @@ async function renderReport(el) {
     const endIndex = startIndex + itemsPerPageReport;
     const paginated = filtered.slice(startIndex, endIndex);
 
+    await loadItemsForTransactions(paginated);
+
     const rows = paginated.map(t => {
       const isLunas = t.payment_status === 'Lunas';
       const isCash = t.payment_method === 'cash';
@@ -1554,7 +1650,7 @@ async function renderReport(el) {
       let itemsText = '';
       if (t.transaction_items && t.transaction_items.length > 0) {
         const mergedItems = t.transaction_items.reduce((acc, item) => {
-          const name = item.products?.name || 'Produk';
+          const name = getProductNameFromItem(item);
           const existing = acc.find(i => i.name === name);
           if (existing) {
             existing.qty += item.qty;
@@ -1682,16 +1778,6 @@ async function renderReport(el) {
     `;
   };
 
-  window.toggleReportSort = (key) => {
-    if (currentSortKey === key) {
-      currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-    } else {
-      currentSortKey = key;
-      currentSortDirection = 'desc';
-    }
-    window.applyReportFilters(true);
-  };
-
   el.innerHTML = `
     <div class="filter-bar">
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
@@ -1724,7 +1810,7 @@ async function renderReport(el) {
       </div>
       <button class="btn btn-brown btn-sm" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export Excel</button>
     </div>
-    <div id="report-container">${renderContent(today, today, 'Semua', 'Semua')}</div>
+    <div id="report-container">${await renderContent(today, today, 'Semua', 'Semua')}</div>
   `;
   
   if (typeof flatpickr !== 'undefined') {
@@ -1746,24 +1832,32 @@ async function renderReport(el) {
   
   if (typeof lucide !== 'undefined') lucide.createIcons();
   
-  window.renderReportTable = (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
-    const html = renderContent(startDate, endDate, status, method);
+  window.renderReportTable = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
+    const html = await renderContent(startDate, endDate, status, method);
     if (typeof lucide !== 'undefined') {
       requestAnimationFrame(() => lucide.createIcons());
     }
     return html;
   };
   
-  window.applyReportFilters = (resetPage = false) => {
+  window.applyReportFilters = async (resetPage = false) => {
     if (resetPage) {
       currentPageReport = 1;
     }
-    const startDate = document.getElementById('report-start-date')?.value;
-    const endDate = document.getElementById('report-end-date')?.value;
+    const startDate = document.getElementById('report-start-date')?.value || today;
+    const endDate = document.getElementById('report-end-date')?.value || today;
     const status = document.getElementById('report-status-filter')?.value || 'Semua';
     const method = document.getElementById('report-method-filter')?.value || 'Semua';
+
+    try {
+      txns = await fetchTransactionsByRange(startDate, endDate);
+    } catch (e) {
+      console.error('Report filter load fail', e);
+    }
+
+    const html = await window.renderReportTable(startDate, endDate, status, method);
     const container = document.getElementById('report-container');
-    if (container) container.innerHTML = window.renderReportTable(startDate, endDate, status, method);
+    if (container) container.innerHTML = html;
   };
 }
 
@@ -2569,7 +2663,7 @@ async function renderDashboard(el) {
           </button>
           <div style="display:flex; align-items:center; gap:8px; background:white; padding:6px 12px; border-radius:12px; border:1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
             <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
-            <input type="date" class="form-input" id="dashboard-date-filter" value="${today}" onchange="renderDashboardContent()" style="border:none; padding:0; font-size:13px; width:auto; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
+            <input type="date" class="form-input" id="dashboard-date-filter" value="${today}" onchange="loadDashboardData()" style="border:none; padding:0; font-size:13px; width:auto; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
           </div>
           <div class="period-tabs" style="background:var(--brown-50); padding:4px; border-radius:12px; border:1px solid var(--brown-100);">
             <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')">Harian</button>
@@ -2590,18 +2684,108 @@ async function renderDashboard(el) {
       dateFormat: 'Y-m-d',
       defaultDate: today,
       onChange: (selectedDates, dateStr) => {
-        renderDashboardContent();
+        loadDashboardData();
       }
     });
   }
   
+  await loadDashboardData();
+}
+
+async function loadDashboardData() {
+  const dateInput = document.getElementById('dashboard-date-filter');
+  const selectedDateStr = dateInput ? dateInput.value : getIndoDate();
+  const refDate = new Date(selectedDateStr + 'T12:00:00');
+
+  let startDateStr = selectedDateStr;
+  let endDateStr = selectedDateStr;
+
+  if (activeDashboardPeriod === 'weekly') {
+    const weekAgo = new Date(refDate);
+    weekAgo.setDate(refDate.getDate() - 7);
+    startDateStr = getIndoDate(weekAgo);
+  } else if (activeDashboardPeriod === 'monthly') {
+    const year = refDate.getFullYear();
+    const month = String(refDate.getMonth() + 1).padStart(2, '0');
+    startDateStr = `${year}-${month}-01`;
+    const lastDay = new Date(year, refDate.getMonth() + 1, 0).getDate();
+    endDateStr = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  } else if (activeDashboardPeriod === 'yearly') {
+    const year = refDate.getFullYear();
+    startDateStr = `${year}-01-01`;
+    endDateStr = `${year}-12-31`;
+  }
+
+  // FASE 1: Fetch transaksi RINGAN (hanya kolom stats, tanpa items) — super cepat ~150ms
   let txns = [];
   try {
-    txns = await fetchAllTransactions();
+    const cacheKey = `${startDateStr || 'all'}_${endDateStr || 'all'}_dash`;
+    const cached = transactionCache[cacheKey];
+    if (cached && (Date.now() - cached.timestamp < 60000)) {
+      txns = cached.data;
+    } else {
+      // Gunakan query ringan (hanya kolom yang diperlukan dashboard)
+      const buildQ = (from, to) => {
+        let q = db.from('transactions')
+          .select('id, total, payment_method, payment_status, date, cash_amount, cash_change')
+          .order('date', { ascending: false });
+        if (startDateStr) q = q.gte('date', `${startDateStr}T00:00:00`);
+        if (endDateStr) q = q.lte('date', `${endDateStr}T23:59:59.999`);
+        return q.range(from, to);
+      };
+      const { data: batch1, error: err1 } = await buildQ(0, 999);
+      if (!err1 && batch1) {
+        txns = batch1;
+        while (txns.length % 1000 === 0 && txns.length > 0) {
+          const { data: batchN, error: errN } = await buildQ(txns.length, txns.length + 999);
+          if (errN || !batchN || batchN.length === 0) break;
+          txns = txns.concat(batchN);
+          if (batchN.length < 1000) break;
+        }
+      }
+      transactionCache[cacheKey] = { data: txns, timestamp: Date.now() };
+    }
   } catch(e) { console.error('Dashboard load fail', e); }
   window.dashboardTxns = txns;
 
-  renderDashboardContent();
+  // Render stats dasar instan (Total Pendapatan, Transaksi, Grafik)
+  await renderDashboardContent(false);
+
+  // FASE 2: Load items hanya 50 transaksi terbaru untuk "Menu Paling Laris"
+  const area = document.getElementById('dashboard-content-area');
+  if (area && txns.length > 0) {
+    const topTxns = txns.slice(0, 50);
+    await loadItemsForTransactions(topTxns);
+
+    // Update hanya elemen "Menu Paling Laris" tanpa re-render seluruh dashboard
+    const topSection = document.getElementById('dashboard-top-products');
+    if (topSection) {
+      const itemCounts = {};
+      topTxns.forEach(t => {
+        if (t.transaction_items) {
+          t.transaction_items.forEach(i => {
+            const p = products.find(prod => prod.id === i.product_id);
+            if (!p) return;
+            itemCounts[p.name] = (itemCounts[p.name] || 0) + i.qty;
+          });
+        }
+      });
+      const topProds = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0, 4);
+      const isHidden = dashboardPrivacy['top_menu'];
+      topSection.innerHTML = topProds.length > 0
+        ? topProds.map(([name, qty], idx) => `
+            <div class="dashboard-list-row">
+              <div class="ranked-item">
+                <span class="rank-badge">${idx + 1}</span>
+                <div><div class="item-title">${isHidden ? '••••••' : name}</div></div>
+              </div>
+              <span class="item-qty">${isHidden ? '••' : qty} <span>porsi</span></span>
+            </div>`).join('')
+        : '<div class="empty-state" style="margin:auto;display:flex;align-items:center;justify-content:center;flex:1;">Belum ada data penjualan periode ini.</div>';
+    } else {
+      await renderDashboardContent(true);
+    }
+  }
 }
 
 function changeDashboardPeriod(period) {
@@ -2609,10 +2793,10 @@ function changeDashboardPeriod(period) {
   document.querySelectorAll('.dashboard-hero .period-tab').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${period}'`));
   });
-  renderDashboardContent();
+  loadDashboardData();
 }
 
-function renderDashboardContent() {
+async function renderDashboardContent(itemsLoaded = false) {
   const area = document.getElementById('dashboard-content-area');
   if (!area) return;
 
@@ -2654,34 +2838,56 @@ function renderDashboardContent() {
   const totalCount = filteredTxns.length;
 
   const itemCounts = {};
-  filteredTxns.forEach(t => {
-    if (t.transaction_items) {
-      t.transaction_items.forEach(i => {
-        const p = products.find(prod => prod.id === i.product_id);
-        // Jika produk tidak ditemukan di daftar aktif, jangan tampilkan di ranking
-        if (!p) return;
-        
-        const key = p.name;
-        itemCounts[key] = (itemCounts[key] || 0) + i.qty;
-      });
-    }
-  });
+  if (itemsLoaded) {
+    filteredTxns.forEach(t => {
+      if (t.transaction_items) {
+        t.transaction_items.forEach(i => {
+          const p = products.find(prod => prod.id === i.product_id);
+          if (!p) return;
+          const key = p.name;
+          itemCounts[key] = (itemCounts[key] || 0) + i.qty;
+        });
+      }
+    });
+  } else {
+    // Items belum selesai dimuat, tampilkan placeholder dulu
+    // updatenya akan datang dari Fase 2
+  }
 
   const topProducts = Object.entries(itemCounts)
     .sort((a,b) => b[1] - a[1])
     .slice(0, 4)
     .map(entry => ({ name: entry[0], qty: entry[1] }));
 
-  let topHtml = topProducts.map((tp, idx) => `
-    <div class="dashboard-list-row">
-      <div class="ranked-item">
-        <span class="rank-badge">${idx + 1}</span>
-        <div><div class="item-title">${tp.name}</div></div>
+  let topHtml;
+  if (!itemsLoaded) {
+    // Fase 1: tampilkan skeleton/placeholder instan sambil items dimuat di background
+    topHtml = `
+      <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+        ${[1,2,3,4].map(i => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div style="width:24px; height:24px; border-radius:50%; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
+              <div style="width:${80 + i*20}px; height:14px; border-radius:6px; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
+            </div>
+            <div style="width:50px; height:14px; border-radius:6px; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
+          </div>
+        `).join('')}
       </div>
-      <span class="item-qty">${tp.qty} <span>porsi</span></span>
-    </div>
-  `).join('');
-  if (!topHtml) topHtml = '<div class="empty-state" style="margin:auto; display:flex; align-items:center; justify-content:center; flex:1;">Belum ada data penjualan periode ini.</div>';
+    `;
+  } else {
+    topHtml = topProducts.map((tp, idx) => `
+      <div class="dashboard-list-row">
+        <div class="ranked-item">
+          <span class="rank-badge">${idx + 1}</span>
+          <div><div class="item-title">${tp.name}</div></div>
+        </div>
+        <span class="item-qty">${tp.qty} <span>porsi</span></span>
+      </div>
+    `).join('');
+    if (!topHtml) topHtml = '<div class="empty-state" style="margin:auto; display:flex; align-items:center; justify-content:center; flex:1;">Belum ada data penjualan periode ini.</div>';
+  }
+
 
   const payStats = { cash: 0, qris: 0, transfer: 0, card: 0 };
   filteredTxns.forEach(t => { if (payStats[t.payment_method] !== undefined) payStats[t.payment_method] += Number(t.total) || 0; });
@@ -2768,7 +2974,7 @@ function renderDashboardContent() {
             <i data-lucide="${dashboardPrivacy.top_menu ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
           </button>
         </div>
-        <div class="card-body dashboard-list" style="position:relative; flex:1; display:flex; flex-direction:column; min-height:280px; box-sizing:border-box;">
+        <div class="card-body dashboard-list" id="dashboard-top-products" style="position:relative; flex:1; display:flex; flex-direction:column; min-height:280px; box-sizing:border-box;">
           ${dashboardPrivacy.top_menu ? `
             <div class="privacy-overlay">
               <i data-lucide="eye-off" style="width:32px;height:32px;color:var(--text-muted);"></i>
@@ -3148,6 +3354,7 @@ async function saveTransactionEdit() {
     const logDetails = `ID: ${id}\nTotal Baru: ${fmtRp(newTotal)}\nStatus: ${status}\nMetode: ${method}\nCatatan Transaksi Baru: ${notes || '-'}\nItem Aktif:\n${itemsSummary}`;
     
     addActivityLog('Edit Transaksi & Pesanan', logDetails);
+    invalidateTransactionCache();
     closeModal('modal-edit-txn');
     
     // Refresh laporan jika sedang di halaman laporan
@@ -3174,7 +3381,7 @@ async function resendWhatsAppReceipt(id) {
 
   // Format item agar sesuai dengan yang diharapkan sendWhatsAppReceipt
   const formattedItems = txn.transaction_items.map(i => ({
-    name: i.products?.name || 'Produk',
+    name: getProductNameFromItem(i),
     qty: i.qty,
     totalPrice: i.price,
     note: i.item_note
@@ -3206,6 +3413,7 @@ async function deleteTransaction(id) {
 
         showToast('Transaksi berhasil dihapus!', 'success');
         addActivityLog('Hapus Transaksi', `ID: ${id}`);
+        invalidateTransactionCache();
         
         // Refresh laporan jika sedang di halaman laporan
         const currentTitle = document.getElementById('page-title').textContent;
