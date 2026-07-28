@@ -521,6 +521,11 @@ const PAGE_TITLES = {
 };
 
 function showPage(page) {
+  if (dashboardAutoRefreshTimer) {
+    clearInterval(dashboardAutoRefreshTimer);
+    dashboardAutoRefreshTimer = null;
+  }
+
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelectorAll(`.nav-item`).forEach(n => {
     if (n.getAttribute('onclick') && n.getAttribute('onclick').includes(`'${page}'`)) {
@@ -2595,20 +2600,26 @@ async function viewTxnDetail(id) {
 }
 
 function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
-  const refDate = new Date(selectedDateStr + 'T12:00:00');
+  const parseSafeDate = (dateStr) => {
+    if (!dateStr) return new Date();
+    if (dateStr instanceof Date) return dateStr;
+    return new Date(String(dateStr).replace(' ', 'T'));
+  };
+
+  const refDate = parseSafeDate(selectedDateStr + 'T12:00:00');
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
   
-  const getJakartaYear = (d) => parseInt(new Intl.DateTimeFormat('id-ID', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d));
-  const getJakartaMonth = (d) => parseInt(new Intl.DateTimeFormat('id-ID', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(d)) - 1;
+  const getJakartaYear = (d) => parseInt(new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d));
+  const getJakartaMonth = (d) => parseInt(new Intl.DateTimeFormat('en-US', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(d)) - 1;
 
   if (period === 'daily') {
     const labels = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
     const values = labels.map(() => 0);
     txns.forEach(t => {
-      const d = new Date(t.date);
+      if (t.payment_status && t.payment_status !== 'Lunas') return;
+      const d = parseSafeDate(t.date);
       if (getIndoDate(d) === selectedDateStr) {
-        // Ambil jam dalam zona waktu Jakarta
-        const hour = parseInt(new Intl.DateTimeFormat('id-ID', { hour: 'numeric', hour12: false, timeZone: 'Asia/Jakarta' }).format(d));
+        const hour = parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Jakarta' }).format(d));
         if (hour >= 8 && hour < 10) values[0] += Number(t.total) || 0;
         else if (hour >= 10 && hour < 12) values[1] += Number(t.total) || 0;
         else if (hour >= 12 && hour < 14) values[2] += Number(t.total) || 0;
@@ -2622,26 +2633,19 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
     return { labels, values, title: `Pendapatan Tanggal ${selectedDateStr}` };
   }
 
-  if (period === 'yearly') {
-    const startYear = getJakartaYear(refDate) - 4;
-    const labels = Array.from({ length: 5 }, (_, i) => String(startYear + i));
-    const values = labels.map(() => 0);
-    txns.forEach(t => {
-      const d = new Date(t.date);
-      const idx = getJakartaYear(d) - startYear;
-      if (idx >= 0 && idx < values.length) values[idx] += Number(t.total) || 0;
-    });
-    return { labels, values, title: 'Pendapatan Tahunan' };
-  }
-
-  if (period === 'monthly') {
+  if (period === 'yearly' || period === 'monthly') {
+    const year = getJakartaYear(refDate);
     const labels = monthNames;
     const values = labels.map(() => 0);
     txns.forEach(t => {
-      const d = new Date(t.date);
-      if (getJakartaYear(d) === getJakartaYear(refDate)) values[getJakartaMonth(d)] += Number(t.total) || 0;
+      if (t.payment_status && t.payment_status !== 'Lunas') return;
+      const d = parseSafeDate(t.date);
+      if (getJakartaYear(d) === year) {
+        const m = getJakartaMonth(d);
+        if (m >= 0 && m < 12) values[m] += Number(t.total) || 0;
+      }
     });
-    return { labels, values, title: `Pendapatan Bulanan (${getJakartaYear(refDate)})` };
+    return { labels, values, title: `Pendapatan Bulanan (${year})` };
   }
 
   const labels = [];
@@ -2654,12 +2658,14 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
   }
   const values = labels.map(() => 0);
   txns.forEach(t => {
-    const key = getIndoDate(new Date(t.date));
+    if (t.payment_status && t.payment_status !== 'Lunas') return;
+    const key = getIndoDate(parseSafeDate(t.date));
     const idx = keys.indexOf(key);
     if (idx >= 0) values[idx] += Number(t.total) || 0;
   });
   return { labels, values, title: `Pendapatan Mingguan (s/d ${selectedDateStr})` };
 }
+
 
 function renderDashboardRevenueChart(period = 'weekly') {
   const ctx = document.getElementById('revenueChart');
@@ -2722,15 +2728,30 @@ async function renderDashboard(el) {
             <i data-lucide="eye" id="icon-privacy-global" style="width:16px;height:16px;"></i>
             <span>Mode Privasi</span>
           </button>
-          <div style="display:flex; align-items:center; gap:8px; background:white; padding:6px 12px; border-radius:12px; border:1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
-            <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
-            <input type="date" class="form-input" id="dashboard-date-filter" value="${today}" onchange="loadDashboardData()" style="border:none; padding:0; font-size:13px; width:auto; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
-          </div>
-          <div class="period-tabs" style="background:var(--brown-50); padding:4px; border-radius:12px; border:1px solid var(--brown-100);">
-            <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')">Harian</button>
-            <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')">Mingguan</button>
-            <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')">Bulanan</button>
-            <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')">Tahunan</button>
+          <div class="kibana-time-picker" style="display:flex; align-items:center; gap:8px; background:white; padding:4px 6px; border-radius:12px; border:1px solid var(--border); box-shadow:0 2px 6px rgba(0,0,0,0.04); flex-wrap:wrap; position:relative;">
+            <div class="dropdown" style="position:relative;">
+              <button class="btn btn-sm" onclick="toggleTimeFilterDropdown()" title="Pilih Cepat Rentang Waktu" style="display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:0 8px; height:32px; background:var(--brown-50); border-radius:8px; color:var(--brown-800); border:1px solid var(--brown-100); cursor:pointer;">
+                <i data-lucide="clock" style="width:15px;height:15px;color:var(--accent);"></i>
+                <i data-lucide="chevron-down" style="width:12px;height:12px;color:var(--text-muted);"></i>
+              </button>
+              <div id="time-filter-dropdown-menu" style="display:none; position:absolute; top:115%; left:0; background:white; border:1px solid var(--border); border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); z-index:100; min-width:150px; padding:4px 0;">
+                <button onclick="selectQuickPreset('daily')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Hari Ini</button>
+                <button onclick="selectQuickPreset('yesterday')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Kemarin</button>
+                <button onclick="selectQuickPreset('weekly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">7 Hari Terakhir</button>
+                <button onclick="selectQuickPreset('monthly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Bulan Ini</button>
+                <button onclick="selectQuickPreset('yearly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Tahun Ini</button>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; padding:2px 8px; border-right:1px solid var(--border);">
+              <i data-lucide="calendar" style="width:15px;height:15px;color:var(--text-muted);"></i>
+              <input type="date" class="form-input" id="dashboard-date-filter" value="${today}" onchange="showDashboardSkeleton(); loadDashboardData();" style="border:none; padding:0; font-size:13px; background:transparent; font-weight:600; color:var(--brown-800); cursor:pointer;">
+            </div>
+            <div class="period-tabs" style="background:var(--brown-50); padding:3px; border-radius:8px; border:1px solid var(--brown-100); display:flex; gap:2px;">
+              <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')" title="Filter data hari ini">Hari Ini</button>
+              <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')" title="Filter 7 hari terakhir">7 Hari</button>
+              <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')" title="Filter bulan ini (Jan-Des)">Bulan Ini</button>
+              <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')" title="Filter tahun ini">Tahun Ini</button>
+            </div>
           </div>
         </div>
       </div>
@@ -2751,7 +2772,22 @@ async function renderDashboard(el) {
     });
   }
   
+  startDashboardAutoRefresh();
   await loadDashboardData();
+}
+
+let dashboardAutoRefreshTimer = null;
+
+function startDashboardAutoRefresh() {
+  if (dashboardAutoRefreshTimer) clearInterval(dashboardAutoRefreshTimer);
+  dashboardAutoRefreshTimer = setInterval(() => {
+    const area = document.getElementById('dashboard-content-area');
+    if (area && document.visibilityState === 'visible') {
+      // Hapus cache agar data real-time diambil dari server
+      invalidateTransactionCache();
+      loadDashboardData();
+    }
+  }, 30000); // Auto refresh tiap 30 detik (Kibana Live Style)
 }
 
 let dashboardLoadId = 0;
@@ -2771,13 +2807,7 @@ async function loadDashboardData() {
     const weekAgo = new Date(refDate);
     weekAgo.setDate(refDate.getDate() - 7);
     startDateStr = getIndoDate(weekAgo);
-  } else if (activeDashboardPeriod === 'monthly') {
-    const year = refDate.getFullYear();
-    const month = String(refDate.getMonth() + 1).padStart(2, '0');
-    startDateStr = `${year}-${month}-01`;
-    const lastDay = new Date(year, refDate.getMonth() + 1, 0).getDate();
-    endDateStr = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-  } else if (activeDashboardPeriod === 'yearly') {
+  } else if (activeDashboardPeriod === 'monthly' || activeDashboardPeriod === 'yearly') {
     const year = refDate.getFullYear();
     startDateStr = `${year}-01-01`;
     endDateStr = `${year}-12-31`;
@@ -2928,6 +2958,57 @@ function changeDashboardPeriod(period) {
     loadDashboardData();
   }, 20);
 }
+
+function toggleTimeFilterDropdown() {
+  const menu = document.getElementById('time-filter-dropdown-menu');
+  if (!menu) return;
+  const isShown = menu.style.display === 'block';
+  menu.style.display = isShown ? 'none' : 'block';
+}
+
+function selectQuickPreset(preset) {
+  const dateInput = document.getElementById('dashboard-date-filter');
+  if (preset === 'yesterday') {
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    const yestStr = getIndoDate(yest);
+    if (dateInput) {
+      dateInput.value = yestStr;
+      if (dateInput._flatpickr) dateInput._flatpickr.setDate(yestStr, false);
+    }
+    activeDashboardPeriod = 'daily';
+  } else if (preset === 'daily') {
+    const todayStr = getIndoDate();
+    if (dateInput) {
+      dateInput.value = todayStr;
+      if (dateInput._flatpickr) dateInput._flatpickr.setDate(todayStr, false);
+    }
+    activeDashboardPeriod = 'daily';
+  } else {
+    // Untuk 7 Hari, Bulan Ini, dan Tahun Ini: pertahankan tanggal acak pilihan user
+    activeDashboardPeriod = preset;
+  }
+
+  // Update visual tab aktif
+  document.querySelectorAll('.dashboard-hero .period-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${activeDashboardPeriod}'`));
+  });
+
+  const menu = document.getElementById('time-filter-dropdown-menu');
+  if (menu) menu.style.display = 'none';
+
+  showDashboardSkeleton();
+  loadDashboardData();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dropdown')) {
+    const menu = document.getElementById('time-filter-dropdown-menu');
+    if (menu) menu.style.display = 'none';
+  }
+});
+
 
 async function renderDashboardContent(itemsLoaded = false) {
   const area = document.getElementById('dashboard-content-area');
