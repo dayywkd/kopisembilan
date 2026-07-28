@@ -2754,7 +2754,12 @@ async function renderDashboard(el) {
   await loadDashboardData();
 }
 
+let dashboardLoadId = 0;
+
 async function loadDashboardData() {
+  // Setiap load baru dapat ID unik — cegah render dari load yang sudah usang
+  const myLoadId = ++dashboardLoadId;
+
   const dateInput = document.getElementById('dashboard-date-filter');
   const selectedDateStr = dateInput ? dateInput.value : getIndoDate();
   const refDate = new Date(selectedDateStr + 'T12:00:00');
@@ -2808,16 +2813,24 @@ async function loadDashboardData() {
       transactionCache[cacheKey] = { data: txns, timestamp: Date.now() };
     }
   } catch(e) { console.error('Dashboard load fail', e); }
+
+  // Abort jika user sudah berpindah ke periode/tanggal lain saat query berlangsung
+  if (myLoadId !== dashboardLoadId) return;
+
   window.dashboardTxns = txns;
 
   // Render stats dasar instan (Total Pendapatan, Transaksi, Grafik)
   await renderDashboardContent(false);
+
+  if (myLoadId !== dashboardLoadId) return;
 
   // FASE 2: Load items hanya 50 transaksi terbaru untuk "Menu Paling Laris"
   const area = document.getElementById('dashboard-content-area');
   if (area && txns.length > 0) {
     const topTxns = txns.slice(0, 50);
     await loadItemsForTransactions(topTxns);
+
+    if (myLoadId !== dashboardLoadId) return;
 
     // Update hanya elemen "Menu Paling Laris" tanpa re-render seluruh dashboard
     const topSection = document.getElementById('dashboard-top-products');
@@ -2843,11 +2856,16 @@ async function loadDashboardData() {
               </div>
               <span class="item-qty">${isHidden ? '••' : qty} <span>porsi</span></span>
             </div>`).join('')
-        : '<div class="empty-state" style="margin:auto;display:flex;align-items:center;justify-content:center;flex:1;">Belum ada data penjualan periode ini.</div>';
+        : `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
+            <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
+            <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
+          </div>`;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     } else {
       await renderDashboardContent(true);
     }
   }
+
 }
 
 function showDashboardSkeleton() {
@@ -2894,9 +2912,15 @@ function changeDashboardPeriod(period) {
   document.querySelectorAll('.dashboard-hero .period-tab').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${period}'`));
   });
-  // Tampilkan skeleton INSTAN (0ms) sebelum data dimuat agar user merasa responsif
+
+  // Selalu tampilkan skeleton instan saat tombol periode diklik
+  // Memberikan umpan balik visual langsung setiap kali user berpindah periode
   showDashboardSkeleton();
-  loadDashboardData();
+
+  // Defer sedikit agar browser sempat merender skeleton di layar sebelum pemrosesan data/chart
+  setTimeout(() => {
+    loadDashboardData();
+  }, 20);
 }
 
 async function renderDashboardContent(itemsLoaded = false) {
