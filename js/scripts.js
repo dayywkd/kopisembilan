@@ -312,6 +312,11 @@ function invalidateTransactionCache() {
   window.dashboardTxns = null;
   // Hapus juga cache items agar data fresh setelah transaksi baru
   Object.keys(itemsCache).forEach(k => delete itemsCache[k]);
+  // Hapus sessionStorage cache agar data baru langsung tampil
+  try {
+    const keys = Object.keys(sessionStorage).filter(k => k.startsWith('ks_txn_'));
+    keys.forEach(k => sessionStorage.removeItem(k));
+  } catch (e) { /* ignore */ }
 }
 
 function getProductNameFromItem(item) {
@@ -377,9 +382,23 @@ async function fetchTransactionsByRange(startDateStr, endDateStr, isDashboard = 
   const cacheKey = `${startDateStr || 'all'}_${endDateStr || 'all'}_full`;
   const now = Date.now();
 
+  // 1. Cek memory cache dulu (paling cepat, 0ms)
   if (transactionCache[cacheKey] && (now - transactionCache[cacheKey].timestamp < 60000)) {
     return transactionCache[cacheKey].data;
   }
+
+  // 2. Cek sessionStorage (tahan refresh halaman, instan jika < 5 menit)
+  try {
+    const ssKey = `ks_txn_${cacheKey}`;
+    const ssRaw = sessionStorage.getItem(ssKey);
+    if (ssRaw) {
+      const ss = JSON.parse(ssRaw);
+      if (ss && ss.ts && (now - ss.ts < 300000)) { // 5 menit
+        transactionCache[cacheKey] = { data: ss.data, timestamp: now };
+        return ss.data;
+      }
+    }
+  } catch (e) { /* sessionStorage tidak tersedia */ }
 
   if (activeTransactionRequests[cacheKey]) {
     return await activeTransactionRequests[cacheKey];
@@ -415,6 +434,12 @@ async function fetchTransactionsByRange(startDateStr, endDateStr, isDashboard = 
       }
 
       transactionCache[cacheKey] = { data: txns, timestamp: Date.now() };
+
+      // Simpan ke sessionStorage agar refresh halaman tidak perlu fetch ulang (5 menit)
+      try {
+        sessionStorage.setItem(`ks_txn_${cacheKey}`, JSON.stringify({ data: txns, ts: Date.now() }));
+      } catch (e) { /* sessionStorage penuh atau tidak tersedia */ }
+
       return txns;
     } finally {
       delete activeTransactionRequests[cacheKey];
@@ -1849,8 +1874,44 @@ async function renderReport(el) {
     const status = document.getElementById('report-status-filter')?.value || 'Semua';
     const method = document.getElementById('report-method-filter')?.value || 'Semua';
 
+    // Tampilkan skeleton INSTAN (0ms) agar user tidak merasa menunggu
+    const reportContainer = document.getElementById('report-container');
+    if (reportContainer) {
+      const sk = (w, h = '14px') => `<div style="width:${w};height:${h};border-radius:6px;background:#e8ddd3;animation:pulse 1.2s ease-in-out infinite;"></div>`;
+      reportContainer.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            ${sk('25%','20px')} ${sk('15%','32px')}
+          </div>
+          <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border-color);">
+            <div style="background:#f5f0ea;padding:12px 16px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:16px;">
+              ${['28%','18%','14%','16%'].map(w => sk(w, '12px')).join('')}
+            </div>
+            ${[1,2,3,4,5,6,7,8,9,10].map(i => `
+              <div style="padding:12px 16px;border-bottom:1px solid var(--border-color);display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:16px;background:var(--bg-card);">
+                ${[`${25+i*3}%`, '20%', '14%', '18%'].map(w => sk(w)).join('')}
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
     try {
       txns = await fetchTransactionsByRange(startDate, endDate);
+
+      // Pre-fetch items SEMUA transaksi secara paralel di background (tidak blokir render)
+      // Setelah ini selesai, SEMUA navigasi halaman Laporan → 0 request (dari itemsCache)
+      if (txns && txns.length > 0) {
+        const allTxns = txns; // capture reference
+        (async () => {
+          const BATCH = 200;
+          const batches = [];
+          for (let i = 0; i < allTxns.length; i += BATCH) {
+            batches.push(allTxns.slice(i, i + BATCH));
+          }
+          // Fetch semua batch secara paralel sekaligus
+          await Promise.all(batches.map(b => loadItemsForTransactions(b).catch(() => {})));
+        })();
+      }
     } catch (e) {
       console.error('Report filter load fail', e);
     }
@@ -2684,6 +2745,7 @@ async function renderDashboard(el) {
       dateFormat: 'Y-m-d',
       defaultDate: today,
       onChange: (selectedDates, dateStr) => {
+        showDashboardSkeleton();
         loadDashboardData();
       }
     });
@@ -2788,11 +2850,52 @@ async function loadDashboardData() {
   }
 }
 
+function showDashboardSkeleton() {
+  // Tampilkan skeleton instan saat user klik periode — user merasa responsif
+  const area = document.getElementById('dashboard-content-area');
+  if (!area) return;
+  const sk = (w = '80px', h = '32px', r = '8px') =>
+    `<div style="width:${w};height:${h};border-radius:${r};background:#e8ddd3;animation:pulse 1.2s ease-in-out infinite;"></div>`;
+  area.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:20px;padding:4px 0;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;">
+        ${[1,2,3,4].map(() => `
+          <div style="background:var(--bg-card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-sm);">
+            ${sk('48px','48px','50%')}
+            ${sk('60%','14px','6px')}
+            ${sk('80%','28px','8px')}
+          </div>
+        `).join('')}
+      </div>
+      <div style="background:var(--bg-card);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm);">
+        ${sk('40%','18px','6px')}
+        <div style="margin-top:16px;height:180px;border-radius:8px;background:#e8ddd3;animation:pulse 1.2s ease-in-out infinite;"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        ${[1,2].map(() => `
+          <div style="background:var(--bg-card);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm);">
+            ${sk('50%','16px','6px')}
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px;">
+              ${[1,2,3,4].map(i => `
+                <div style="display:flex;justify-content:space-between;">
+                  ${sk(`${50+i*10}px`,'12px','4px')}
+                  ${sk('40px','12px','4px')}
+                </div>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function changeDashboardPeriod(period) {
   activeDashboardPeriod = period;
   document.querySelectorAll('.dashboard-hero .period-tab').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${period}'`));
   });
+  // Tampilkan skeleton INSTAN (0ms) sebelum data dimuat agar user merasa responsif
+  showDashboardSkeleton();
   loadDashboardData();
 }
 
@@ -2861,18 +2964,11 @@ async function renderDashboardContent(itemsLoaded = false) {
 
   let topHtml;
   if (!itemsLoaded) {
-    // Fase 1: tampilkan skeleton/placeholder instan sambil items dimuat di background
+    // Fase 1: tampilkan pesan sederhana sambil data dimuat di background
     topHtml = `
-      <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
-        ${[1,2,3,4].map(i => `
-          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px;">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <div style="width:24px; height:24px; border-radius:50%; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
-              <div style="width:${80 + i*20}px; height:14px; border-radius:6px; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
-            </div>
-            <div style="width:50px; height:14px; border-radius:6px; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
-          </div>
-        `).join('')}
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:10px; color:var(--text-muted); padding:32px 16px;">
+        <i data-lucide="loader" style="width:28px;height:28px;animation:spin 1s linear infinite;opacity:0.5;"></i>
+        <span style="font-size:13px;">Sedang memuat menu terlaris...</span>
       </div>
     `;
   } else {
@@ -2885,7 +2981,11 @@ async function renderDashboardContent(itemsLoaded = false) {
         <span class="item-qty">${tp.qty} <span>porsi</span></span>
       </div>
     `).join('');
-    if (!topHtml) topHtml = '<div class="empty-state" style="margin:auto; display:flex; align-items:center; justify-content:center; flex:1;">Belum ada data penjualan periode ini.</div>';
+    if (!topHtml) topHtml = `
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
+        <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
+        <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
+      </div>`;
   }
 
 
