@@ -381,19 +381,25 @@ async function fetchTransactionsByRange(startDateStr, endDateStr, isDashboard = 
   // Gunakan cache key bersama agar Dashboard dan Laporan berbagi cache
   const cacheKey = `${startDateStr || 'all'}_${endDateStr || 'all'}_full`;
   const now = Date.now();
+  const todayStr = getIndoDate();
+
+  // Jika rentang data mencakup Hari Ini, gunakan TTL singkat (15 detik) agar transaksi POS baru cepat terdeteksi.
+  // Untuk tanggal lalu (misal kemarin / bulan lalu), tetap gunakan TTL 5 menit agar cepat (0ms).
+  const isTodayIncluded = (!startDateStr || startDateStr === todayStr) || (!endDateStr || endDateStr === todayStr);
+  const cacheTTL = isTodayIncluded ? 15000 : 300000; // 15s vs 5m
 
   // 1. Cek memory cache dulu (paling cepat, 0ms)
-  if (transactionCache[cacheKey] && (now - transactionCache[cacheKey].timestamp < 60000)) {
+  if (transactionCache[cacheKey] && (now - transactionCache[cacheKey].timestamp < (isTodayIncluded ? 15000 : 60000))) {
     return transactionCache[cacheKey].data;
   }
 
-  // 2. Cek sessionStorage (tahan refresh halaman, instan jika < 5 menit)
+  // 2. Cek sessionStorage
   try {
     const ssKey = `ks_txn_${cacheKey}`;
     const ssRaw = sessionStorage.getItem(ssKey);
     if (ssRaw) {
       const ss = JSON.parse(ssRaw);
-      if (ss && ss.ts && (now - ss.ts < 300000)) { // 5 menit
+      if (ss && ss.ts && (now - ss.ts < cacheTTL)) {
         transactionCache[cacheKey] = { data: ss.data, timestamp: now };
         return ss.data;
       }
@@ -1838,7 +1844,16 @@ async function renderReport(el) {
           </select>
         </div>
       </div>
-      <button class="btn btn-brown btn-sm" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px;" onclick="exportToCSV()"><i data-lucide="download" style="width:16px;height:16px;"></i> Export Excel</button>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+        <button class="btn btn-outline btn-sm" style="display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; border-radius:8px; font-weight:600; font-size:13px;" onclick="invalidateTransactionCache(); applyReportFilters(false);" title="Segarkan data transaksi dari server">
+          <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i>
+          <span>Refresh</span>
+        </button>
+        <button class="btn btn-brown btn-sm" style="display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; border-radius:8px;" onclick="exportToCSV()">
+          <i data-lucide="download" style="width:16px;height:16px;"></i>
+          <span>Export Excel</span>
+        </button>
+      </div>
     </div>
     <div id="report-container">${await renderContent(today, today, 'Semua', 'Semua')}</div>
   `;
