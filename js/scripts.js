@@ -2176,35 +2176,59 @@ function editProduct(id) {
   openModal('modal-product');
 }
 
+let isSavingProduct = false;
+
 async function saveProduct() {
+  if (isSavingProduct) return;
+
   const name = document.getElementById('prod-name').value.trim();
   const price = parsePrice(document.getElementById('prod-price').value);
   const cat = document.getElementById('prod-category').value;
-  if (!name || isNaN(price)) { showToast('Nama and harga wajib diisi!', 'error'); return; }
+  if (!name || isNaN(price)) { showToast('Nama dan harga wajib diisi!', 'error'); return; }
 
-  let error;
-  const productData = { name, base_price: price, category: cat };
-  
-  if (editingProductId) {
-    const { error: err } = await db.from('products').update(productData).eq('id', editingProductId);
-    error = err;
-  } else {
-    const { error: err } = await db.from('products').insert([productData]);
-    error = err;
+  isSavingProduct = true;
+  const btnSave = document.querySelector('#modal-product .btn-brown') || document.querySelector('#modal-product button[onclick="saveProduct()"]');
+  const originalText = btnSave ? btnSave.innerHTML : '';
+  if (btnSave) {
+    btnSave.disabled = true;
+    btnSave.innerHTML = `<i data-lucide="loader" style="width:14px;height:14px;animation:spin 1s linear infinite;"></i> Menyimpan...`;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 
-  if (!error) {
-    showToast(editingProductId ? 'Produk diperbarui!' : 'Produk ditambahkan!', 'success');
+  try {
+    let error;
+    const productData = { name, base_price: price, category: cat };
     
-    const logDetails = editingProductId 
-      ? `Update Produk: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}\nID: ${editingProductId}`
-      : `Tambah Produk Baru: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}`;
-    
-    addActivityLog(editingProductId ? 'Edit Produk' : 'Tambah Produk', logDetails);
-    await loadProducts();
-    closeModal('modal-product');
-  } else {
+    if (editingProductId) {
+      const { error: err } = await db.from('products').update(productData).eq('id', editingProductId);
+      error = err;
+    } else {
+      const { error: err } = await db.from('products').insert([productData]);
+      error = err;
+    }
+
+    if (!error) {
+      showToast(editingProductId ? 'Produk diperbarui!' : 'Produk ditambahkan!', 'success');
+      
+      const logDetails = editingProductId 
+        ? `Update Produk: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}\nID: ${editingProductId}`
+        : `Tambah Produk Baru: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}`;
+      
+      addActivityLog(editingProductId ? 'Edit Produk' : 'Tambah Produk', logDetails);
+      await loadProducts();
+      closeModal('modal-product');
+    } else {
+      showToast('Gagal menyimpan ke database!', 'error');
+    }
+  } catch (e) {
+    console.error('saveProduct error', e);
     showToast('Gagal menyimpan ke database!', 'error');
+  } finally {
+    isSavingProduct = false;
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.innerHTML = originalText || (editingProductId ? 'Simpan Perubahan' : 'Tambah Produk');
+    }
   }
 }
 
@@ -2306,7 +2330,11 @@ async function editUser(id) {
   } catch(e) { showToast('Terjadi kesalahan!', 'error'); }
 }
 
+let isSavingUser = false;
+
 async function saveUser() {
+  if (isSavingUser) return;
+
   const name = document.getElementById('user-fullname').value.trim();
   const username = document.getElementById('user-username').value.trim();
   const password = document.getElementById('user-password').value.trim();
@@ -2316,30 +2344,50 @@ async function saveUser() {
   if (!name || !username) { showToast('Nama dan Username wajib diisi!', 'error'); return; }
   if (!editingUserId && !password) { showToast('Password wajib diisi untuk akun baru!', 'error'); return; }
 
-  const userData = { name, username, role, active };
-  
-  // Hash password jika diisi
-  if (password) {
-    const salt = dcodeIO.bcrypt.genSaltSync(10);
-    userData.password_hash = dcodeIO.bcrypt.hashSync(password, salt);
-  }
-  
-  let error;
-  if (editingUserId) {
-    const { error: err } = await db.from('users').update(userData).eq('id', editingUserId);
-    error = err;
-  } else {
-    const { error: err } = await db.from('users').insert([userData]);
-    error = err;
+  isSavingUser = true;
+  const btnSave = document.querySelector('#modal-user .btn-brown') || document.querySelector('#modal-user button[onclick="saveUser()"]');
+  const originalText = btnSave ? btnSave.innerHTML : '';
+  if (btnSave) {
+    btnSave.disabled = true;
+    btnSave.innerHTML = `<i data-lucide="loader" style="width:14px;height:14px;animation:spin 1s linear infinite;"></i> Menyimpan...`;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 
-  if (!error) {
-    showToast(editingUserId ? 'Akun diperbarui!' : 'Akun berhasil dibuat!', 'success');
-    addActivityLog(editingUserId ? 'Edit Pengguna' : 'Tambah Pengguna', `Username: ${username}, Role: ${role}`);
-    closeModal('modal-user');
-    renderUsers(document.getElementById('page-content'));
-  } else {
+  try {
+    const userData = { name, username, role, active };
+    
+    // Hash password jika diisi
+    if (password) {
+      const salt = dcodeIO.bcrypt.genSaltSync(10);
+      userData.password_hash = dcodeIO.bcrypt.hashSync(password, salt);
+    }
+    
+    let error;
+    if (editingUserId) {
+      const { error: err } = await db.from('users').update(userData).eq('id', editingUserId);
+      error = err;
+    } else {
+      const { error: err } = await db.from('users').insert([userData]);
+      error = err;
+    }
+
+    if (!error) {
+      showToast(editingUserId ? 'Akun diperbarui!' : 'Akun berhasil dibuat!', 'success');
+      addActivityLog(editingUserId ? 'Edit Pengguna' : 'Tambah Pengguna', `Username: ${username}, Role: ${role}`);
+      closeModal('modal-user');
+      renderUsers(document.getElementById('page-content'));
+    } else {
+      showToast('Gagal menyimpan ke database!', 'error');
+    }
+  } catch (e) {
+    console.error('saveUser error', e);
     showToast('Gagal menyimpan ke database!', 'error');
+  } finally {
+    isSavingUser = false;
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.innerHTML = originalText || 'Simpan Pengguna';
+    }
   }
 }
 
