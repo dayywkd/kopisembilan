@@ -6,7 +6,7 @@
 <title>Toko Kopi Sembilan</title>
 <link rel="icon" type="image/jpeg" href="logo.jpg">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=1.4">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
@@ -582,6 +582,84 @@
   </div>
 </div>
 
+<!-- Modal Analisis & Ranking Penjualan Menu Lengkap -->
+<div class="modal-overlay" id="modal-menu-sales">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <div style="width:34px; height:34px; border-radius:10px; background:var(--brown-700); color:white; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <i data-lucide="award" style="width:18px;height:18px;"></i>
+        </div>
+        <div style="min-width:0;">
+          <h3 style="margin:0; font-size:16px; color:var(--brown-800); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Analisis Penjualan Menu</h3>
+          <p id="menu-sales-modal-subtitle" style="margin:0; font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Performa penjualan menu</p>
+        </div>
+      </div>
+      <button class="modal-close" style="display:flex; align-items:center; justify-content:center; background:white; border:1px solid var(--border); border-radius:50%; width:30px; height:30px; cursor:pointer; flex-shrink:0;" onclick="closeModal('modal-menu-sales')">
+        <i data-lucide="x" style="width:15px;height:15px;"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <!-- Filter Periode di dalam Modal -->
+      <div style="display:flex; align-items:center; gap:8px; background:var(--cream); padding:8px 12px; border-radius:10px; border:1px solid var(--border); flex-shrink:0;">
+        <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
+          <i data-lucide="filter" style="width:14px;height:14px;color:var(--brown-700);"></i>
+          <span style="font-size:11px; font-weight:700; color:var(--brown-800);">PERIODE:</span>
+        </div>
+        <div class="period-tabs" id="menu-sales-period-tabs" style="display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; background:white; padding:2px; border-radius:8px; border:1px solid var(--border); flex:1; scrollbar-width:none;">
+          <button type="button" class="period-tab active" data-period="daily" style="flex:0 0 auto;" onclick="setMenuSalesModalPeriod('daily')">Hari Ini</button>
+          <button type="button" class="period-tab" data-period="weekly" style="flex:0 0 auto;" onclick="setMenuSalesModalPeriod('weekly')">Mingguan</button>
+          <button type="button" class="period-tab" data-period="monthly" style="flex:0 0 auto;" onclick="setMenuSalesModalPeriod('monthly')">Bulanan</button>
+          <button type="button" class="period-tab" data-period="yearly" style="flex:0 0 auto;" onclick="setMenuSalesModalPeriod('yearly')">Tahunan</button>
+          <button type="button" class="period-tab" data-period="all" style="flex:0 0 auto;" onclick="setMenuSalesModalPeriod('all')">Semua</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="menu-sales-kpi-grid" id="menu-sales-kpi-summary">
+        <!-- Injected dynamically -->
+      </div>
+
+      <!-- Search & Sorting Controls -->
+      <div style="display:flex; flex-direction:column; gap:8px; flex-shrink:0;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <div style="position:relative; flex:1 1 180px; display:flex; align-items:center;">
+            <i data-lucide="search" style="position:absolute; left:10px; width:14px; height:14px; color:var(--text-muted); pointer-events:none;"></i>
+            <input type="text" id="menu-sales-search" class="form-input" placeholder="Cari nama menu..." style="padding-left:32px; font-size:12px; height:34px; border-radius:8px;" oninput="onMenuSalesFilterChange()">
+          </div>
+          <div style="display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;">
+            <button type="button" id="btn-sort-top" class="btn btn-sm btn-brown" style="font-size:11px; padding:4px 9px; border-radius:6px; flex:0 0 auto;" onclick="setMenuSalesSort('top')">
+              <i data-lucide="award" style="width:12px;height:12px;margin-right:3px;"></i> Terlaris
+            </button>
+            <button type="button" id="btn-sort-slow" class="btn btn-sm btn-outline" style="font-size:11px; padding:4px 9px; border-radius:6px; flex:0 0 auto;" onclick="setMenuSalesSort('slow')" title="Urutkan dari menu penjualan terendah">
+              <i data-lucide="trending-down" style="width:12px;height:12px;margin-right:3px;"></i> Terendah
+            </button>
+            <button type="button" id="btn-sort-revenue" class="btn btn-sm btn-outline" style="font-size:11px; padding:4px 9px; border-radius:6px; flex:0 0 auto;" onclick="setMenuSalesSort('revenue')">
+              <i data-lucide="dollar-sign" style="width:12px;height:12px;margin-right:3px;"></i> Omzet
+            </button>
+          </div>
+        </div>
+
+        <!-- Category Chips -->
+        <div id="menu-sales-category-chips" style="display:flex; gap:5px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; flex-shrink:0; scrollbar-width:none;">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+
+      <!-- Menu Items List Container -->
+      <div id="menu-sales-items-list" style="background:white; border-radius:10px; border:1px solid var(--border); overflow:hidden; min-height:160px;">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div id="menu-sales-footer-count" style="font-size:11px; color:var(--text-muted);">
+        Menampilkan 0 menu
+      </div>
+      <button class="btn btn-brown" onclick="closeModal('modal-menu-sales')">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <!-- Floating Action Button (FAB) untuk melihat Info Pembaruan -->
 <button id="btn-changelog-fab" onclick="openModal('modal-changelog')" title="Info Pembaruan v1.2" style="display: none !important;">
   <i data-lucide="sparkles"></i>
@@ -591,6 +669,6 @@
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 <script src="js/supabase-config.js"></script>
-<script src="js/scripts.js?v=1.1"></script>
+<script src="js/scripts.js?v=1.5"></script>
 </body>
 </html>

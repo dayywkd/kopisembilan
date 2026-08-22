@@ -321,8 +321,9 @@ function invalidateTransactionCache() {
 
 function getProductNameFromItem(item) {
   if (item && item.products && item.products.name) return item.products.name;
+  if (item && item.product_name) return item.product_name;
   if (item && item.product_id && typeof products !== 'undefined' && Array.isArray(products)) {
-    const p = products.find(prod => prod.id === item.product_id);
+    const p = products.find(prod => String(prod.id) === String(item.product_id));
     if (p) return p.name;
   }
   return 'Produk';
@@ -353,7 +354,7 @@ async function loadItemsForTransactions(targetTxns) {
     const batchIds = txnIds.slice(i, i + batchSize);
     batchPromises.push(
       db.from('transaction_items')
-        .select('id, transaction_id, product_id, qty, price, selected_variants, item_note')
+        .select('id, transaction_id, product_id, qty, price, selected_variants, item_note, products(name)')
         .in('transaction_id', batchIds)
     );
   }
@@ -3011,32 +3012,62 @@ async function loadDashboardData() {
 
       if (myLoadId !== dashboardLoadId) return;
 
-      const itemCounts = {};
+      const itemMap = {};
       filteredTxns.forEach(t => {
         if (t.transaction_items) {
           t.transaction_items.forEach(i => {
             const p = products.find(prod => prod.id === i.product_id);
             if (!p) return;
-            itemCounts[p.name] = (itemCounts[p.name] || 0) + i.qty;
+            if (!itemMap[p.id]) {
+              itemMap[p.id] = {
+                name: p.name,
+                category: p.category || '',
+                qty: 0,
+                basePrice: p.base_price || 0
+              };
+            }
+            itemMap[p.id].qty += i.qty;
           });
         }
       });
 
-      const totalSold = Object.values(itemCounts).reduce((a,b) => a + b, 0);
+      const totalSold = Object.values(itemMap).reduce((a,b) => a + b.qty, 0);
       if (soldEl) soldEl.textContent = dashboardPrivacy.products ? '•••' : totalSold;
 
       if (topSection) {
-        const topProds = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0, 4);
+        const topProds = Object.values(itemMap).sort((a,b) => b.qty - a.qty).slice(0, 4);
         const isHidden = dashboardPrivacy['top_menu'];
         topSection.innerHTML = topProds.length > 0
-          ? topProds.map(([name, qty], idx) => `
-              <div class="dashboard-list-row">
-                <div class="ranked-item">
-                  <span class="rank-badge">${idx + 1}</span>
-                  <div><div class="item-title">${isHidden ? '••••••' : name}</div></div>
+          ? topProds.map((tp, idx) => {
+              const rawPct = totalSold > 0 ? (tp.qty / totalSold) * 100 : 0;
+              const contrib = tp.qty > 0 && rawPct < 0.1 ? '< 0.1%' : (rawPct.toFixed(1) + '%');
+              let badgeBg = 'var(--brown-100)';
+              let badgeColor = 'var(--brown-900)';
+              if (idx === 0) { badgeBg = '#F59E0B'; badgeColor = 'white'; }
+              else if (idx === 1) { badgeBg = '#94A3B8'; badgeColor = 'white'; }
+              else if (idx === 2) { badgeBg = '#B45309'; badgeColor = 'white'; }
+
+              return `
+              <div class="dashboard-list-row" style="display:flex; flex-direction:column; align-items:stretch; gap:6px; padding:10px 0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                  <div class="ranked-item" style="display:flex; align-items:center; gap:10px; min-width:0;">
+                    <span class="rank-badge" style="background:${badgeBg}; color:${badgeColor}; margin-right:0;">${idx + 1}</span>
+                    <div style="min-width:0;">
+                      <div class="item-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${isHidden ? '••••••' : tp.name}</div>
+                      ${tp.category && !isHidden ? `<span style="font-size:10px; color:var(--text-muted);">${tp.category}</span>` : ''}
+                    </div>
+                  </div>
+                  <div style="text-align:right; flex-shrink:0;">
+                    <span class="item-qty" style="font-size:13px;">${isHidden ? '••' : tp.qty} <span>porsi</span></span>
+                    ${!isHidden ? `<span style="margin-left:6px; font-size:10px; font-weight:700; color:var(--brown-800); background:var(--brown-50); padding:2px 5px; border-radius:4px; border:1px solid var(--brown-200);">${contrib}</span>` : ''}
+                  </div>
                 </div>
-                <span class="item-qty">${isHidden ? '••' : qty} <span>porsi</span></span>
-              </div>`).join('')
+                ${!isHidden ? `
+                  <div style="height:4px; background:var(--brown-100); border-radius:3px; overflow:hidden; margin-left:32px;">
+                    <div style="height:100%; width:${Math.min(100, Math.max(3, rawPct))}%; background:${idx === 0 ? 'var(--accent)' : 'var(--brown-400)'}; border-radius:3px;"></div>
+                  </div>` : ''}
+              </div>`;
+            }).join('')
           : `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
               <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
               <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
@@ -3199,27 +3230,31 @@ async function renderDashboardContent(itemsLoaded = false) {
     .reduce((s, t) => s + (Number(t.total) || 0), 0);
   const totalCount = filteredTxns.length;
 
-  const itemCounts = {};
+  const itemMap = {};
   if (itemsLoaded) {
     filteredTxns.forEach(t => {
       if (t.transaction_items) {
         t.transaction_items.forEach(i => {
           const p = products.find(prod => prod.id === i.product_id);
           if (!p) return;
-          const key = p.name;
-          itemCounts[key] = (itemCounts[key] || 0) + i.qty;
+          if (!itemMap[p.id]) {
+            itemMap[p.id] = {
+              name: p.name,
+              category: p.category || '',
+              qty: 0,
+              basePrice: p.base_price || 0
+            };
+          }
+          itemMap[p.id].qty += i.qty;
         });
       }
     });
-  } else {
-    // Items belum selesai dimuat, tampilkan placeholder dulu
-    // updatenya akan datang dari Fase 2
   }
 
-  const topProducts = Object.entries(itemCounts)
-    .sort((a,b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(entry => ({ name: entry[0], qty: entry[1] }));
+  const totalSold = Object.values(itemMap).reduce((a, b) => a + b.qty, 0);
+  const topProducts = Object.values(itemMap)
+    .sort((a,b) => b.qty - a.qty)
+    .slice(0, 4);
 
   let topHtml;
   if (!itemsLoaded && filteredTxns.length > 0) {
@@ -3231,15 +3266,37 @@ async function renderDashboardContent(itemsLoaded = false) {
       </div>
     `;
   } else {
-    topHtml = topProducts.map((tp, idx) => `
-      <div class="dashboard-list-row">
-        <div class="ranked-item">
-          <span class="rank-badge">${idx + 1}</span>
-          <div><div class="item-title">${tp.name}</div></div>
+    topHtml = topProducts.map((tp, idx) => {
+      const rawPct = totalSold > 0 ? (tp.qty / totalSold) * 100 : 0;
+      const contrib = tp.qty > 0 && rawPct < 0.1 ? '< 0.1%' : (rawPct.toFixed(1) + '%');
+      const isHidden = dashboardPrivacy['top_menu'];
+      let badgeBg = 'var(--brown-100)';
+      let badgeColor = 'var(--brown-900)';
+      if (idx === 0) { badgeBg = '#F59E0B'; badgeColor = 'white'; }
+      else if (idx === 1) { badgeBg = '#94A3B8'; badgeColor = 'white'; }
+      else if (idx === 2) { badgeBg = '#B45309'; badgeColor = 'white'; }
+
+      return `
+      <div class="dashboard-list-row" style="display:flex; flex-direction:column; align-items:stretch; gap:6px; padding:10px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div class="ranked-item" style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <span class="rank-badge" style="background:${badgeBg}; color:${badgeColor}; margin-right:0;">${idx + 1}</span>
+            <div style="min-width:0;">
+              <div class="item-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${isHidden ? '••••••' : tp.name}</div>
+              ${tp.category && !isHidden ? `<span style="font-size:10px; color:var(--text-muted);">${tp.category}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right; flex-shrink:0;">
+            <span class="item-qty" style="font-size:13px;">${isHidden ? '••' : tp.qty} <span>porsi</span></span>
+            ${!isHidden ? `<span style="margin-left:6px; font-size:10px; font-weight:700; color:var(--brown-800); background:var(--brown-50); padding:2px 5px; border-radius:4px; border:1px solid var(--brown-200);">${contrib}</span>` : ''}
+          </div>
         </div>
-        <span class="item-qty">${tp.qty} <span>porsi</span></span>
-      </div>
-    `).join('');
+        ${!isHidden ? `
+          <div style="height:4px; background:var(--brown-100); border-radius:3px; overflow:hidden; margin-left:32px;">
+            <div style="height:100%; width:${Math.min(100, Math.max(3, rawPct))}%; background:${idx === 0 ? 'var(--accent)' : 'var(--brown-400)'}; border-radius:3px;"></div>
+          </div>` : ''}
+      </div>`;
+    }).join('');
     if (!topHtml) topHtml = `
       <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
         <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
@@ -3300,7 +3357,7 @@ async function renderDashboardContent(itemsLoaded = false) {
           <i data-lucide="${dashboardPrivacy.products ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
         </button>
         <div class="label">Produk Terjual</div>
-        <div class="value" id="stat-products-sold-val">${dashboardPrivacy.products ? '•••' : (itemsLoaded ? Object.values(itemCounts).reduce((a,b)=>a+b, 0) : '...')}</div>
+        <div class="value" id="stat-products-sold-val">${dashboardPrivacy.products ? '•••' : (itemsLoaded ? totalSold : '...')}</div>
         <div class="change up"><i data-lucide="coffee" style="width:14px;height:14px;display:inline-block;vertical-align:middle;"></i> Porsi disajikan</div>
       </div>
     </div>
@@ -3325,21 +3382,33 @@ async function renderDashboardContent(itemsLoaded = false) {
         </div>
       </div>
       <div class="card" style="position:relative; display:flex; flex-direction:column;">
-        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:8px;">
           <h3 style="margin:0; display:flex; align-items:center; gap:8px;">
             <i data-lucide="award" style="width:18px;height:18px;color:var(--accent);"></i> Menu Paling Laris
           </h3>
-          <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('top_menu')" title="Sembunyikan/Tampilkan Menu Terlaris">
-            <i data-lucide="${dashboardPrivacy.top_menu ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
-          </button>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button type="button" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 8px; border-radius:6px; display:flex; align-items:center; gap:4px; border-color:var(--border); color:var(--brown-800); font-weight:600; background:white; cursor:pointer;" onclick="openMenuSalesModal()" title="Lihat Semua Menu & Analisis Penjualan">
+              <i data-lucide="bar-chart-2" style="width:13px;height:13px;color:var(--accent);"></i>
+              <span>Lihat Semua</span>
+            </button>
+            <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('top_menu')" title="Sembunyikan/Tampilkan Menu Terlaris">
+              <i data-lucide="${dashboardPrivacy.top_menu ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
         </div>
-        <div class="card-body dashboard-list" id="dashboard-top-products" style="position:relative; flex:1; display:flex; flex-direction:column; min-height:280px; box-sizing:border-box;">
+        <div class="card-body dashboard-list" id="dashboard-top-products" style="position:relative; flex:1; display:flex; flex-direction:column; min-height:260px; box-sizing:border-box;">
           ${dashboardPrivacy.top_menu ? `
             <div class="privacy-overlay">
               <i data-lucide="eye-off" style="width:32px;height:32px;color:var(--text-muted);"></i>
             </div>
           ` : ''}
           ${topHtml}
+        </div>
+        <div style="padding:10px 16px; border-top:1px solid var(--border); background:var(--surface); border-bottom-left-radius:var(--radius); border-bottom-right-radius:var(--radius); display:flex; justify-content:center;">
+          <button type="button" onclick="openMenuSalesModal()" style="background:none; border:none; color:var(--brown-700); font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; padding:2px 8px; border-radius:6px; transition:all 0.15s ease;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--brown-700)'">
+            <span>Lihat Semua Menu & Analisis Lengkap</span>
+            <i data-lucide="arrow-right" style="width:13px;height:13px;"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -3982,6 +4051,427 @@ async function addActivityLog(action, details = '') {
       details: details
     }]);
     if (error) console.error('Add log error:', error.message, error.details);
-    } catch(e) { console.error('Add log fail', e); }
+  } catch(e) { console.error('Add log fail', e); }
+}
+
+// ══════════════════════════════════════════════
+// MODAL ANALISIS & RANKING PENJUALAN MENU LENGKAP
+// ══════════════════════════════════════════════
+let menuSalesModalPeriod = 'daily';
+let menuSalesSearchQuery = '';
+let menuSalesSelectedCategory = 'Semua';
+let menuSalesSortBy = 'top'; // 'top' | 'slow' | 'revenue' | 'name'
+let menuSalesCachedList = [];
+let menuSalesAllTxnsCache = null;
+
+window.openMenuSalesModal = async function() {
+  menuSalesModalPeriod = (typeof activeDashboardPeriod !== 'undefined' && activeDashboardPeriod) ? activeDashboardPeriod : 'daily';
+  menuSalesSearchQuery = '';
+  menuSalesSelectedCategory = 'Semua';
+  menuSalesSortBy = 'top';
+
+  const searchInput = document.getElementById('menu-sales-search');
+  if (searchInput) searchInput.value = '';
+
+  updateMenuSalesPeriodTabUI();
+  updateMenuSalesSortUI();
+
+  openModal('modal-menu-sales');
+  await loadAndRenderMenuSalesModal();
+};
+
+window.setMenuSalesModalPeriod = async function(p) {
+  menuSalesModalPeriod = p;
+  updateMenuSalesPeriodTabUI();
+  await loadAndRenderMenuSalesModal();
+};
+
+window.setMenuSalesSort = function(s) {
+  menuSalesSortBy = s;
+  updateMenuSalesSortUI();
+  renderMenuSalesModalList();
+};
+
+window.setMenuSalesCategory = function(cat) {
+  menuSalesSelectedCategory = cat;
+  updateMenuSalesCategoryUI();
+  renderMenuSalesModalList();
+};
+
+window.onMenuSalesFilterChange = function() {
+  const searchInput = document.getElementById('menu-sales-search');
+  menuSalesSearchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  renderMenuSalesModalList();
+};
+
+function updateMenuSalesPeriodTabUI() {
+  const tabs = document.querySelectorAll('#menu-sales-period-tabs .period-tab');
+  tabs.forEach(tab => {
+    if (tab.getAttribute('data-period') === menuSalesModalPeriod) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
     }
+  });
+}
+
+function updateMenuSalesSortUI() {
+  const btnTop = document.getElementById('btn-sort-top');
+  const btnSlow = document.getElementById('btn-sort-slow');
+  const btnRev = document.getElementById('btn-sort-revenue');
+
+  [btnTop, btnSlow, btnRev].forEach(b => {
+    if (!b) return;
+    b.classList.remove('btn-brown');
+    b.classList.add('btn-outline');
+  });
+
+  if (menuSalesSortBy === 'top' && btnTop) {
+    btnTop.classList.add('btn-brown');
+    btnTop.classList.remove('btn-outline');
+  } else if (menuSalesSortBy === 'slow' && btnSlow) {
+    btnSlow.classList.add('btn-brown');
+    btnSlow.classList.remove('btn-outline');
+  } else if (menuSalesSortBy === 'revenue' && btnRev) {
+    btnRev.classList.add('btn-brown');
+    btnRev.classList.remove('btn-outline');
+  }
+}
+
+function updateMenuSalesCategoryUI() {
+  const chips = document.querySelectorAll('#menu-sales-category-chips button');
+  chips.forEach(chip => {
+    if (chip.getAttribute('data-cat') === menuSalesSelectedCategory) {
+      chip.style.background = 'var(--brown-800)';
+      chip.style.color = 'white';
+      chip.style.borderColor = 'var(--brown-800)';
+    } else {
+      chip.style.background = 'white';
+      chip.style.color = 'var(--text-muted)';
+      chip.style.borderColor = 'var(--border)';
+    }
+  });
+}
+
+async function fetchAllSupabaseRows(tableName, selectFields = '*') {
+  let allData = [];
+  let page = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await db.from(tableName)
+      .select(selectFields)
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+    if (error || !data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < pageSize) break;
+    page++;
+  }
+  return allData;
+}
+
+async function loadAndRenderMenuSalesModal() {
+  const container = document.getElementById('menu-sales-items-list');
+  const summaryContainer = document.getElementById('menu-sales-kpi-summary');
+  const subtitle = document.getElementById('menu-sales-modal-subtitle');
+  const footerCount = document.getElementById('menu-sales-footer-count');
+
+  // Selalu tampilkan state loading terlebih dahulu agar user mendapat feedback instan
+  if (container) {
+    container.innerHTML = `
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:36px 16px; gap:10px; color:var(--text-muted);">
+        <i data-lucide="loader" style="width:24px;height:24px;animation:spin 0.8s linear infinite;opacity:0.6;color:var(--accent);"></i>
+        <span style="font-size:12px; font-weight:600;">Menghitung data penjualan...</span>
+      </div>`;
+  }
+  if (summaryContainer) {
+    summaryContainer.innerHTML = `
+      <div class="menu-sales-kpi-card"><span class="kpi-label">TOTAL PORSI</span><strong class="kpi-val">...</strong><span class="kpi-sub">memuat</span></div>
+      <div class="menu-sales-kpi-card"><span class="kpi-label">ESTIMASI OMZET</span><strong class="kpi-val accent">...</strong><span class="kpi-sub">memuat</span></div>
+      <div class="menu-sales-kpi-card"><span class="kpi-label">MENU TERJUAL</span><strong class="kpi-val">...</strong><span class="kpi-sub">memuat</span></div>
+    `;
+  }
+  if (footerCount) footerCount.textContent = 'Menghitung menu...';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  // Berikan sedikit waktu agar browser merender animasi loading sebelum proses data berat
+  await new Promise(r => setTimeout(r, 60));
+
+  // Tarik seluruh transaksi & transaction_items secara lengkap dengan paginasi (mengatasi limit 1000 Supabase)
+  if (!menuSalesAllTxnsCache) {
+    try {
+      const [txnsData, itemsData] = await Promise.all([
+        fetchAllSupabaseRows('transactions', 'id, total, payment_method, payment_status, date'),
+        fetchAllSupabaseRows('transaction_items', 'id, transaction_id, product_id, qty, price')
+      ]);
+
+      if (txnsData && txnsData.length > 0) {
+        menuSalesAllTxnsCache = txnsData;
+      } else {
+        menuSalesAllTxnsCache = window.dashboardTxns || transactions || [];
+      }
+
+      // Masukkan seluruh items ke itemsCache global
+      if (itemsData && itemsData.length > 0) {
+        itemsData.forEach(item => {
+          if (!itemsCache[item.transaction_id]) itemsCache[item.transaction_id] = [];
+          itemsCache[item.transaction_id].push(item);
+        });
+      }
+    } catch(e) {
+      console.error('Fetch all for menu modal fail', e);
+      menuSalesAllTxnsCache = window.dashboardTxns || transactions || [];
+    }
+  }
+
+  const allTxns = menuSalesAllTxnsCache || [];
+  const selDate = (typeof selectedDateStr !== 'undefined' && selectedDateStr) ? selectedDateStr : getIndoDate();
+  const refDate = new Date(selDate + 'T12:00:00');
+
+  // Filter transaksi sesuai periode modal
+  const filteredTxns = allTxns.filter(t => {
+    if (menuSalesModalPeriod === 'all') return true;
+    const d = parseSafeDate(t.date);
+    const dIndo = getIndoDate(d);
+
+    if (menuSalesModalPeriod === 'daily') {
+      return dIndo === selDate;
+    } else if (menuSalesModalPeriod === 'weekly') {
+      const weekAgo = new Date(refDate);
+      weekAgo.setDate(refDate.getDate() - 7);
+      const weekAgoStr = getIndoDate(weekAgo);
+      return dIndo >= weekAgoStr && dIndo <= selDate;
+    } else if (menuSalesModalPeriod === 'monthly') {
+      const dMonth = new Intl.DateTimeFormat('en-US', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const dYear = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(d);
+      const refMonth = new Intl.DateTimeFormat('en-US', { month: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      const refYear = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Jakarta' }).format(refDate);
+      return dMonth === refMonth && dYear === refYear;
+    } else if (menuSalesModalPeriod === 'yearly') {
+      return getJakartaYear(d) === getJakartaYear(refDate);
+    }
+    return true;
+  });
+
+  // Pastikan items untuk transaksi terfilter sudah terisi
+  await loadItemsForTransactions(filteredTxns);
+
+  // Agregasi penjualan
+  const salesMap = {};
+  filteredTxns.forEach(t => {
+    if (t.transaction_items) {
+      t.transaction_items.forEach(item => {
+        const prodId = item.product_id;
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.price) || 0;
+        if (!salesMap[prodId]) {
+          salesMap[prodId] = { qty: 0, revenue: 0 };
+        }
+        salesMap[prodId].qty += qty;
+        salesMap[prodId].revenue += price * qty;
+      });
+    }
+  });
+
+  let totalPortions = 0;
+  let totalRev = 0;
+  let activeSoldCount = 0;
+
+  const fullList = products.map(p => {
+    const s = salesMap[p.id] || { qty: 0, revenue: 0 };
+    const qty = s.qty;
+    const basePrice = Number(p.base_price) || 0;
+    const revenue = s.revenue > 0 ? s.revenue : qty * basePrice;
+
+    totalPortions += qty;
+    totalRev += revenue;
+    if (qty > 0) activeSoldCount++;
+
+    return {
+      id: p.id,
+      name: p.name,
+      category: p.category || 'Lainnya',
+      basePrice: basePrice,
+      qty: qty,
+      revenue: revenue
+    };
+  });
+
+  // Hitung persentase kontribusi
+  menuSalesCachedList = fullList.map(item => {
+    const contribPortion = totalPortions > 0 ? (item.qty / totalPortions) * 100 : 0;
+    const contribRevenue = totalRev > 0 ? (item.revenue / totalRev) * 100 : 0;
+    let displayPortionContrib = '0%';
+    if (item.qty > 0) {
+      displayPortionContrib = contribPortion < 0.1 ? '< 0.1%' : contribPortion.toFixed(1) + '%';
+    }
+    return {
+      ...item,
+      rawPortionPct: contribPortion,
+      contributionPortion: displayPortionContrib,
+      contributionRevenue: Number(contribRevenue.toFixed(1))
+    };
+  });
+
+  // Update Subtitle
+  if (subtitle) {
+    let periodText = 'Hari Ini';
+    if (menuSalesModalPeriod === 'weekly') periodText = 'Minggu Ini (7 Hari Terakhir)';
+    else if (menuSalesModalPeriod === 'monthly') {
+      const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      periodText = `Bulan ${monthNames[refDate.getMonth()]} ${refDate.getFullYear()}`;
+    } else if (menuSalesModalPeriod === 'yearly') {
+      periodText = `Tahun ${refDate.getFullYear()}`;
+    } else if (menuSalesModalPeriod === 'all') {
+      periodText = 'Sepanjang Waktu';
+    }
+    subtitle.textContent = periodText;
+  }
+
+  // Update KPI Summary Cards dengan layout baru
+  if (summaryContainer) {
+    summaryContainer.innerHTML = `
+      <div class="menu-sales-kpi-card">
+        <span class="kpi-label">Total Porsi</span>
+        <strong class="kpi-val">${totalPortions.toLocaleString('id-ID')}</strong>
+        <span class="kpi-sub">porsi</span>
+      </div>
+      <div class="menu-sales-kpi-card">
+        <span class="kpi-label">Estimasi Omzet</span>
+        <strong class="kpi-val accent">${fmtRp(totalRev)}</strong>
+        <span class="kpi-sub">penjualan</span>
+      </div>
+      <div class="menu-sales-kpi-card">
+        <span class="kpi-label">Menu Terjual</span>
+        <strong class="kpi-val">${activeSoldCount}</strong>
+        <span class="kpi-sub">dari ${products.length} menu</span>
+      </div>
+    `;
+  }
+
+  // Render Kategori Chips
+  const catContainer = document.getElementById('menu-sales-category-chips');
+  if (catContainer) {
+    const catSet = new Set();
+    categories.forEach(c => { if (c.name) catSet.add(c.name); });
+    products.forEach(p => { if (p.category) catSet.add(p.category); });
+    const allCats = ['Semua', ...Array.from(catSet)];
+
+    catContainer.innerHTML = allCats.map(cat => `
+      <button 
+        type="button" 
+        data-cat="${cat}"
+        onclick="setMenuSalesCategory('${cat.replace(/'/g, "\\'")}')"
+        style="padding:4px 10px; border-radius:16px; font-size:11px; font-weight:600; white-space:nowrap; flex:0 0 auto; cursor:pointer; transition:all 0.15s ease; border:1px solid ${menuSalesSelectedCategory === cat ? 'var(--brown-800)' : 'var(--border)'}; background:${menuSalesSelectedCategory === cat ? 'var(--brown-800)' : 'white'}; color:${menuSalesSelectedCategory === cat ? 'white' : 'var(--text-muted)'};"
+      >
+        ${cat}
+      </button>
+    `).join('');
+  }
+
+  renderMenuSalesModalList();
+}
+
+function renderMenuSalesModalList() {
+  const container = document.getElementById('menu-sales-items-list');
+  const countEl = document.getElementById('menu-sales-footer-count');
+  if (!container) return;
+
+  let list = [...menuSalesCachedList];
+
+  // 1. Filter Kategori
+  if (menuSalesSelectedCategory !== 'Semua') {
+    list = list.filter(item => (item.category || '').toLowerCase() === menuSalesSelectedCategory.toLowerCase());
+  }
+
+  // 2. Filter Pencarian
+  if (menuSalesSearchQuery) {
+    list = list.filter(item => 
+      item.name.toLowerCase().includes(menuSalesSearchQuery) || 
+      (item.category && item.category.toLowerCase().includes(menuSalesSearchQuery))
+    );
+  }
+
+  // 3. Sorting
+  if (menuSalesSortBy === 'top') {
+    list.sort((a, b) => b.qty - a.qty || b.revenue - a.revenue || a.name.localeCompare(b.name));
+  } else if (menuSalesSortBy === 'slow') {
+    list.sort((a, b) => a.qty - b.qty || a.revenue - b.revenue || a.name.localeCompare(b.name));
+  } else if (menuSalesSortBy === 'revenue') {
+    list.sort((a, b) => b.revenue - a.revenue || b.qty - a.qty);
+  } else if (menuSalesSortBy === 'name') {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  if (countEl) {
+    countEl.innerHTML = `Menampilkan <strong>${list.length}</strong> menu item`;
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div style="padding:36px 20px; text-align:center; color:var(--text-muted); display:flex; flex-direction:column; align-items:center; gap:6px;">
+        <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.4;"></i>
+        <p style="font-weight:700; font-size:14px; margin:0; color:var(--brown-900);">Tidak ada menu ditemukan</p>
+        <small style="font-size:12px;">Coba ubah kata kunci pencarian atau ganti filter kategori.</small>
+      </div>`;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = list.map((item, idx) => {
+    const rankNum = idx + 1;
+    const isTop3 = menuSalesSortBy === 'top' && rankNum <= 3 && item.qty > 0;
+    const isZero = item.qty === 0;
+
+    let rankBg = 'var(--brown-100)';
+    let rankColor = 'var(--brown-900)';
+    if (menuSalesSortBy === 'top' && item.qty > 0) {
+      if (rankNum === 1) { rankBg = '#F59E0B'; rankColor = 'white'; }
+      else if (rankNum === 2) { rankBg = '#94A3B8'; rankColor = 'white'; }
+      else if (rankNum === 3) { rankBg = '#B45309'; rankColor = 'white'; }
+    }
+
+    return `
+      <div style="padding:12px 16px; border-bottom:${idx === list.length - 1 ? 'none' : '1px solid var(--border)'}; display:flex; flex-direction:column; gap:6px; background:${isZero ? 'var(--cream)' : 'white'};">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <span style="width:24px; height:24px; border-radius:50%; background:${rankBg}; color:${rankColor}; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; ${isTop3 ? 'box-shadow:0 2px 4px rgba(0,0,0,0.12);' : ''}">
+              ${rankNum}
+            </span>
+            <div style="min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-weight:700; font-size:13px; color:var(--brown-900);">${item.name}</span>
+                <span style="font-size:10px; font-weight:600; padding:1px 6px; border-radius:4px; background:var(--surface); color:var(--brown-700); border:1px solid var(--border);">${item.category}</span>
+              </div>
+              <span style="font-size:11px; color:var(--text-muted);">Harga: ${fmtRp(item.basePrice)}</span>
+            </div>
+          </div>
+          <div style="text-align:right; flex-shrink:0;">
+            ${isZero ? `
+              <span style="font-size:11px; font-weight:600; color:var(--text-muted); background:var(--brown-100); padding:2px 6px; border-radius:4px;">Belum Terjual</span>
+            ` : `
+              <div style="display:flex; align-items:baseline; justify-content:flex-end; gap:4px;">
+                <span style="font-weight:800; font-size:14px; color:var(--accent);">${item.qty.toLocaleString('id-ID')}</span>
+                <span style="font-size:11px; color:var(--text-muted);">porsi</span>
+                <span style="margin-left:4px; font-size:10px; font-weight:700; color:var(--brown-800); background:var(--brown-50); padding:1px 5px; border-radius:4px; border:1px solid var(--brown-200);">${item.contributionPortion}</span>
+              </div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">
+                Omzet: <strong style="color:var(--brown-800);">${fmtRp(item.revenue)}</strong>
+              </div>
+            `}
+          </div>
+        </div>
+        ${!isZero ? `
+          <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+            <div style="flex:1; height:5px; background:var(--brown-100); border-radius:3px; overflow:hidden;">
+              <div style="height:100%; width:${Math.min(100, Math.max(2, item.rawPortionPct || 0.5))}%; background:${isTop3 ? 'linear-gradient(90deg, var(--accent) 0%, #E67E22 100%)' : 'var(--brown-400)'}; border-radius:3px; transition:width 0.3s ease;"></div>
+            </div>
+            <span style="font-size:10px; color:var(--text-muted); min-width:85px; text-align:right;">Kontribusi ${item.contributionPortion}</span>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
 

@@ -2052,3 +2052,180 @@ div::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* ─── STYLING KHUSUS MODAL ANALISIS MENU SALES (MOBILE & DESKTOP) ─── */
+#modal-menu-sales {
+  padding: 10px !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#modal-menu-sales .modal {
+  width: 100% !important;
+  max-width: 740px !important;
+  height: 92vh !important;
+  max-height: 92vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border-radius: 18px !important;
+  background: var(--card) !important;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.35) !important;
+}
+
+#modal-menu-sales .modal-header {
+  flex-shrink: 0 !important;
+  padding: 14px 18px !important;
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+#modal-menu-sales .modal-body {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  overscroll-behavior: contain !important;
+  padding: 14px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--brown-400) var(--brown-100) !important;
+}
+
+#modal-menu-sales #menu-sales-items-list {
+  max-height: 52vh !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--border) !important;
+  background: white !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--brown-500) var(--brown-100) !important;
+}
+
+/* Custom Visible Scrollbar for Webkit Browsers (Chrome, Safari, Edge, Android) */
+#modal-menu-sales .modal-body::-webkit-scrollbar,
+#modal-menu-sales #menu-sales-items-list::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+  display: block !important;
+}
+
+#modal-menu-sales .modal-body::-webkit-scrollbar-track,
+#modal-menu-sales #menu-sales-items-list::-webkit-scrollbar-track {
+  background: var(--brown-50) !important;
+  border-radius: 6px !important;
+}
+
+#modal-menu-sales .modal-body::-webkit-scrollbar-thumb,
+#modal-menu-sales #menu-sales-items-list::-webkit-scrollbar-thumb {
+  background: var(--brown-400) !important;
+  border-radius: 6px !important;
+}
+
+#modal-menu-sales .modal-body::-webkit-scrollbar-thumb:hover,
+#modal-menu-sales #menu-sales-items-list::-webkit-scrollbar-thumb:hover {
+  background: var(--brown-700) !important;
+}
+
+#modal-menu-sales .modal-footer {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 10px 16px !important;
+  background: var(--surface) !important;
+  border-top: 1px solid var(--border) !important;
+}
+
+#modal-menu-sales .modal-footer .btn {
+  width: auto !important;
+  margin: 0 !important;
+  padding: 7px 18px !important;
+}
+
+/* KPI Responsive Grid */
+.menu-sales-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.menu-sales-kpi-card {
+  background: var(--surface);
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.menu-sales-kpi-card .kpi-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-sales-kpi-card .kpi-val {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--brown-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-sales-kpi-card .kpi-val.accent {
+  color: var(--accent);
+}
+
+.menu-sales-kpi-card .kpi-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  #modal-menu-sales {
+    padding: 6px !important;
+  }
+  #modal-menu-sales .modal {
+    height: 95vh !important;
+    max-height: 95vh !important;
+    border-radius: 14px !important;
+  }
+  #modal-menu-sales .modal-header {
+    padding: 12px 14px !important;
+  }
+  #modal-menu-sales .modal-body {
+    padding: 10px 12px !important;
+    gap: 10px !important;
+  }
+  .menu-sales-kpi-grid {
+    gap: 6px;
+  }
+  .menu-sales-kpi-card {
+    padding: 6px 8px;
+  }
+  .menu-sales-kpi-card .kpi-val {
+    font-size: 13px;
+  }
+  .period-tabs button {
+    padding: 5px 9px !important;
+    font-size: 10.5px !important;
+  }
+}
+
+
