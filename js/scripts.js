@@ -16,7 +16,7 @@ let activeCashierCategory = 'Semua';
 let cashierSearchQuery = '';
 let cartItemSeq = 0;
 let isProcessingPayment = false;
-let storeInfo = { name: 'KopiSembilan', address: 'Jl. Kopi Nomor 9, Tuban, Jawa Timur', phone: '085855180131' };
+let storeInfo = { name: 'KopiSembilan', address: 'Jl. Pemuda Kutorejo Gg. II No.230, Kutorejo, Kec. Tuban, Kabupaten Tuban, Jawa Timur 62311', phone: '08132869806' };
 let waTemplate = `*INVOICE [NAMA_TOKO]*
 ID: [ID_TXN]
 Tanggal: [TANGGAL]
@@ -1335,6 +1335,25 @@ async function confirmPayment(sendMode = 'none') {
       sendWhatsAppReceipt(phone, txnId, total, cart);
     }
 
+    // Otomatis cetak struk via Bluetooth jika fitur Auto-Print aktif dan printer terhubung
+    if (window.bluetoothPrinter && window.bluetoothPrinter.autoPrint && window.bluetoothPrinter.isConnected) {
+      const receiptData = {
+        id: txnId,
+        total: total,
+        date: now,
+        customer_phone: phone,
+        payment_method: selectedPaymentMethod,
+        payment_status: status,
+        cashier_name: currentUser ? currentUser.name : 'Kasir',
+        notes: note,
+        cash_amount: cashAmount,
+        cash_change: cashChange
+      };
+      window.bluetoothPrinter.printReceipt(receiptData, cart).catch(err => {
+        console.warn('Auto-print Bluetooth gagal:', err);
+      });
+    }
+
     showToast(editingTransactionId ? 'Transaksi diperbarui!' : 'Transaksi Berhasil!', 'success');
     
     // Buat detail log yang sangat rinci termasuk catatan per item
@@ -2454,6 +2473,47 @@ function renderSettings(el) {
           <button class="btn btn-brown w-full" onclick="saveWATemplate()">Simpan Konfigurasi</button>
         </div>
       </div>
+      <div class="card">
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer Thermal Bluetooth</h3></div>
+        <div class="card-body">
+          <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER:</span>
+              <span id="printer-status-badge" class="badge ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'badge-green' : 'badge-amber'}">
+                ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? '● Terhubung (' + (window.bluetoothPrinter.device?.name || 'Thermal Printer') + ')' : '○ Belum Terhubung'}
+              </span>
+            </div>
+            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.4;">
+              Mendukung printer thermal Bluetooth 58mm & 80mm (Iware, Panda, RPP02N, Blueprint, Eppos, POS-58, dll) menggunakan Google Chrome atau Edge.
+            </p>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+            <button id="btn-printer-connect" class="btn ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 140px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'disconnectBluetoothPrinter()' : 'connectBluetoothPrinter()'}">
+              <i data-lucide="${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+              <span>${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
+            </button>
+            <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintBluetooth()">
+              <i data-lucide="printer" style="width:14px;height:14px;"></i> Uji Cetak (Test Print)
+            </button>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:12px; font-weight:600;">Ukuran Lebar Kertas Struk</label>
+            <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
+              <option value="58" ${(window.bluetoothPrinter?.paperWidth || '58') === '58' ? 'selected' : ''}>58 mm (Standar Struk Kecil - 32 Karakter)</option>
+              <option value="80" ${(window.bluetoothPrinter?.paperWidth || '58') === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar - 48 Karakter)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
+              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${(window.bluetoothPrinter?.autoPrint) ? 'checked' : ''}>
+              Cetak struk otomatis setiap transaksi selesai
+            </label>
+          </div>
+        </div>
+      </div>
     </div>
     <style>.responsive-grid{display:grid; grid-template-columns:1fr 1fr;} @media(max-width:768px){.responsive-grid{grid-template-columns:1fr;}}</style>
   `;
@@ -2645,14 +2705,17 @@ async function viewTxnDetail(id) {
   if (footer) {
     const formattedItems = JSON.stringify(groupedItems.map(i => ({ name: i.products?.name, qty: i.qty, totalPrice: i.price, note: i.item_note }))).replace(/"/g, '&quot;');
     footer.innerHTML = `
-      <div style="display:flex; gap:10px; width:100%; flex-wrap:wrap; justify-content:center; padding-top:10px;">
-        <button class="btn btn-green" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('image', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+      <div style="display:flex; gap:8px; width:100%; flex-wrap:wrap; justify-content:center; padding-top:10px;">
+        <button class="btn btn-brown" style="flex:1 1 120px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="printTransactionByIdBluetooth('${txn.id}')">
+          <i data-lucide="printer" style="width:16px;height:16px;"></i> Cetak Struk
+        </button>
+        <button class="btn btn-green" style="flex:1 1 110px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('image', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
           <i data-lucide="image" style="width:16px;height:16px;"></i> WA Gambar
         </button>
-        <button class="btn btn-outline" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('text', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+        <button class="btn btn-outline" style="flex:1 1 100px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('text', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
           <i data-lucide="message-square" style="width:16px;height:16px;"></i> WA Teks
         </button>
-        <button class="btn btn-red" style="flex:1; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="closeModal('modal-payment')">
+        <button class="btn btn-red" style="flex:0 0 70px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="closeModal('modal-payment')">
           <i data-lucide="x" style="width:16px;height:16px;"></i> Tutup
         </button>
       </div>
@@ -4473,5 +4536,403 @@ function renderMenuSalesModalList() {
   }).join('');
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// ══════════════════════════════════════════════
+// WEB BLUETOOTH THERMAL PRINTER SERVICE (ESC/POS)
+// ══════════════════════════════════════════════
+
+class BluetoothPrinterService {
+  constructor() {
+    this.device = null;
+    this.server = null;
+    this.characteristic = null;
+    this.isConnected = false;
+    this.paperWidth = localStorage.getItem('ks_printer_paper') || '58'; // '58' (32 cols) / '80' (48 cols)
+    this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
+
+    // Service UUIDs yang umum pada printer thermal Bluetooth BLE
+    this.SERVICE_UUIDS = [
+      '000018f0-0000-1000-8000-00805f9b34fb', // Standard Thermal Printer
+      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent Serial
+      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '0000fff0-0000-1000-8000-00805f9b34fb',
+      '0000fee7-0000-1000-8000-00805f9b34fb'
+    ];
+  }
+
+  isSupported() {
+    return !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+  }
+
+  async connect() {
+    if (!this.isSupported()) {
+      showToast('Browser ini belum mendukung Web Bluetooth. Disarankan menggunakan Google Chrome atau Edge di Android/Laptop.', 'error');
+      throw new Error('Web Bluetooth tidak didukung.');
+    }
+
+    try {
+      showToast('Mencari printer Bluetooth di sekitar...', 'info');
+
+      this.device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: this.SERVICE_UUIDS
+      });
+
+      this.device.addEventListener('gattserverdisconnected', () => {
+        this.isConnected = false;
+        this.characteristic = null;
+        this.server = null;
+        updatePrinterStatusUI();
+        showToast('Koneksi printer Bluetooth terputus', 'info');
+      });
+
+      showToast(`Menghubungkan ke ${this.device.name || 'Printer'}...`, 'info');
+      this.server = await this.device.gatt.connect();
+
+      let foundChar = null;
+      const services = await this.server.getPrimaryServices();
+
+      for (const service of services) {
+        try {
+          const chars = await service.getCharacteristics();
+          for (const char of chars) {
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+              foundChar = char;
+              break;
+            }
+          }
+          if (foundChar) break;
+        } catch (e) {
+          console.warn('Gagal membaca karakteristik service printer:', e);
+        }
+      }
+
+      if (!foundChar) {
+        throw new Error('Tidak ditemukan saluran cetak (Write Characteristic) pada perangkat ini.');
+      }
+
+      this.characteristic = foundChar;
+      this.isConnected = true;
+      localStorage.setItem('ks_printer_name', this.device.name || 'Thermal Printer');
+      updatePrinterStatusUI();
+      showToast(`Printer ${this.device.name || ''} berhasil terhubung!`, 'success');
+      return true;
+    } catch (error) {
+      this.isConnected = false;
+      this.characteristic = null;
+      this.server = null;
+      updatePrinterStatusUI();
+      if (error.name !== 'NotFoundError') {
+        console.error('Bluetooth connect error:', error);
+        showToast(error.message || 'Gagal menghubungkan ke printer Bluetooth', 'error');
+      }
+      throw error;
+    }
+  }
+
+  async disconnect() {
+    if (this.device && this.device.gatt && this.device.gatt.connected) {
+      await this.device.gatt.disconnect();
+    }
+    this.isConnected = false;
+    this.characteristic = null;
+    this.server = null;
+    localStorage.removeItem('ks_printer_name');
+    updatePrinterStatusUI();
+    showToast('Printer Bluetooth berhasil diputuskan', 'info');
+  }
+
+  async writeBytes(bytes) {
+    if (!this.isConnected || !this.characteristic) {
+      throw new Error('Printer belum terhubung via Bluetooth.');
+    }
+
+    const CHUNK_SIZE = 100;
+    const buffer = new Uint8Array(bytes);
+
+    for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
+      const chunk = buffer.slice(i, i + CHUNK_SIZE);
+      if (this.characteristic.properties.writeWithoutResponse) {
+        await this.characteristic.writeValueWithoutResponse(chunk);
+      } else {
+        await this.characteristic.writeValue(chunk);
+      }
+      await new Promise(r => setTimeout(r, 15));
+    }
+  }
+
+  createEscPosBuilder() {
+    const maxCols = this.paperWidth === '80' ? 48 : 32;
+    const bytes = [];
+
+    const addBytes = (...b) => bytes.push(...b);
+    const addText = (str) => {
+      for (let i = 0; i < str.length; i++) {
+        let code = str.charCodeAt(i);
+        if (code > 255) code = 63;
+        bytes.push(code);
+      }
+    };
+
+    return {
+      init: () => { addBytes(0x1B, 0x40); return this; },
+      alignLeft: () => { addBytes(0x1B, 0x61, 0x00); return this; },
+      alignCenter: () => { addBytes(0x1B, 0x61, 0x01); return this; },
+      alignRight: () => { addBytes(0x1B, 0x61, 0x02); return this; },
+      boldOn: () => { addBytes(0x1B, 0x45, 0x01); return this; },
+      boldOff: () => { addBytes(0x1B, 0x45, 0x00); return this; },
+      doubleHeight: () => { addBytes(0x1D, 0x21, 0x01); return this; },
+      doubleWidthHeight: () => { addBytes(0x1D, 0x21, 0x11); return this; },
+      normalSize: () => { addBytes(0x1D, 0x21, 0x00); return this; },
+      feed: (n = 1) => { for (let i = 0; i < n; i++) addBytes(0x0A); return this; },
+      cut: () => { addBytes(0x1D, 0x56, 0x41, 0x03); return this; },
+      text: (str) => { addText(str); return this; },
+      textLine: (str) => { addText(str + '\n'); return this; },
+      divider: (char = '-') => {
+        addText(char.repeat(maxCols) + '\n');
+        return this;
+      },
+      twoColumns: (left, right) => {
+        const leftStr = String(left || '');
+        const rightStr = String(right || '');
+        const spacesNeeded = maxCols - leftStr.length - rightStr.length;
+        if (spacesNeeded > 0) {
+          addText(leftStr + ' '.repeat(spacesNeeded) + rightStr + '\n');
+        } else {
+          const availLeft = maxCols - rightStr.length - 1;
+          const trimmedLeft = leftStr.substring(0, Math.max(availLeft, 1));
+          addText(trimmedLeft + ' ' + rightStr + '\n');
+        }
+        return this;
+      },
+      getBytes: () => bytes
+    };
+  }
+
+  async testPrint() {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    const b = this.createEscPosBuilder();
+    b.init();
+    b.alignCenter();
+    b.doubleWidthHeight();
+    b.boldOn();
+    b.textLine('KOPI SEMBILAN');
+    b.normalSize();
+    b.boldOff();
+    b.textLine('Uji Coba Printer Bluetooth');
+    b.textLine(new Date().toLocaleDateString('id-ID', { dateStyle: 'full', timeStyle: 'short' }));
+    b.feed(1);
+    b.divider('=');
+    b.alignLeft();
+    b.twoColumns('Status Printer', 'BERHASIL [OK]');
+    b.twoColumns('Koneksi', 'Web Bluetooth');
+    b.twoColumns('Lebar Kertas', `${this.paperWidth} mm`);
+    b.divider('-');
+    b.alignCenter();
+    b.textLine('Printer siap digunakan untuk');
+    b.textLine('mencetak struk kasir Kopi Sembilan!');
+    b.feed(4);
+    b.cut();
+
+    await this.writeBytes(b.getBytes());
+    showToast('Uji cetak berhasil dikirim ke printer!', 'success');
+  }
+
+  async printReceipt(txn, items = null) {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
+      name: 'TOKO KOPI SEMBILAN',
+      address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
+      phone: '085336688839'
+    };
+
+    let txnItems = items || txn.transaction_items || [];
+    if (typeof txnItems === 'string') {
+      try { txnItems = JSON.parse(txnItems); } catch(e) { txnItems = []; }
+    }
+
+    const b = this.createEscPosBuilder();
+    b.init();
+
+    // 1. Header Toko
+    b.alignCenter();
+    b.doubleWidthHeight();
+    b.boldOn();
+    b.textLine(store.name || 'TOKO KOPI SEMBILAN');
+    b.normalSize();
+    b.boldOff();
+    if (store.address) b.textLine(store.address);
+    if (store.phone) b.textLine('WA: ' + store.phone);
+    b.feed(1);
+
+    // 2. Info Transaksi
+    b.alignLeft();
+    const d = txn.date ? new Date(txn.date) : new Date();
+    const tglStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    
+    b.twoColumns('Tgl: ' + tglStr, 'Jam: ' + jamStr);
+    b.twoColumns('ID: ' + (txn.id || '-'), 'Kasir: ' + (txn.cashier_name || 'Admin'));
+    b.divider('-');
+
+    // 3. Daftar Item Pesanan
+    txnItems.forEach(item => {
+      let name = item.name;
+      if (!name && item.products && item.products.name) name = item.products.name;
+      if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
+      if (!name) name = 'Produk';
+
+      const qty = item.qty || 1;
+      const price = Number(item.price || item.totalPrice || 0);
+      const subtotal = Number(item.totalPrice ? item.totalPrice : price * qty);
+
+      b.boldOn();
+      b.textLine(name);
+      b.boldOff();
+      
+      const detailStr = `  ${qty} x ${fmtRp(price)}`;
+      const subtotalStr = fmtRp(subtotal);
+      b.twoColumns(detailStr, subtotalStr);
+
+      if (item.selected_variants && Array.isArray(item.selected_variants) && item.selected_variants.length > 0) {
+        b.textLine('  - ' + item.selected_variants.map(v => v.name).join(', '));
+      }
+      if (item.item_note || item.note) {
+        b.textLine('  * ' + (item.item_note || item.note));
+      }
+    });
+
+    b.divider('-');
+
+    // 4. Total & Pembayaran
+    b.boldOn();
+    b.doubleHeight();
+    b.twoColumns('TOTAL', fmtRp(txn.total || 0));
+    b.normalSize();
+    b.boldOff();
+
+    const isLunas = txn.payment_status === 'Lunas';
+    const methodStr = String(txn.payment_method || 'TUNAI').toUpperCase();
+
+    if (txn.payment_method === 'cash' && isLunas) {
+      b.twoColumns('Bayar (Tunai)', fmtRp(txn.cash_amount || txn.total || 0));
+      const kembalian = Math.max(0, (txn.cash_change || (txn.cash_amount ? txn.cash_amount - txn.total : 0)));
+      b.twoColumns('Kembalian', kembalian > 0 ? fmtRp(kembalian) : 'Pas');
+    } else {
+      b.twoColumns('Metode Bayar', methodStr);
+      if (!isLunas) {
+        b.alignCenter();
+        b.boldOn();
+        b.textLine('*** STATUS: BELUM LUNAS ***');
+        b.boldOff();
+      }
+    }
+
+    if (txn.notes) {
+      b.feed(1);
+      b.alignLeft();
+      b.textLine('Catatan: ' + txn.notes);
+    }
+
+    b.divider('-');
+
+    // 5. Footer
+    b.alignCenter();
+    b.textLine('Terima Kasih Atas Kunjungan Anda');
+    b.boldOn();
+    b.textLine('KOPI SEMBILAN');
+    b.boldOff();
+    b.feed(4);
+    b.cut();
+
+    await this.writeBytes(b.getBytes());
+    showToast('Struk berhasil dicetak ke printer Bluetooth!', 'success');
+  }
+}
+
+// Inisialisasi Instance Global
+window.bluetoothPrinter = new BluetoothPrinterService();
+
+// Helper Functions Global untuk UI
+async function connectBluetoothPrinter() {
+  try {
+    await window.bluetoothPrinter.connect();
+  } catch (e) { /* sudah ditangani di service */ }
+}
+
+async function disconnectBluetoothPrinter() {
+  try {
+    await window.bluetoothPrinter.disconnect();
+  } catch (e) { /* ignore */ }
+}
+
+async function testPrintBluetooth() {
+  try {
+    await window.bluetoothPrinter.testPrint();
+  } catch (e) {
+    if (!window.bluetoothPrinter.isConnected) {
+      showToast('Hubungkan printer Bluetooth terlebih dahulu', 'error');
+    }
+  }
+}
+
+async function printTransactionByIdBluetooth(id) {
+  try {
+    showToast('Memuat data struk...', 'info');
+    const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
+    if (error || !txn) {
+      showToast('Gagal mengambil data transaksi!', 'error');
+      return;
+    }
+    await window.bluetoothPrinter.printReceipt(txn);
+  } catch (e) {
+    console.error('Cetak transaksi error:', e);
+  }
+}
+
+function setPrinterPaperWidth(width) {
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.paperWidth = width;
+    localStorage.setItem('ks_printer_paper', width);
+    showToast(`Lebar kertas diatur ke ${width} mm`, 'success');
+  }
+}
+
+function togglePrinterAutoPrint(enabled) {
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.autoPrint = enabled;
+    localStorage.setItem('ks_printer_autoprint', enabled ? 'true' : 'false');
+    showToast(enabled ? 'Cetak otomatis struk diaktifkan' : 'Cetak otomatis struk dinonaktifkan', 'info');
+  }
+}
+
+function updatePrinterStatusUI() {
+  const badge = document.getElementById('printer-status-badge');
+  const btn = document.getElementById('btn-printer-connect');
+  const isConnected = window.bluetoothPrinter && window.bluetoothPrinter.isConnected;
+  const devName = window.bluetoothPrinter?.device?.name || localStorage.getItem('ks_printer_name') || 'Thermal Printer';
+
+  if (badge) {
+    badge.className = `badge ${isConnected ? 'badge-green' : 'badge-amber'}`;
+    badge.textContent = isConnected ? `● Terhubung (${devName})` : '○ Belum Terhubung';
+  }
+
+  if (btn) {
+    btn.className = `btn ${isConnected ? 'btn-red' : 'btn-brown'} btn-sm`;
+    btn.setAttribute('onclick', isConnected ? 'disconnectBluetoothPrinter()' : 'connectBluetoothPrinter()');
+    btn.innerHTML = `
+      <i data-lucide="${isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+      <span>${isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
+    `;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
 }
 
