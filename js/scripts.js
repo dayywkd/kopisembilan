@@ -4846,10 +4846,7 @@ class BluetoothPrinterService {
 
     // 5. Footer
     b.alignCenter();
-    b.textLine('Terima Kasih Atas Kunjungan Anda di');
-    b.boldOn();
-    b.textLine('TOKO KOPI SEMBILAN');
-    b.boldOff();
+    b.textLine('Terima Kasih Atas Kunjungan Anda');
     b.feed(4);
     b.cut();
 
