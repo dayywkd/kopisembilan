@@ -49,12 +49,12 @@ window.toggleDashboardPrivacy = (key) => {
 window.toggleAllDashboardPrivacy = () => {
   const keys = ['revenue', 'transactions', 'products', 'chart', 'top_menu', 'payment', 'recent'];
   const anyVisible = keys.some(k => !dashboardPrivacy[k]);
-  
+
   keys.forEach(k => {
     dashboardPrivacy[k] = anyVisible;
     localStorage.setItem(`ks_priv_${k}`, anyVisible);
   });
-  
+
   renderDashboardContent(true);
 };
 
@@ -62,10 +62,10 @@ window.updateGlobalPrivacyButton = () => {
   const btn = document.getElementById('btn-privacy-global-toggle');
   const icon = document.getElementById('icon-privacy-global');
   if (!btn || !icon) return;
-  
+
   const keys = ['revenue', 'transactions', 'products', 'chart', 'top_menu', 'payment', 'recent'];
   const allHidden = keys.every(k => dashboardPrivacy[k]);
-  
+
   if (allHidden) {
     btn.classList.add('btn-brown');
     btn.classList.remove('btn-outline');
@@ -79,7 +79,7 @@ window.updateGlobalPrivacyButton = () => {
     icon.innerHTML = `<i data-lucide="eye" style="width:16px;height:16px;"></i>`;
     icon.setAttribute('data-lucide', 'eye');
   }
-  
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
 };
 
@@ -102,7 +102,7 @@ async function loadCategories() {
 function getCategoryColor(categoryName) {
   const cat = categories.find(c => c.name === categoryName);
   if (cat && cat.color) return cat.color;
-  switch(categoryName) {
+  switch (categoryName) {
     case 'Specialty Coffee': return '#D4A05A';
     case 'Regular Coffee': return '#8B5320';
     case 'Signature': return '#2D5A27';
@@ -114,7 +114,7 @@ function getCategoryColor(categoryName) {
 function getCategoryIcon(categoryName) {
   const cat = categories.find(c => c.name === categoryName);
   if (cat && cat.icon) return cat.icon;
-  switch(categoryName) {
+  switch (categoryName) {
     case 'Specialty Coffee': return 'coffee';
     case 'Regular Coffee': return 'coffee';
     case 'Signature': return 'glass-water';
@@ -137,7 +137,7 @@ function escapeAttr(value = '') {
 async function doLogin() {
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value.trim();
-  
+
   if (!u || !p) {
     showToast('Username dan Password wajib diisi!', 'error');
     return;
@@ -200,16 +200,16 @@ async function doLogin() {
 function setupUserSession(user) {
   currentUser = user;
   localStorage.setItem('ks_session', JSON.stringify(user));
-  
+
   const frameLogin = document.getElementById('frame-login');
   const frameApp = document.getElementById('frame-app');
   if (frameLogin) frameLogin.classList.remove('active');
   if (frameApp) frameApp.classList.add('active');
-  
+
   const nameEl = document.getElementById('user-display-name');
   const roleEl = document.getElementById('user-display-role');
   const avatarEl = document.getElementById('user-avatar');
-  
+
   if (nameEl) nameEl.textContent = user.name;
   if (roleEl) roleEl.textContent = user.role === 'admin' ? 'Administrator' : 'Kasir';
   if (avatarEl) avatarEl.textContent = user.name[0].toUpperCase();
@@ -229,7 +229,7 @@ function setupUserSession(user) {
     if (roleLabel) roleLabel.textContent = 'Kasir Panel';
     showPage('cashier');
   }
-  
+
   showToast('Selamat datang, ' + user.name + '!', 'success');
   loadProducts();
 }
@@ -500,7 +500,7 @@ async function loadProducts() {
       .from('products')
       .select('*, product_variants(*)')
       .eq('active', true);
-    
+
     if (!error && data) {
       products = data;
       cashierProducts = buildCashierMenuProducts(data);
@@ -513,7 +513,7 @@ async function loadProducts() {
     if (currentTitle === 'Dashboard') renderDashboard(content);
     if (currentTitle === 'Inventaris Produk') renderInventory(content);
     if (currentTitle === 'Kasir / POS') renderCashier(content);
-    
+
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 }
@@ -541,7 +541,7 @@ function showPage(page) {
   });
   const titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = PAGE_TITLES[page] || page;
-  
+
   const content = document.getElementById('page-content');
   if (content) {
     content.classList.remove('fade-in-up');
@@ -552,11 +552,11 @@ function showPage(page) {
       logs: renderLogs
     };
     if (renders[page]) renders[page](content);
-    
+
     // Memicu reflow agar animasi terpicu ulang
     void content.offsetWidth;
     content.classList.add('fade-in-up');
-    
+
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
   closeSidebar();
@@ -618,8 +618,8 @@ function renderCashier(el) {
           <div class="cashier-category-row">
             <button class="btn ${activeCashierCategory === 'Semua' ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'Semua')">Semua</button>
             ${categories.map(c =>
-              `<button class="btn ${activeCashierCategory === c.name ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'${c.name}')">${c.name}</button>`
-            ).join('')}
+    `<button class="btn ${activeCashierCategory === c.name ? 'btn-brown' : 'btn-outline'} btn-sm cat-btn" onclick="filterCat(this,'${c.name}')">${c.name}</button>`
+  ).join('')}
           </div>
           <div class="search-wrapper cashier-search">
             <i data-lucide="search" class="search-icon" style="width:16px;height:16px;"></i>
@@ -667,7 +667,7 @@ function renderMenuItems(cat, query = '') {
   const menuProducts = cashierProducts.length ? cashierProducts : buildCashierMenuProducts(products);
   if (!menuProducts || menuProducts.length === 0) return '<div style="text-align:center; padding:20px; color:var(--text-muted);">Belum ada produk.</div>';
   const search = query.trim().toLowerCase();
-  
+
   const filteredProducts = menuProducts.filter(p => {
     const productName = String(p.name || '').toLowerCase();
     const productCategory = String(p.category || '').toLowerCase();
@@ -685,7 +685,7 @@ function renderMenuItems(cat, query = '') {
   return filteredProducts.map(p => {
     const bgColor = getCategoryColor(p.category);
     const icon = getCategoryIcon(p.category);
-    
+
     return `
       <div class="menu-card" onclick='addMenuToCart(${JSON.stringify(String(p.id))})'>
         <div class="icon-circle" style="background: ${bgColor}15; color: ${bgColor}; border-color: ${bgColor}30;">
@@ -758,9 +758,9 @@ function addMenuToCart(productId) {
   if (!product) return;
 
   // Cek apakah item yang SAMA PERSIS (tanpa catatan & varian) sudah ada di keranjang
-  const existingItem = cart.find(c => 
-    c.productId === product.id && 
-    (c.note === '' || !c.note) && 
+  const existingItem = cart.find(c =>
+    c.productId === product.id &&
+    (c.note === '' || !c.note) &&
     (!c.variants || c.variants.length === 0)
   );
 
@@ -796,12 +796,12 @@ function updateCartUI() {
     if (cartCount) cartCount.textContent = '0 item';
     if (payBtn) payBtn.disabled = true;
     if (totalValEl) totalValEl.textContent = 'Rp 0';
-    
+
     const mobileBadge = document.getElementById('cart-mobile-badge');
     const mobileTotal = document.getElementById('cart-mobile-total');
     if (mobileBadge) mobileBadge.textContent = '0';
     if (mobileTotal) mobileTotal.textContent = 'Rp 0';
-    
+
     return;
   }
 
@@ -833,7 +833,7 @@ function updateCartUI() {
   `}).join('');
 
   if (cartCount) cartCount.textContent = cart.length + ' item';
-  
+
   // Update Mobile Summary
   const mobileBadge = document.getElementById('cart-mobile-badge');
   const mobileTotal = document.getElementById('cart-mobile-total');
@@ -878,11 +878,11 @@ function editCartNote(cartId) {
     input.value = item.note || '';
     // Sinkronisasi shortcut saat modal dibuka
     setTimeout(() => syncShortcutChips('note-input'), 50);
-    
+
     // Sinkronisasi saat mengetik manual
     input.oninput = () => syncShortcutChips('note-input');
   }
-  
+
   if (saveBtn) {
     saveBtn.onclick = () => {
       item.note = input.value.trim();
@@ -896,7 +896,7 @@ function editCartNote(cartId) {
 
 function clearCart() {
   if (cart.length === 0) return;
-  
+
   showConfirmDialog({
     title: 'Kosongkan Keranjang?',
     message: 'Semua item yang sudah dipilih akan dihapus dari daftar belanja.',
@@ -919,7 +919,7 @@ function selectPayMethod(el) {
   document.querySelectorAll('.pay-method-card').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
   selectedPaymentMethod = el.dataset.method;
-  
+
   const qris = document.getElementById('qris-display');
   const cashWrap = document.getElementById('cash-input-wrap');
   const changeDisplay = document.getElementById('change-display');
@@ -959,7 +959,7 @@ function resetPaymentModalForCheckout() {
   const cashWrap = document.getElementById('cash-input-wrap');
   if (qris) qris.style.display = 'none';
   if (cashWrap) cashWrap.style.display = 'block';
-  
+
   const phoneGroup = document.getElementById('phone-input-group');
   if (phoneGroup) phoneGroup.style.display = 'none';
 
@@ -972,11 +972,11 @@ function resetPaymentModalForCheckout() {
 function confirmPaymentWithWA() {
   const phoneEl = document.getElementById('customer-phone');
   const modalInput = document.getElementById('phone-modal-input');
-  
+
   if (modalInput) {
     modalInput.value = phoneEl ? phoneEl.value.trim() : '';
   }
-  
+
   openModal('modal-phone');
   if (modalInput) setTimeout(() => modalInput.focus(), 200);
 }
@@ -1003,7 +1003,7 @@ function processPhoneAction(mode) {
 
 function openPayment() {
   resetPaymentModalForCheckout();
-  
+
   const statusSelect = document.getElementById('payment-status');
   if (statusSelect) {
     statusSelect.onchange = () => updateReceiptPreviewContent();
@@ -1029,13 +1029,13 @@ function openPayment() {
  */
 function updateReceiptPreviewContent() {
   const status = document.getElementById('payment-status')?.value || 'Lunas';
-  
+
   // Kelompokkan item yang identik untuk pratinjau struk
   const groupedCart = cart.reduce((acc, item) => {
-    const existing = acc.find(i => 
-      i.productId === item.productId && 
-      i.totalPrice === item.totalPrice && 
-      (i.note || '') === (item.note || '') && 
+    const existing = acc.find(i =>
+      i.productId === item.productId &&
+      i.totalPrice === item.totalPrice &&
+      (i.note || '') === (item.note || '') &&
       JSON.stringify(i.variants || []) === JSON.stringify(item.variants || [])
     );
     if (existing) {
@@ -1048,8 +1048,8 @@ function updateReceiptPreviewContent() {
 
   const total = groupedCart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
   const now = new Date();
-  const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
-  
+  const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g, '') + '-' + Math.floor(1000 + Math.random() * 9000));
+
   const preview = document.getElementById('receipt-preview');
   if (preview) {
     preview.innerHTML = `
@@ -1106,9 +1106,9 @@ function updateReceiptPreviewContent() {
 window.renderQuickCashButtons = () => {
   const container = document.getElementById('quick-cash-list');
   if (!container) return;
-  
+
   const denoms = JSON.parse(localStorage.getItem('ks_quick_cash_denoms') || '[15000, 25000, 30000, 50000, 100000, 150000, 200000]');
-  
+
   container.innerHTML = denoms.map(d => `
     <button type="button" class="quick-cash-option" onclick="quickCash(${d})" oncontextmenu="event.preventDefault(); removeCustomDenomination(${d});" title="Klik untuk menggunakan, klik kanan untuk menghapus">
       ${Number(d).toLocaleString('id-ID')}
@@ -1128,26 +1128,26 @@ window.addCustomDenomination = () => {
 window.submitCustomDenomination = () => {
   const input = document.getElementById('denom-kustom-input');
   if (!input) return;
-  
+
   const val = input.value.trim();
   const cleanVal = parsePrice(val);
-  
+
   if (!cleanVal || cleanVal <= 0) {
     showToast("Nominal uang tidak valid!", "error");
     input.focus();
     return;
   }
-  
+
   let denoms = JSON.parse(localStorage.getItem('ks_quick_cash_denoms') || '[15000, 25000, 30000, 50000, 100000, 150000, 200000]');
   if (denoms.includes(cleanVal)) {
     showToast("Pecahan uang tersebut sudah ada!", "info");
     closeModal('modal-denom-kustom');
     return;
   }
-  
+
   denoms.push(cleanVal);
   denoms.sort((a, b) => a - b);
-  
+
   localStorage.setItem('ks_quick_cash_denoms', JSON.stringify(denoms));
   renderQuickCashButtons();
   closeModal('modal-denom-kustom');
@@ -1194,7 +1194,7 @@ async function loadTransactionToCashier() {
 
     // Set mode edit
     editingTransactionId = id;
-    
+
     // Konversi item transaksi ke format keranjang
     cart = txn.transaction_items.map((i, idx) => ({
       cartId: idx + 1,
@@ -1253,9 +1253,9 @@ async function confirmPayment(sendMode = 'none') {
   const status = document.getElementById('payment-status')?.value || 'Lunas';
   const note = document.getElementById('txn-note').value.trim();
   const now = new Date();
-  
+
   // Gunakan ID lama jika sedang edit, jika tidak buat ID baru (Gunakan tanggal Indonesia)
-  const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000));
+  const txnId = editingTransactionId || ('TXN-' + getIndoDate().replace(/-/g, '') + '-' + Math.floor(1000 + Math.random() * 9000));
 
   if (sendMode !== 'none' && !phone) {
     showToast('Masukkan nomor WA untuk kirim struk!', 'error');
@@ -1293,7 +1293,7 @@ async function confirmPayment(sendMode = 'none') {
         cash_amount: cashAmount,
         cash_change: cashChange
       }).eq('id', txnId).select().single();
-      
+
       if (error) throw error;
       txnResult = data;
 
@@ -1312,7 +1312,7 @@ async function confirmPayment(sendMode = 'none') {
         cash_amount: cashAmount,
         cash_change: cashChange
       }]).select().single();
-      
+
       if (error) throw error;
       txnResult = data;
     }
@@ -1355,7 +1355,7 @@ async function confirmPayment(sendMode = 'none') {
     }
 
     showToast(editingTransactionId ? 'Transaksi diperbarui!' : 'Transaksi Berhasil!', 'success');
-    
+
     // Buat detail log yang sangat rinci termasuk catatan per item
     const itemsSummary = cart.map(c => {
       let itemLine = `- ${c.name} x${c.qty} (${fmtRp(c.totalPrice)})`;
@@ -1366,7 +1366,7 @@ async function confirmPayment(sendMode = 'none') {
     const logDetails = `ID: ${txnId}\nTotal: ${fmtRp(total)}\nMetode: ${selectedPaymentMethod.toUpperCase()}\nStatus: ${status}\nCatatan Transaksi: ${note || '-'}\nItem:\n${itemsSummary}`;
 
     addActivityLog(editingTransactionId ? 'Update Transaksi' : 'Transaksi Baru', logDetails);
-    
+
     // Reset state
     editingTransactionId = null;
     cart = [];
@@ -1374,7 +1374,7 @@ async function confirmPayment(sendMode = 'none') {
     invalidateTransactionCache();
     updateCartUI();
     closeModal('modal-payment');
-    
+
     const pageTitle = document.getElementById('page-title').textContent;
     const content = document.getElementById('page-content');
     if (content) {
@@ -1382,7 +1382,7 @@ async function confirmPayment(sendMode = 'none') {
       if (pageTitle === 'Dashboard') renderDashboard(content);
       else if (pageTitle.includes('Laporan')) renderReport(content);
       else { showPage('report'); return; }
-      
+
       void content.offsetWidth;
       content.classList.add('fade-in-up');
     } else {
@@ -1401,7 +1401,7 @@ async function confirmPayment(sendMode = 'none') {
 
 function formatPhoneWA(phone) {
   let nomor = phone.replace(/\D/g, '');
-  if (nomor.startsWith('0'))      nomor = '62' + nomor.slice(1);
+  if (nomor.startsWith('0')) nomor = '62' + nomor.slice(1);
   else if (nomor.startsWith('8')) nomor = '62' + nomor;
   else if (nomor.startsWith('+')) nomor = nomor.replace('+', '');
   return nomor;
@@ -1430,7 +1430,7 @@ async function sendWhatsAppImageReceipt(phone, txnId, total, items) {
 
     canvas.toBlob(async (blob) => {
       const file = new File([blob], `struk-${txnId}.png`, { type: 'image/png' });
-      
+
       // Cek apakah browser mendukung sharing file
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
@@ -1470,9 +1470,9 @@ function downloadCanvas(canvas, filename) {
 function sendWhatsAppReceipt(phone, txnId, total, items) {
   // Kelompokkan item yang identik (Nama, Harga, Catatan) untuk pesan WA
   const groupedItems = items.reduce((acc, item) => {
-    const existing = acc.find(i => 
-      i.name === item.name && 
-      i.totalPrice === item.totalPrice && 
+    const existing = acc.find(i =>
+      i.name === item.name &&
+      i.totalPrice === item.totalPrice &&
       (i.note || '') === (item.note || '')
     );
     if (existing) {
@@ -1506,15 +1506,15 @@ function sendWhatsAppReceipt(phone, txnId, total, items) {
  */
 async function promptAndSendWA(type, phone, txnId, total, items) {
   let targetPhone = String(phone || '').replace(/\D/g, '');
-  
+
   if (!targetPhone) {
     // Gunakan custom modal alih-alih native prompt
     const modalInput = document.getElementById('phone-modal-input');
     if (modalInput) modalInput.value = '';
-    
+
     const footer = document.querySelector('#modal-phone .modal-footer');
     const originalFooterHTML = footer ? footer.innerHTML : '';
-    
+
     if (footer) {
       // Ubah tampilan footer secara dinamis karena jenis kiriman sudah diketahui
       footer.innerHTML = `
@@ -1527,9 +1527,9 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
 
     // Ubah sementara aksi tombol di modal-phone untuk keperluan ini
     const originalProcess = window.processPhoneAction;
-    
+
     // Kita buat wrapper agar saat disubmit dari modal, proses ini berlanjut
-    window.processPhoneAction = async function(mode) {
+    window.processPhoneAction = async function (mode) {
       if (mode === 'none') {
         showToast("Pengiriman dibatalkan.", "info");
         closeModal('modal-phone');
@@ -1537,17 +1537,17 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
         window.processPhoneAction = originalProcess; // Kembalikan ke fungsi asli
         return;
       }
-      
+
       const newPhone = modalInput ? modalInput.value.replace(/\D/g, '') : '';
       if (!newPhone) {
         showToast("Nomor WhatsApp wajib diisi!", "error");
         if (modalInput) modalInput.focus();
         return;
       }
-      
+
       closeModal('modal-phone');
       targetPhone = newPhone;
-      
+
       // Simpan ke database agar tidak perlu dimasukkan lagi nanti
       const { error } = await db.from('transactions').update({ customer_phone: targetPhone }).eq('id', txnId);
       if (!error) {
@@ -1558,24 +1558,24 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
           if (txnInReport) txnInReport.customer_phone = targetPhone;
         }
       }
-      
+
       // Lanjutkan pengiriman (type diambil dari scope luar wrapper)
       if (type === 'image') {
-         sendWhatsAppImageReceipt(targetPhone, txnId, total, items);
+        sendWhatsAppImageReceipt(targetPhone, txnId, total, items);
       } else {
-         sendWhatsAppReceipt(targetPhone, txnId, total, items);
+        sendWhatsAppReceipt(targetPhone, txnId, total, items);
       }
-      
+
       // Kembalikan ke fungsi asli dan footer asli
       if (footer) footer.innerHTML = originalFooterHTML;
       window.processPhoneAction = originalProcess;
     };
-    
+
     openModal('modal-phone');
     if (modalInput) setTimeout(() => modalInput.focus(), 200);
     return; // Eksekusi dilanjutkan di dalam callback
   }
-  
+
   if (type === 'image') {
     sendWhatsAppImageReceipt(targetPhone, txnId, total, items);
   } else {
@@ -1611,10 +1611,10 @@ function getIndoTimeString(date = new Date(), options = {}) {
 
 async function renderReport(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat data laporan...</div>`;
-  
+
   // Ambil tanggal hari ini di zona waktu Indonesia
   const today = getIndoDate();
-  
+
   let txns = [];
   try {
     txns = await fetchTransactionsByRange(today, today);
@@ -1657,7 +1657,7 @@ async function renderReport(el) {
       const matchesMethod = method === 'Semua' || t.payment_method === method;
       return matchesDate && matchesStatus && matchesMethod;
     });
-    
+
     // Lakukan pengurutan (Sorting)
     filtered.sort((a, b) => {
       let valA, valB;
@@ -1675,8 +1675,8 @@ async function renderReport(el) {
         return valB - valA;
       }
     });
-    
-    window.currentReportTxns = filtered; 
+
+    window.currentReportTxns = filtered;
     const totalRev = filtered.filter(t => t.payment_status === 'Lunas').reduce((s, t) => s + (Number(t.total) || 0), 0);
     const avgTxn = filtered.length ? Math.round(totalRev / filtered.length) : 0;
     const lunasCount = filtered.filter(t => t.payment_status === 'Lunas').length;
@@ -1702,7 +1702,7 @@ async function renderReport(el) {
     const rows = paginated.map(t => {
       const isLunas = t.payment_status === 'Lunas';
       const isCash = t.payment_method === 'cash';
-      
+
       let itemsText = '';
       if (t.transaction_items && t.transaction_items.length > 0) {
         const mergedItems = t.transaction_items.reduce((acc, item) => {
@@ -1719,9 +1719,9 @@ async function renderReport(el) {
       } else {
         itemsText = `<span style="color:#d97706; font-weight:600; display:inline-flex; align-items:center; gap:4px;"><i data-lucide="alert-triangle" style="width:14px;height:14px;color:#d97706;"></i> Struk Kosong</span>`;
       }
-      
-      const formattedDate = getIndoDateTime(new Date(t.date), {day:'2-digit', month:'short'});
-      const formattedTime = getIndoDateTime(new Date(t.date), {hour:'2-digit', minute:'2-digit'});
+
+      const formattedDate = getIndoDateTime(new Date(t.date), { day: '2-digit', month: 'short' });
+      const formattedTime = getIndoDateTime(new Date(t.date), { hour: '2-digit', minute: '2-digit' });
 
       return `
         <tr>
@@ -1750,7 +1750,7 @@ async function renderReport(el) {
         </tr>
       `;
     }).join('');
-    
+
     let paginationHTML = '';
     if (totalItems > 0) {
       paginationHTML = `
@@ -1877,7 +1877,7 @@ async function renderReport(el) {
     </div>
     <div id="report-container">${await renderContent(today, today, 'Semua', 'Semua')}</div>
   `;
-  
+
   if (typeof flatpickr !== 'undefined') {
     flatpickr('#report-start-date', {
       dateFormat: 'Y-m-d',
@@ -1894,9 +1894,9 @@ async function renderReport(el) {
       }
     });
   }
-  
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
-  
+
   window.renderReportTable = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
     const html = await renderContent(startDate, endDate, status, method);
     if (typeof lucide !== 'undefined') {
@@ -1904,7 +1904,7 @@ async function renderReport(el) {
     }
     return html;
   };
-  
+
   window.applyReportFilters = async (resetPage = false) => {
     if (resetPage) {
       currentPageReport = 1;
@@ -1921,15 +1921,15 @@ async function renderReport(el) {
       reportContainer.innerHTML = `
         <div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            ${sk('25%','20px')} ${sk('15%','32px')}
+            ${sk('25%', '20px')} ${sk('15%', '32px')}
           </div>
           <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border-color);">
             <div style="background:#f5f0ea;padding:12px 16px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:16px;">
-              ${['28%','18%','14%','16%'].map(w => sk(w, '12px')).join('')}
+              ${['28%', '18%', '14%', '16%'].map(w => sk(w, '12px')).join('')}
             </div>
-            ${[1,2,3,4,5,6,7,8,9,10].map(i => `
+            ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `
               <div style="padding:12px 16px;border-bottom:1px solid var(--border-color);display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:16px;background:var(--bg-card);">
-                ${[`${25+i*3}%`, '20%', '14%', '18%'].map(w => sk(w)).join('')}
+                ${[`${25 + i * 3}%`, '20%', '14%', '18%'].map(w => sk(w)).join('')}
               </div>`).join('')}
           </div>
         </div>`;
@@ -1949,7 +1949,7 @@ async function renderReport(el) {
             batches.push(allTxns.slice(i, i + BATCH));
           }
           // Fetch semua batch secara paralel sekaligus
-          await Promise.all(batches.map(b => loadItemsForTransactions(b).catch(() => {})));
+          await Promise.all(batches.map(b => loadItemsForTransactions(b).catch(() => { })));
         })();
       }
     } catch (e) {
@@ -1967,7 +1967,7 @@ function exportToCSV() {
     showToast('Tidak ada data untuk di-export', 'error');
     return;
   }
-  
+
   if (typeof ExcelJS === 'undefined') {
     showToast('Library Excel belum dimuat, coba segarkan halaman!', 'error');
     return;
@@ -2050,11 +2050,11 @@ function exportToCSV() {
     if (rowNumber === 1) return; // Lewati header
 
     row.height = 24;
-    
+
     // Alternating background (Zebra striping)
     const isEven = rowNumber % 2 === 0;
     const bgColor = isEven ? 'FFFBF5E8' : 'FFFEFCF6'; // FBF5E8 (Krim-Cokelat) atau FEFCF6 (Krim Lembut)
-    
+
     row.eachCell((cell, colNumber) => {
       cell.fill = {
         type: 'pattern',
@@ -2067,7 +2067,7 @@ function exportToCSV() {
         color: { argb: 'FF1A0E05' } // Teks Cokelat Tua
       };
       cell.alignment = { vertical: 'middle', wrapText: true };
-      
+
       // Border tipis
       cell.border = {
         bottom: { style: 'thin', color: { argb: 'FFE0CEAE' } },
@@ -2137,7 +2137,7 @@ function renderInventory(el) {
 
 function renderInventoryRows(data) {
   if (!data || data.length === 0) return '<tr><td colspan="4" style="text-align:center; padding:30px; color:var(--text-muted);">Belum ada produk terdaftar.</td></tr>';
-  
+
   return data.map(p => {
     const bgColor = getCategoryColor(p.category);
     const icon = getCategoryIcon(p.category);
@@ -2218,7 +2218,7 @@ async function saveProduct() {
   try {
     let error;
     const productData = { name, base_price: price, category: cat };
-    
+
     if (editingProductId) {
       const { error: err } = await db.from('products').update(productData).eq('id', editingProductId);
       error = err;
@@ -2229,11 +2229,11 @@ async function saveProduct() {
 
     if (!error) {
       showToast(editingProductId ? 'Produk diperbarui!' : 'Produk ditambahkan!', 'success');
-      
-      const logDetails = editingProductId 
+
+      const logDetails = editingProductId
         ? `Update Produk: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}\nID: ${editingProductId}`
         : `Tambah Produk Baru: ${name}\nKategori: ${cat}\nHarga: ${fmtRp(price)}`;
-      
+
       addActivityLog(editingProductId ? 'Edit Produk' : 'Tambah Produk', logDetails);
       await loadProducts();
       closeModal('modal-product');
@@ -2264,7 +2264,7 @@ async function deleteProduct(id) {
     cancelText: 'Batal',
     onConfirm: async () => {
       const { error } = await db.from('products').update({ active: false }).eq('id', id);
-      
+
       if (!error) {
         showToast('Produk berhasil dihapus!', 'success');
         addActivityLog('Hapus Produk', `Produk: ${productName}\nID: ${id}\nStatus: Dinonaktifkan (Soft Delete)`);
@@ -2289,7 +2289,7 @@ async function renderUsers(el) {
       showToast('Gagal memuat data pengguna!', 'error');
       users = [];
     } else { users = data; }
-  } catch(e) { users = []; }
+  } catch (e) { users = []; }
 
   const rows = users.map(u => `
     <tr>
@@ -2336,7 +2336,7 @@ async function editUser(id) {
   try {
     const { data: u, error } = await db.from('users').select('*').eq('id', id).single();
     if (error || !u) { showToast('Gagal memuat data pengguna!', 'error'); return; }
-    
+
     editingUserId = id;
     const title = document.getElementById('modal-user-title');
     if (title) title.textContent = 'Edit Pengguna';
@@ -2347,7 +2347,7 @@ async function editUser(id) {
     document.getElementById('user-role').value = u.role;
     document.getElementById('user-active').checked = u.active;
     openModal('modal-user');
-  } catch(e) { showToast('Terjadi kesalahan!', 'error'); }
+  } catch (e) { showToast('Terjadi kesalahan!', 'error'); }
 }
 
 let isSavingUser = false;
@@ -2375,13 +2375,13 @@ async function saveUser() {
 
   try {
     const userData = { name, username, role, active };
-    
+
     // Hash password jika diisi
     if (password) {
       const salt = dcodeIO.bcrypt.genSaltSync(10);
       userData.password_hash = dcodeIO.bcrypt.hashSync(password, salt);
     }
-    
+
     let error;
     if (editingUserId) {
       const { error: err } = await db.from('users').update(userData).eq('id', editingUserId);
@@ -2414,7 +2414,7 @@ async function saveUser() {
 async function deleteUser(id) {
   if (currentUser && currentUser.id === id) { showToast('Tidak bisa menghapus akun sendiri!', 'error'); return; }
   if (!confirm('Hapus akun ini secara permanen?')) return;
-  
+
   const { error } = await db.from('users').delete().eq('id', id);
   if (!error) {
     showToast('Akun berhasil dihapus!', 'success');
@@ -2546,7 +2546,7 @@ async function saveCategory() {
   const name = document.getElementById('cat-name').value.trim();
   const color = document.getElementById('cat-color').value;
   const icon = document.getElementById('cat-icon').value;
-  
+
   if (!name) { showToast('Nama kategori wajib diisi!', 'error'); return; }
 
   const data = { name, color, icon };
@@ -2577,7 +2577,7 @@ async function deleteCategory(id) {
 
   // Cek apakah ada produk yang pakai kategori ini
   const { count, error: countErr } = await db.from('products').select('*', { count: 'exact', head: true }).eq('category', cat.name).eq('active', true);
-  
+
   if (count > 0) {
     showToast(`Tidak bisa menghapus! Ada ${count} produk yang masih menggunakan kategori ini.`, 'error');
     return;
@@ -2612,7 +2612,7 @@ function renderManual(el) {
     { title: 'Manajemen Pengaturan Toko', content: 'Buka <strong>Pengaturan</strong> untuk menyesuaikan nama, alamat, no telepon toko, serta format template pesan struk digital WhatsApp Anda.' }
   ];
   const guideHtml = guides.map((g, i) => `
-    <div class="card" style="margin-bottom:12px;"><div class="card-body" style="padding:16px;"><div style="display:flex; gap:12px; align-items:flex-start;"><div style="width:28px; height:28px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">${i+1}</div><div><h4 style="color:var(--brown-900); margin-bottom:4px;">${g.title}</h4><p style="font-size:13px; color:var(--text-muted); line-height:1.6;">${g.content}</p></div></div></div></div>
+    <div class="card" style="margin-bottom:12px;"><div class="card-body" style="padding:16px;"><div style="display:flex; gap:12px; align-items:flex-start;"><div style="width:28px; height:28px; border-radius:50%; background:var(--brown-100); color:var(--brown-700); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">${i + 1}</div><div><h4 style="color:var(--brown-900); margin-bottom:4px;">${g.title}</h4><p style="font-size:13px; color:var(--text-muted); line-height:1.6;">${g.content}</p></div></div></div></div>
   `).join('');
   el.innerHTML = `
     <div style="max-width:800px; margin:0 auto;"><div style="text-align:center; margin-bottom:30px;"><h2 style="font-family:'DM Serif Display'; font-size:28px; color:var(--brown-900);">Pusat Bantuan KopiSembilan</h2><p style="color:var(--text-muted);">Panduan singkat penggunaan sistem kasir modern berbasis cloud.</p></div>${guideHtml}<div style="background:var(--blue-light); padding:20px; border-radius:var(--radius); border-left:4px solid var(--blue); margin-top:20px;"><h4 style="color:var(--blue); margin-bottom:8px; display:flex; align-items:center; gap:6px;"><i data-lucide="help-circle" style="width:16px;height:16px;"></i> Butuh Bantuan Lanjut?</h4><p style="font-size:13px; color:var(--text); line-height:1.6;">Hubungi tim IT KopiSembilan melalui WhatsApp di nomor <strong>085855180131</strong> jika Anda mengalami kendala teknis atau masalah koneksi database.</p></div></div>
@@ -2625,10 +2625,10 @@ async function viewTxnDetail(id) {
 
   // Kelompokkan item identik untuk tampilan detail
   const groupedItems = txn.transaction_items.reduce((acc, item) => {
-    const existing = acc.find(i => 
-      i.product_id === item.product_id && 
-      i.price === item.price && 
-      (i.item_note || '') === (item.item_note || '') && 
+    const existing = acc.find(i =>
+      i.product_id === item.product_id &&
+      i.price === item.price &&
+      (i.item_note || '') === (item.item_note || '') &&
       JSON.stringify(i.selected_variants || []) === JSON.stringify(item.selected_variants || [])
     );
     if (existing) {
@@ -2721,7 +2721,7 @@ async function viewTxnDetail(id) {
       </div>
     `;
   }
-  
+
   // Render ulang ikon untuk elemen HTML yang baru saja ditambahkan di atas (khususnya header dan footer)
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
@@ -2851,7 +2851,7 @@ function renderDashboardRevenueChart(period = 'weekly') {
         y: {
           beginAtZero: true,
           grid: { color: 'rgba(0,0,0,0.05)' },
-          ticks: { callback: function(val) { return 'Rp ' + (val / 1000) + 'k'; } }
+          ticks: { callback: function (val) { return 'Rp ' + (val / 1000) + 'k'; } }
         },
         x: { grid: { display: false } }
       }
@@ -2909,7 +2909,7 @@ async function renderDashboard(el) {
       <div style="text-align:center; padding:40px; color:var(--text-muted);">Memuat data dashboard...</div>
     </div>
   `;
-  
+
   if (typeof flatpickr !== 'undefined') {
     flatpickr('#dashboard-date-filter', {
       dateFormat: 'Y-m-d',
@@ -2922,7 +2922,7 @@ async function renderDashboard(el) {
       }
     });
   }
-  
+
   startDashboardAutoRefresh();
   await loadDashboardData();
 }
@@ -3001,7 +3001,7 @@ async function loadDashboardData() {
       }
       transactionCache[cacheKey] = { data: txns, timestamp: Date.now() };
     }
-  } catch(e) { console.error('Dashboard load fail', e); }
+  } catch (e) { console.error('Dashboard load fail', e); }
 
   // Abort jika user sudah berpindah ke periode/tanggal lain saat query berlangsung
   if (myLoadId !== dashboardLoadId) return;
@@ -3016,7 +3016,7 @@ async function loadDashboardData() {
   const filteredTxns = txns.filter(t => {
     const d = parseSafeDate(t.date);
     const dIndo = getIndoDate(d);
-    
+
     if (activeDashboardPeriod === 'daily') {
       return dIndo === selectedDateStr;
     } else if (activeDashboardPeriod === 'weekly') {
@@ -3059,11 +3059,11 @@ async function loadDashboardData() {
         const sk = (w = '80px', h = '14px') => `<div style="width:${w};height:${h};border-radius:6px;background:#e8ddd3;animation:pulse 1.2s ease-in-out infinite;"></div>`;
         topSection.innerHTML = `
           <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
-            ${[1,2,3,4].map(i => `
+            ${[1, 2, 3, 4].map(i => `
               <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px;">
                 <div style="display:flex; align-items:center; gap:10px;">
                   <div style="width:24px; height:24px; border-radius:50%; background:#e8ddd3; animation:pulse 1.2s ease-in-out infinite;"></div>
-                  ${sk(`${70 + i*20}px`)}
+                  ${sk(`${70 + i * 20}px`)}
                 </div>
                 ${sk('45px')}
               </div>
@@ -3094,23 +3094,23 @@ async function loadDashboardData() {
         }
       });
 
-      const totalSold = Object.values(itemMap).reduce((a,b) => a + b.qty, 0);
+      const totalSold = Object.values(itemMap).reduce((a, b) => a + b.qty, 0);
       if (soldEl) soldEl.textContent = dashboardPrivacy.products ? '•••' : totalSold;
 
       if (topSection) {
-        const topProds = Object.values(itemMap).sort((a,b) => b.qty - a.qty).slice(0, 4);
+        const topProds = Object.values(itemMap).sort((a, b) => b.qty - a.qty).slice(0, 4);
         const isHidden = dashboardPrivacy['top_menu'];
         topSection.innerHTML = topProds.length > 0
           ? topProds.map((tp, idx) => {
-              const rawPct = totalSold > 0 ? (tp.qty / totalSold) * 100 : 0;
-              const contrib = tp.qty > 0 && rawPct < 0.1 ? '< 0.1%' : (rawPct.toFixed(1) + '%');
-              let badgeBg = 'var(--brown-100)';
-              let badgeColor = 'var(--brown-900)';
-              if (idx === 0) { badgeBg = '#F59E0B'; badgeColor = 'white'; }
-              else if (idx === 1) { badgeBg = '#94A3B8'; badgeColor = 'white'; }
-              else if (idx === 2) { badgeBg = '#B45309'; badgeColor = 'white'; }
+            const rawPct = totalSold > 0 ? (tp.qty / totalSold) * 100 : 0;
+            const contrib = tp.qty > 0 && rawPct < 0.1 ? '< 0.1%' : (rawPct.toFixed(1) + '%');
+            let badgeBg = 'var(--brown-100)';
+            let badgeColor = 'var(--brown-900)';
+            if (idx === 0) { badgeBg = '#F59E0B'; badgeColor = 'white'; }
+            else if (idx === 1) { badgeBg = '#94A3B8'; badgeColor = 'white'; }
+            else if (idx === 2) { badgeBg = '#B45309'; badgeColor = 'white'; }
 
-              return `
+            return `
               <div class="dashboard-list-row" style="display:flex; flex-direction:column; align-items:stretch; gap:6px; padding:10px 0;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
                   <div class="ranked-item" style="display:flex; align-items:center; gap:10px; min-width:0;">
@@ -3130,7 +3130,7 @@ async function loadDashboardData() {
                     <div style="height:100%; width:${Math.min(100, Math.max(3, rawPct))}%; background:${idx === 0 ? 'var(--accent)' : 'var(--brown-400)'}; border-radius:3px;"></div>
                   </div>` : ''}
               </div>`;
-            }).join('')
+          }).join('')
           : `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; color:var(--text-muted); padding:32px 16px;">
               <i data-lucide="coffee" style="width:32px;height:32px;opacity:0.35;"></i>
               <span style="font-size:13px; text-align:center;">Belum ada menu yang terjual<br>pada periode ini.</span>
@@ -3153,27 +3153,27 @@ function showDashboardSkeleton() {
   area.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:20px;padding:4px 0;">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;">
-        ${[1,2,3,4].map(() => `
+        ${[1, 2, 3, 4].map(() => `
           <div style="background:var(--bg-card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-sm);">
-            ${sk('48px','48px','50%')}
-            ${sk('60%','14px','6px')}
-            ${sk('80%','28px','8px')}
+            ${sk('48px', '48px', '50%')}
+            ${sk('60%', '14px', '6px')}
+            ${sk('80%', '28px', '8px')}
           </div>
         `).join('')}
       </div>
       <div style="background:var(--bg-card);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm);">
-        ${sk('40%','18px','6px')}
+        ${sk('40%', '18px', '6px')}
         <div style="margin-top:16px;height:180px;border-radius:8px;background:#e8ddd3;animation:pulse 1.2s ease-in-out infinite;"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-        ${[1,2].map(() => `
+        ${[1, 2].map(() => `
           <div style="background:var(--bg-card);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm);">
-            ${sk('50%','16px','6px')}
+            ${sk('50%', '16px', '6px')}
             <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px;">
-              ${[1,2,3,4].map(i => `
+              ${[1, 2, 3, 4].map(i => `
                 <div style="display:flex;justify-content:space-between;">
-                  ${sk(`${50+i*10}px`,'12px','4px')}
-                  ${sk('40px','12px','4px')}
+                  ${sk(`${50 + i * 10}px`, '12px', '4px')}
+                  ${sk('40px', '12px', '4px')}
                 </div>`).join('')}
             </div>
           </div>
@@ -3259,14 +3259,14 @@ async function renderDashboardContent(itemsLoaded = false) {
   const txns = window.dashboardTxns || [];
   const dateInput = document.getElementById('dashboard-date-filter');
   const selectedDateStr = dateInput ? dateInput.value : getIndoDate();
-  
+
   // Buat objek Date referensi dari tanggal yang dipilih (tengah hari agar aman dari DST/offset)
   const refDate = parseSafeDate(selectedDateStr + 'T12:00:00');
-  
+
   const filteredTxns = txns.filter(t => {
     const d = parseSafeDate(t.date);
     const dIndo = getIndoDate(d);
-    
+
     if (activeDashboardPeriod === 'daily') {
       return dIndo === selectedDateStr;
     } else if (activeDashboardPeriod === 'weekly') {
@@ -3316,7 +3316,7 @@ async function renderDashboardContent(itemsLoaded = false) {
 
   const totalSold = Object.values(itemMap).reduce((a, b) => a + b.qty, 0);
   const topProducts = Object.values(itemMap)
-    .sort((a,b) => b.qty - a.qty)
+    .sort((a, b) => b.qty - a.qty)
     .slice(0, 4);
 
   let topHtml;
@@ -3515,7 +3515,7 @@ async function renderDashboardContent(itemsLoaded = false) {
       </div>
     </div>
   `;
-  
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
   updateGlobalPrivacyButton();
   setTimeout(() => renderDashboardRevenueChart(activeDashboardPeriod), 100);
@@ -3534,29 +3534,29 @@ function showToast(msg, type = '') {
   toast.style.display = 'flex';
   toast.style.alignItems = 'center';
   toast.style.gap = '10px';
-  
+
   toast.innerHTML = `
     <i data-lucide="coffee" style="width:16px;height:16px;"></i>
     <span>${msg}</span>
   `;
-  
+
   container.appendChild(toast);
   if (typeof lucide !== 'undefined') lucide.createIcons();
-  
+
   setTimeout(() => toast.remove(), 3000);
 }
 function updateClock() {
   const el = document.getElementById('current-datetime');
   if (el) {
     const now = new Date();
-    const dateStr = now.toLocaleDateString('id-ID', { 
-      weekday: 'short', 
-      day: '2-digit', 
+    const dateStr = now.toLocaleDateString('id-ID', {
+      weekday: 'short',
+      day: '2-digit',
       month: 'short',
       timeZone: 'Asia/Jakarta'
     });
-    const timeStr = now.toLocaleTimeString('id-ID', { 
-      hour: '2-digit', 
+    const timeStr = now.toLocaleTimeString('id-ID', {
+      hour: '2-digit',
       minute: '2-digit',
       timeZone: 'Asia/Jakarta'
     });
@@ -3577,7 +3577,7 @@ window.onload = async () => {
   if (savedSession) {
     try { setupUserSession(JSON.parse(savedSession)); } catch (e) { localStorage.removeItem('ks_session'); }
   }
-  
+
   // Tampilkan Pop-Up Changelog Pembaruan v1.3 sekali saja
   const APP_VERSION = '1.3';
   const lastSeenVersion = localStorage.getItem('ks_seen_version');
@@ -3589,7 +3589,7 @@ window.onload = async () => {
   }
 };
 
-document.addEventListener('focusout', function(e) {
+document.addEventListener('focusout', function (e) {
   if (e.target && e.target.id === 'customer-phone' && e.target.value) {
     e.target.value = formatPhoneWA(e.target.value);
   }
@@ -3603,11 +3603,11 @@ document.addEventListener('focusout', function(e) {
 function addNoteShortcut(text, targetId = 'note-input') {
   const input = document.getElementById(targetId);
   if (!input) return;
-  
+
   let currentVal = input.value.trim();
   // Pisahkan berdasarkan koma dan bersihkan spasi
   let tags = currentVal ? currentVal.split(',').map(t => t.trim()).filter(t => t) : [];
-  
+
   const index = tags.indexOf(text);
   if (index > -1) {
     // Jika sudah ada, hapus (toggle off)
@@ -3616,10 +3616,10 @@ function addNoteShortcut(text, targetId = 'note-input') {
     // Jika belum ada, tambah (toggle on)
     tags.push(text);
   }
-  
+
   input.value = tags.join(', ');
   input.focus();
-  
+
   // Update tampilan shortcut
   syncShortcutChips(targetId);
 }
@@ -3631,10 +3631,10 @@ function addNoteShortcut(text, targetId = 'note-input') {
 function syncShortcutChips(targetId) {
   const input = document.getElementById(targetId);
   if (!input) return;
-  
+
   const currentVal = input.value.trim();
   const tags = currentVal ? currentVal.split(',').map(t => t.trim()) : [];
-  
+
   // Cari container shortcuts terdekat
   const container = input.parentElement.querySelector('.note-shortcuts');
   if (container) {
@@ -3656,7 +3656,7 @@ function toggleEditCashInput() {
   const status = document.getElementById('edit-txn-status').value;
   const method = document.getElementById('edit-txn-method').value;
   const wrap = document.getElementById('edit-cash-input-wrap');
-  
+
   if (status === 'Lunas' && method === 'cash') {
     wrap.style.display = 'block';
     calcEditChange();
@@ -3675,11 +3675,11 @@ function calcEditChange() {
   const newTotal = currentEditingTxnItems.reduce((sum, item) => {
     return sum + (item.removed ? 0 : item.price * item.qty);
   }, 0);
-  
+
   const paid = parsePrice(document.getElementById('edit-txn-cash-input').value);
   const changeEl = document.getElementById('edit-change-display');
   const changeAmtEl = document.getElementById('edit-txn-change-amount');
-  
+
   if (paid >= newTotal) {
     if (changeEl) changeEl.style.display = 'block';
     if (changeAmtEl) changeAmtEl.textContent = fmtRp(paid - newTotal);
@@ -3700,7 +3700,7 @@ async function editTransaction(id) {
     document.getElementById('edit-txn-method').value = txn.payment_method || 'cash';
     document.getElementById('edit-txn-status').value = txn.payment_status || 'Lunas';
     document.getElementById('edit-txn-notes').value = txn.notes || '';
-    
+
     const cashInput = document.getElementById('edit-txn-cash-input');
     if (cashInput) cashInput.value = txn.cash_amount || '';
 
@@ -3732,7 +3732,7 @@ function renderEditTxnItems() {
   }, 0);
 
   if (totalDisplay) totalDisplay.textContent = fmtRp(newTotal);
-  
+
   if (visibleItems.length === 0) {
     container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Tidak ada item dalam pesanan.</div>';
     return;
@@ -3755,7 +3755,7 @@ function renderEditTxnItems() {
       </div>
     `;
   }).join('');
-  
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
   calcEditChange(); // Update kembalian saat item berubah
 }
@@ -3763,7 +3763,7 @@ function renderEditTxnItems() {
 function changeEditItemQty(idx, delta) {
   const item = currentEditingTxnItems[idx];
   if (!item) return;
-  
+
   item.qty += delta;
   if (item.qty <= 0) {
     item.qty = 0;
@@ -3798,7 +3798,7 @@ async function saveTransactionEdit() {
     if (method === 'cash' && status === 'Lunas') {
       const numCashAmount = Number(cashAmount) || 0;
       const numNewTotal = Number(newTotal) || 0;
-      
+
       if (numCashAmount < numNewTotal) {
         showToast('Jumlah bayar kurang!', 'error');
         return;
@@ -3816,7 +3816,7 @@ async function saveTransactionEdit() {
       cash_amount: method === 'cash' ? cashAmount : 0,
       cash_change: cashChange
     };
-    
+
     const { error: txnErr } = await db.from('transactions').update(updateData).eq('id', id);
 
     if (txnErr) throw txnErr;
@@ -3833,7 +3833,7 @@ async function saveTransactionEdit() {
     }
 
     showToast('Transaksi dan pesanan diperbarui!', 'success');
-    
+
     // Log detail edit transaksi termasuk catatan per item
     const itemsSummary = currentEditingTxnItems
       .filter(i => !i.removed)
@@ -3843,11 +3843,11 @@ async function saveTransactionEdit() {
         return itemLine;
       }).join('\n');
     const logDetails = `ID: ${id}\nTotal Baru: ${fmtRp(newTotal)}\nStatus: ${status}\nMetode: ${method}\nCatatan Transaksi Baru: ${notes || '-'}\nItem Aktif:\n${itemsSummary}`;
-    
+
     addActivityLog('Edit Transaksi & Pesanan', logDetails);
     invalidateTransactionCache();
     closeModal('modal-edit-txn');
-    
+
     // Refresh laporan jika sedang di halaman laporan
     const currentTitle = document.getElementById('page-title').textContent;
     if (currentTitle.includes('Laporan')) {
@@ -3865,9 +3865,9 @@ async function saveTransactionEdit() {
  */
 async function resendWhatsAppReceipt(id) {
   const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
-  if (error || !txn) { 
-    showToast('Gagal memuat data transaksi!', 'error'); 
-    return; 
+  if (error || !txn) {
+    showToast('Gagal memuat data transaksi!', 'error');
+    return;
   }
 
   // Format item agar sesuai dengan yang diharapkan sendWhatsAppReceipt
@@ -3905,7 +3905,7 @@ async function deleteTransaction(id) {
         showToast('Transaksi berhasil dihapus!', 'success');
         addActivityLog('Hapus Transaksi', `ID: ${id}`);
         invalidateTransactionCache();
-        
+
         // Refresh laporan jika sedang di halaman laporan
         const currentTitle = document.getElementById('page-title').textContent;
         if (currentTitle.includes('Laporan')) {
@@ -3946,7 +3946,7 @@ function downloadReceiptImage(txnId) {
     link.download = `Struk-${txnId}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
-    
+
     showToast('Struk berhasil diunduh!', 'success');
   }).catch(err => {
     console.error('Export error:', err);
@@ -3960,26 +3960,26 @@ function downloadReceiptImage(txnId) {
 // ══════════════════════════════════════════════
 async function renderLogs(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat log aktivitas...</div>`;
-  
+
   const today = getIndoDate();
-  
+
   const loadData = async (dateFilter = today) => {
     let logs = [];
     try {
       // Filter berdasarkan range waktu 00:00:00 sampai 23:59:59 (WIB)
       const start = `${dateFilter}T00:00:00+07:00`;
       const end = `${dateFilter}T23:59:59+07:00`;
-      
+
       const { data, error } = await db
         .from('activity_logs')
         .select('*')
         .gte('created_at', start)
         .lte('created_at', end)
         .order('created_at', { ascending: false });
-        
+
       if (!error && data) logs = data;
-    } catch(e) { console.error('Load logs fail', e); }
-    
+    } catch (e) { console.error('Load logs fail', e); }
+
     window.activityLogs = logs;
     return logs;
   };
@@ -3987,7 +3987,7 @@ async function renderLogs(el) {
   const renderTable = (logs) => {
     const rows = logs.map(l => `
       <tr>
-        <td><div style="font-size:12px; color:var(--text-muted);">${getIndoDateTime(new Date(l.created_at), {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</div></td>
+        <td><div style="font-size:12px; color:var(--text-muted);">${getIndoDateTime(new Date(l.created_at), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div></td>
         <td><strong>${l.user_name}</strong> <span class="badge ${l.user_role === 'admin' ? 'badge-amber' : 'badge-blue'}" style="font-size:9px; padding:1px 6px;">${l.user_role.toUpperCase()}</span></td>
         <td><span style="font-weight:600; color:var(--brown-800);">${l.action}</span></td>
         <td><div style="font-size:11px; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.details || '-'}</div></td>
@@ -3998,7 +3998,7 @@ async function renderLogs(el) {
         </td>
       </tr>
     `).join('');
-    
+
     return rows || `<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text-muted);">Tidak ada aktivitas pada tanggal ${document.getElementById('log-date-filter')?.value || today}</td></tr>`;
   };
 
@@ -4025,7 +4025,7 @@ async function renderLogs(el) {
   `;
 
   const tbody = document.getElementById('log-table-body');
-  
+
   // Inisialisasi Flatpickr
   if (typeof flatpickr !== 'undefined') {
     flatpickr('#log-date-filter', {
@@ -4052,13 +4052,13 @@ async function renderLogs(el) {
 function viewLogDetail(id) {
   const log = (window.activityLogs || []).find(l => l.id === id);
   if (!log) return;
-  
+
   const detailHtml = `
     <div style="font-family:'DM Sans', sans-serif; font-size:13px; line-height:1.6; color:var(--text);">
       <div style="background:var(--brown-50); padding:15px; border-radius:12px; border:1px solid var(--brown-100); margin-bottom:15px;">
         <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
           <span style="color:var(--text-muted); font-weight:600;">WAKTU</span>
-          <span style="font-weight:600;">${getIndoDateTime(new Date(log.created_at), {day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'})}</span>
+          <span style="font-weight:600;">${getIndoDateTime(new Date(log.created_at), { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
           <span style="color:var(--text-muted); font-weight:600;">PENGGUNA</span>
@@ -4080,26 +4080,26 @@ function viewLogDetail(id) {
       </div>
     </div>
   `;
-  
+
   const preview = document.getElementById('receipt-preview');
   if (preview) preview.innerHTML = detailHtml;
-  
+
   const modal = document.getElementById('modal-payment');
   if (modal) {
     modal.classList.add('open');
     const title = modal.querySelector('.modal-header h3');
     if (title) title.innerHTML = `<i data-lucide="activity" style="width:20px;height:20px;color:var(--brown-800);"></i> Detail Aktivitas`;
-    
+
     // Sembunyikan input pembayaran
     const payInputs = modal.querySelector('.modal-body > div:nth-child(2)');
     if (payInputs) payInputs.style.display = 'none';
-    
+
     const footer = modal.querySelector('.modal-footer');
     if (footer) {
       footer.innerHTML = `<button class="btn btn-brown w-full" onclick="closeModal('modal-payment')">Tutup Detail</button>`;
     }
   }
-  
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -4114,7 +4114,7 @@ async function addActivityLog(action, details = '') {
       details: details
     }]);
     if (error) console.error('Add log error:', error.message, error.details);
-  } catch(e) { console.error('Add log fail', e); }
+  } catch (e) { console.error('Add log fail', e); }
 }
 
 // ══════════════════════════════════════════════
@@ -4127,7 +4127,7 @@ let menuSalesSortBy = 'top'; // 'top' | 'slow' | 'revenue' | 'name'
 let menuSalesCachedList = [];
 let menuSalesAllTxnsCache = null;
 
-window.openMenuSalesModal = async function() {
+window.openMenuSalesModal = async function () {
   menuSalesModalPeriod = (typeof activeDashboardPeriod !== 'undefined' && activeDashboardPeriod) ? activeDashboardPeriod : 'daily';
   menuSalesSearchQuery = '';
   menuSalesSelectedCategory = 'Semua';
@@ -4143,25 +4143,25 @@ window.openMenuSalesModal = async function() {
   await loadAndRenderMenuSalesModal();
 };
 
-window.setMenuSalesModalPeriod = async function(p) {
+window.setMenuSalesModalPeriod = async function (p) {
   menuSalesModalPeriod = p;
   updateMenuSalesPeriodTabUI();
   await loadAndRenderMenuSalesModal();
 };
 
-window.setMenuSalesSort = function(s) {
+window.setMenuSalesSort = function (s) {
   menuSalesSortBy = s;
   updateMenuSalesSortUI();
   renderMenuSalesModalList();
 };
 
-window.setMenuSalesCategory = function(cat) {
+window.setMenuSalesCategory = function (cat) {
   menuSalesSelectedCategory = cat;
   updateMenuSalesCategoryUI();
   renderMenuSalesModalList();
 };
 
-window.onMenuSalesFilterChange = function() {
+window.onMenuSalesFilterChange = function () {
   const searchInput = document.getElementById('menu-sales-search');
   menuSalesSearchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
   renderMenuSalesModalList();
@@ -4280,7 +4280,7 @@ async function loadAndRenderMenuSalesModal() {
           itemsCache[item.transaction_id].push(item);
         });
       }
-    } catch(e) {
+    } catch (e) {
       console.error('Fetch all for menu modal fail', e);
       menuSalesAllTxnsCache = window.dashboardTxns || transactions || [];
     }
@@ -4448,8 +4448,8 @@ function renderMenuSalesModalList() {
 
   // 2. Filter Pencarian
   if (menuSalesSearchQuery) {
-    list = list.filter(item => 
-      item.name.toLowerCase().includes(menuSalesSearchQuery) || 
+    list = list.filter(item =>
+      item.name.toLowerCase().includes(menuSalesSearchQuery) ||
       (item.category && item.category.toLowerCase().includes(menuSalesSearchQuery))
     );
   }
@@ -4756,7 +4756,7 @@ class BluetoothPrinterService {
 
     let txnItems = items || txn.transaction_items || [];
     if (typeof txnItems === 'string') {
-      try { txnItems = JSON.parse(txnItems); } catch(e) { txnItems = []; }
+      try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
     }
 
     const b = this.createEscPosBuilder();
@@ -4764,7 +4764,7 @@ class BluetoothPrinterService {
 
     // 1. Header Toko
     b.alignCenter();
-    b.doubleWidthHeight();
+    b.doubleHeight();
     b.boldOn();
     b.textLine(store.name || 'TOKO KOPI SEMBILAN');
     b.normalSize();
@@ -4778,7 +4778,7 @@ class BluetoothPrinterService {
     const d = txn.date ? new Date(txn.date) : new Date();
     const tglStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
     const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    
+
     b.twoColumns('Tgl: ' + tglStr, 'Jam: ' + jamStr);
     b.twoColumns('ID: ' + (txn.id || '-'), 'Kasir: ' + (txn.cashier_name || 'Admin'));
     b.divider('-');
@@ -4797,7 +4797,7 @@ class BluetoothPrinterService {
       b.boldOn();
       b.textLine(name);
       b.boldOff();
-      
+
       const detailStr = `  ${qty} x ${fmtRp(price)}`;
       const subtotalStr = fmtRp(subtotal);
       b.twoColumns(detailStr, subtotalStr);
@@ -4846,9 +4846,9 @@ class BluetoothPrinterService {
 
     // 5. Footer
     b.alignCenter();
-    b.textLine('Terima Kasih Atas Kunjungan Anda');
+    b.textLine('Terima Kasih Atas Kunjungan Anda di');
     b.boldOn();
-    b.textLine('KOPI SEMBILAN');
+    b.textLine('TOKO KOPI SEMBILAN');
     b.boldOff();
     b.feed(4);
     b.cut();
