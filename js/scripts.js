@@ -305,11 +305,13 @@ async function loadStoreInfo() {
 
 let transactionCache = {};
 let activeTransactionRequests = {};
+let menuSalesAllTxnsCache = null;
 
 function invalidateTransactionCache() {
   transactionCache = {};
   activeTransactionRequests = {};
   window.dashboardTxns = null;
+  menuSalesAllTxnsCache = null;
   // Hapus juga cache items agar data fresh setelah transaksi baru
   Object.keys(itemsCache).forEach(k => delete itemsCache[k]);
   // Hapus sessionStorage cache agar data baru langsung tampil
@@ -4125,7 +4127,7 @@ let menuSalesSearchQuery = '';
 let menuSalesSelectedCategory = 'Semua';
 let menuSalesSortBy = 'top'; // 'top' | 'slow' | 'revenue' | 'name'
 let menuSalesCachedList = [];
-let menuSalesAllTxnsCache = null;
+menuSalesAllTxnsCache = null;
 
 window.openMenuSalesModal = async function () {
   menuSalesModalPeriod = (typeof activeDashboardPeriod !== 'undefined' && activeDashboardPeriod) ? activeDashboardPeriod : 'daily';
@@ -4223,6 +4225,7 @@ async function fetchAllSupabaseRows(tableName, selectFields = '*') {
   while (true) {
     const { data, error } = await db.from(tableName)
       .select(selectFields)
+      .order('id', { ascending: true })
       .range(page * pageSize, (page + 1) * pageSize - 1);
     if (error || !data || data.length === 0) break;
     allData = allData.concat(data);
@@ -4273,11 +4276,22 @@ async function loadAndRenderMenuSalesModal() {
         menuSalesAllTxnsCache = window.dashboardTxns || transactions || [];
       }
 
-      // Masukkan seluruh items ke itemsCache global
+      // Kelompokkan dan simpan items ke itemsCache global secara bersih (replace, bukan append/push)
       if (itemsData && itemsData.length > 0) {
+        const freshItemsByTxn = {};
+        const seenItemIds = new Set();
         itemsData.forEach(item => {
-          if (!itemsCache[item.transaction_id]) itemsCache[item.transaction_id] = [];
-          itemsCache[item.transaction_id].push(item);
+          if (item.id) {
+            if (seenItemIds.has(item.id)) return;
+            seenItemIds.add(item.id);
+          }
+          if (!freshItemsByTxn[item.transaction_id]) freshItemsByTxn[item.transaction_id] = [];
+          freshItemsByTxn[item.transaction_id].push(item);
+        });
+
+        // Timpa ke itemsCache global secara bersih tanpa menduplikasi data yang sudah ada
+        Object.keys(freshItemsByTxn).forEach(txId => {
+          itemsCache[txId] = freshItemsByTxn[txId];
         });
       }
     } catch (e) {
@@ -4287,6 +4301,14 @@ async function loadAndRenderMenuSalesModal() {
   }
 
   const allTxns = menuSalesAllTxnsCache || [];
+
+  // Sinkronisasi data items dari itemsCache ke objek transaksi agar bebas dari cache duplikat lama
+  allTxns.forEach(t => {
+    if (itemsCache[t.id]) {
+      t.transaction_items = itemsCache[t.id];
+    }
+  });
+
   const selDate = (typeof selectedDateStr !== 'undefined' && selectedDateStr) ? selectedDateStr : getIndoDate();
   const refDate = new Date(selDate + 'T12:00:00');
 
