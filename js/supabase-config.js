@@ -1,5 +1,10 @@
-const SUPABASE_URL = 'https://xujuhaddzxxxyvoiwuqo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_7-mdoIDZAYQjeCZwQBkZ4A_YwViZlR5';
+// ─── KONFIGURASI SUPABASE (DEVELOPMENT ENVIRONMENT) ───
+const SUPABASE_URL = 'https://ddoafapaehhmanswidlv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_1q2ngqmwLh_NsptXGgdGqw_j3d2CdOW';
+
+// Catatan: Kredensial Production (digunakan saat rilis):
+// const PROD_SUPABASE_URL = 'https://xujuhaddzxxxyvoiwuqo.supabase.co';
+// const PROD_SUPABASE_KEY = 'sb_publishable_7-mdoIDZAYQjeCZwQBkZ4A_YwViZlR5';
 
 // Inisialisasi klien Supabase dengan nama variabel 'db' agar tidak bentrok
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
