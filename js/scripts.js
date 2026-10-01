@@ -5144,24 +5144,6 @@ async function renderAttendance(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat data absensi...</div>`;
   const today = getIndoDate();
   const isAdmin = currentUser && currentUser.role === 'admin';
-  const activeStaffName = isAdmin ? currentUser.name : (getActiveCashierName() || (currentUser ? currentUser.name : 'Kasir'));
-  const userName = activeStaffName;
-
-  let myAttendance = null;
-  try {
-    const { data, error } = await db.from('attendance')
-      .select('*')
-      .eq('date', today)
-      .eq('user_name', userName)
-      .order('clock_in', { ascending: false })
-      .limit(1);
-
-    if (!error && data && data.length > 0) {
-      myAttendance = data[0];
-    }
-  } catch (e) {
-    console.error('Fetch my attendance error:', e);
-  }
 
   let allAttendance = [];
   try {
@@ -5178,9 +5160,10 @@ async function renderAttendance(el) {
     console.error('Fetch all attendance error:', e);
   }
 
-  const isClockedIn = myAttendance && myAttendance.clock_in && !myAttendance.clock_out;
-  const inTimeStr = myAttendance?.clock_in ? getIndoDateTime(new Date(myAttendance.clock_in), { hour: '2-digit', minute: '2-digit' }) : '-';
-  const outTimeStr = myAttendance?.clock_out ? getIndoDateTime(new Date(myAttendance.clock_out), { hour: '2-digit', minute: '2-digit' }) : '-';
+  // Filter staf yang SEDANG BERTUGAS HARI INI (clock_in ada, clock_out belum)
+  const currentlyWorkingStaff = allAttendance.filter(a => a.date === today && a.clock_in && !a.clock_out);
+  // Filter staf yang SUDAH SELESAI HARI INI
+  const completedStaffToday = allAttendance.filter(a => a.date === today && a.clock_in && a.clock_out);
 
   const isAllDates = !attendanceSelectedDate;
   const rows = allAttendance.map(a => {
@@ -5191,7 +5174,7 @@ async function renderAttendance(el) {
     return `
       <tr>
         ${isAllDates ? `<td style="font-weight:600; font-size:12px; white-space:nowrap;">${a.date || '-'}</td>` : ''}
-        <td><strong style="color:var(--brown-900); font-size:13px;">${a.user_name}</strong></td>
+        <td><strong style="color:var(--brown-900); font-size:13px;">${escapeHtml(a.user_name)}</strong></td>
         <td><span class="badge badge-blue">Shift ${String(a.shift_name || 'pagi').toUpperCase()}</span></td>
         <td><span style="font-weight:600; color:#15803d;">${clockIn} WIB</span></td>
         <td>${clockOut}</td>
@@ -5203,7 +5186,7 @@ async function renderAttendance(el) {
         </td>
         ${isAdmin ? `
           <td style="text-align:center;">
-            <button class="btn btn-sm btn-outline" style="color:#ef4444; border-color:#fca5a5; padding:3px 8px; font-size:11px;" onclick="deleteAttendanceRecord('${a.id}', '${a.user_name}')" title="Hapus catatan ini">
+            <button class="btn btn-sm btn-outline" style="color:#ef4444; border-color:#fca5a5; padding:3px 8px; font-size:11px;" onclick="deleteAttendanceRecord('${a.id}', '${escapeAttr(a.user_name)}')" title="Hapus catatan ini">
               <i data-lucide="trash-2" style="width:13px;height:13px;"></i>
             </button>
           </td>
@@ -5216,41 +5199,78 @@ async function renderAttendance(el) {
     ? (attendanceSelectedDate === today ? `Hari Ini (${today})` : `Tanggal ${attendanceSelectedDate}`)
     : 'Semua Riwayat Tanggal';
 
-  // Deteksi shift aktif untuk sinkronisasi mutlak dengan operasional kasir
+  // Deteksi jam saat ini untuk default shift (Shift Sore dimulai jam 15.00)
   const currentHour = parseInt(new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: 'numeric', hour12: false }).format(new Date()));
-  const storeShift = activeShift ? activeShift.shift_type : (currentHour >= 15 ? 'sore' : 'pagi');
+  const defaultShift = currentHour >= 15 ? 'sore' : (activeShift ? activeShift.shift_type : 'pagi');
 
-  let shiftControlHTML = '';
-  if (activeShift) {
-    // Kunci otomatis ke shift kasir yang sedang berjalan di toko, izinkan input nama karyawan
-    shiftControlHTML = `
-      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-        <input type="text" id="attend-staff-name" class="form-input" style="width:130px; padding:8px 10px; font-size:12px; font-weight:600; border-radius:8px; background:white; color:var(--brown-900);" value="${userName}" placeholder="Nama Staf">
-        <div style="background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.3); padding:8px 12px; border-radius:10px; font-size:12px; color:white; display:flex; align-items:center; gap:6px;">
-          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#86efac;"></span>
-          Shift: <strong style="color:#fef08a; text-transform:uppercase;">Shift ${activeShift.shift_type}</strong>
-        </div>
-        <input type="hidden" id="attend-shift-select" value="${activeShift.shift_type}">
-        <button class="btn-clock-in" onclick="submitClockIn()">
-          <i data-lucide="log-in" style="width:18px;height:18px;"></i> Absen Masuk (${activeShift.shift_type.toUpperCase()})
-        </button>
-      </div>
-    `;
-  } else {
-    // Belum ada shift kasir dibuka: Izinkan staf memilih dengan default jam berjalan
-    shiftControlHTML = `
-      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-        <input type="text" id="attend-staff-name" class="form-input" style="width:130px; padding:8px 10px; font-size:12px; font-weight:600; border-radius:8px; background:white; color:var(--brown-900);" value="${userName}" placeholder="Nama Staf">
-        <select class="form-select" id="attend-shift-select" style="background:white; color:var(--brown-900); font-weight:600; padding:10px 14px; border-radius:10px;">
-          <option value="pagi" ${storeShift === 'pagi' ? 'selected' : ''}>Shift Pagi</option>
-          <option value="sore" ${storeShift === 'sore' ? 'selected' : ''}>Shift Sore</option>
-        </select>
-        <button class="btn-clock-in" onclick="submitClockIn()">
-          <i data-lucide="log-in" style="width:18px;height:18px;"></i> Absen Masuk
-        </button>
+  // HTML Staf yang sedang aktif bekerja
+  let workingStaffHTML = '';
+  if (currentlyWorkingStaff.length > 0) {
+    workingStaffHTML = `
+      <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end; width:100%;">
+        <div style="font-size:11px; color:#86efac; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Staf Sedang Bertugas:</div>
+        ${currentlyWorkingStaff.map(st => {
+          const inTime = st.clock_in ? getIndoDateTime(new Date(st.clock_in), { hour: '2-digit', minute: '2-digit' }) : '-';
+          return `
+            <div style="background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.3); padding:8px 12px; border-radius:10px; display:flex; align-items:center; gap:10px;">
+              <div style="text-align:right; font-size:12px;">
+                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#86efac; margin-right:4px;"></span>
+                <strong style="color:white; font-size:13px;">${escapeHtml(st.user_name)}</strong>
+                <span style="color:#fef08a; font-size:11px; text-transform:uppercase; margin-left:4px;">(Shift ${escapeHtml(st.shift_name)})</span>
+                <div style="font-size:11px; color:#dcfce7;">Masuk: ${inTime} WIB</div>
+              </div>
+              <button class="btn-clock-out" style="padding:6px 12px; font-size:12px; display:inline-flex; align-items:center; gap:6px;" onclick="submitClockOut('${st.id}')">
+                <i data-lucide="log-out" style="width:14px;height:14px;"></i> Absen Pulang
+              </button>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   }
+
+  // HTML Ringkasan staf yang sudah pulang hari ini
+  let completedStaffHTML = '';
+  if (completedStaffToday.length > 0) {
+    completedStaffHTML = `
+      <div style="font-size:11px; color:rgba(255,255,255,0.85); text-align:right;">
+        ${completedStaffToday.map(cs => {
+          const outTime = cs.clock_out ? getIndoDateTime(new Date(cs.clock_out), { hour: '2-digit', minute: '2-digit' }) : '-';
+          return `<span>✓ <strong>${escapeHtml(cs.user_name)}</strong> selesai tugas (${outTime} WIB)</span>`;
+        }).join(' • ')}
+      </div>
+    `;
+  }
+
+  // Petunjuk sinkronisasi kasir jika shift kasir masih pagi padahal sudah sore
+  let shiftHintHTML = '';
+  if (activeShift && activeShift.shift_type === 'pagi' && currentHour >= 15) {
+    shiftHintHTML = `
+      <div style="background:rgba(245,158,11,0.25); border:1px solid rgba(245,158,11,0.5); padding:6px 10px; border-radius:8px; font-size:11px; color:#fef08a; display:flex; align-items:center; gap:6px; margin-top:4px;">
+        <i data-lucide="info" style="width:14px;height:14px;"></i>
+        <span>Kasir laci masih <strong>Shift PAGI (${escapeHtml(activeShift.cashier_name)})</strong>. Klik <strong>Serah Terima</strong> di atas untuk tutup shift kasir.</span>
+      </div>
+    `;
+  }
+
+  // Form Absen Masuk (SELALU MUNCUL agar barista shift baru / staf lain tidak terblokir)
+  const clockInFormHTML = `
+    <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end; width:100%; max-width:440px;">
+      ${workingStaffHTML}
+      ${completedStaffHTML}
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:4px;">
+        <input type="text" id="attend-staff-name" class="form-input" style="width:140px; padding:8px 12px; font-size:12px; font-weight:600; border-radius:8px; background:white; color:var(--brown-900);" placeholder="Nama Karyawan..." autocomplete="off">
+        <select class="form-select" id="attend-shift-select" style="background:white; color:var(--brown-900); font-weight:600; padding:8px 12px; border-radius:8px; font-size:12px;">
+          <option value="pagi" ${defaultShift === 'pagi' ? 'selected' : ''}>Shift Pagi</option>
+          <option value="sore" ${defaultShift === 'sore' ? 'selected' : ''}>Shift Sore</option>
+        </select>
+        <button class="btn-clock-in" style="padding:8px 14px; font-size:12px; display:inline-flex; align-items:center; gap:6px;" onclick="submitClockIn()">
+          <i data-lucide="log-in" style="width:16px;height:16px;"></i> Absen Masuk
+        </button>
+      </div>
+      ${shiftHintHTML}
+    </div>
+  `;
 
   el.innerHTML = `
     <div class="attendance-hero">
@@ -5260,28 +5280,12 @@ async function renderAttendance(el) {
         </div>
         <div class="attendance-clock" id="live-attendance-clock">--:--:--</div>
         <div style="font-size:13px; opacity:0.9; margin-top:4px;">
-          Staf: <strong>${userName || 'Kasir'}</strong> • Hari ini: <strong>${getIndoDateTime(new Date(), { day: '2-digit', month: 'long', year: 'numeric' })}</strong>
+          Hari ini: <strong>${getIndoDateTime(new Date(), { day: '2-digit', month: 'long', year: 'numeric' })}</strong>
         </div>
       </div>
 
       <div style="display:flex; flex-direction:column; gap:10px; align-items:flex-end;">
-        ${!myAttendance ? shiftControlHTML : (isClockedIn ? `
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div style="text-align:right; font-size:12px;">
-              <div style="opacity:0.8;">Masuk sejak:</div>
-              <strong style="font-size:14px; color:#86efac;">${inTimeStr} WIB</strong>
-              <div style="font-size:11px; opacity:0.8; text-transform:uppercase;">Shift ${myAttendance.shift_name}</div>
-            </div>
-            <button class="btn-clock-out" onclick="submitClockOut('${myAttendance.id}')">
-              <i data-lucide="log-out" style="width:18px;height:18px;"></i> Absen Pulang
-            </button>
-          </div>
-        ` : `
-          <div style="background:rgba(255,255,255,0.15); padding:10px 16px; border-radius:10px; text-align:right; font-size:12px;">
-            <div>Status: <span class="badge badge-green" style="font-size:11px;">Sudah Selesai Tugas Hari Ini</span></div>
-            <div style="margin-top:2px;">Jam Kerja: <strong>${inTimeStr}</strong> s/d <strong>${outTimeStr}</strong> (Shift ${String(myAttendance.shift_name || '').toUpperCase()})</div>
-          </div>
-        `)}
+        ${clockInFormHTML}
       </div>
     </div>
 
@@ -5339,10 +5343,16 @@ async function renderAttendance(el) {
 
 async function submitClockIn() {
   const shiftSelect = document.getElementById('attend-shift-select');
-  // Kunci otomatis ke shift kasir aktif jika ada, agar sinkron
-  const shiftName = activeShift ? activeShift.shift_type : (shiftSelect ? shiftSelect.value : 'pagi');
+  const shiftName = (shiftSelect && shiftSelect.value) ? shiftSelect.value : (activeShift ? activeShift.shift_type : 'pagi');
   const staffInput = document.getElementById('attend-staff-name');
-  const userName = (staffInput && staffInput.value.trim()) ? staffInput.value.trim() : (getActiveCashierName() || (currentUser ? currentUser.name : 'Kasir'));
+  const userName = (staffInput && staffInput.value.trim()) ? staffInput.value.trim() : '';
+
+  if (!userName) {
+    showToast('Silakan ketik nama karyawan yang akan absen!', 'error');
+    if (staffInput) staffInput.focus();
+    return;
+  }
+
   const userId = currentUser ? currentUser.id : null;
 
   // Simpan nama staf aktif ke sesi lokal agar tersinkron ke modul kasir
