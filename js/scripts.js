@@ -36,6 +36,14 @@ Tanggal: [TANGGAL]
 
 Terima kasih sudah memesan!`;
 
+let waGatewayConfig = {
+  provider: 'fonnte',
+  token: 't8TZWGUnvKcu8eTWEaw3',
+  bot_phone: '081952538106',
+  target_phone: '08132869806',
+  auto_send: true
+};
+
 const DEFAULT_VARIANTS = [];
 
 // ─── STATED PRIVACY UNTUK DASHBOARD ───
@@ -347,6 +355,9 @@ async function loadStoreInfo() {
 
     const { data: template } = await db.from('settings').select('value').eq('key', 'wa_template').single();
     if (template) waTemplate = template.value;
+
+    const { data: gateway } = await db.from('settings').select('value').eq('key', 'wa_gateway').single();
+    if (gateway && gateway.value) waGatewayConfig = { ...waGatewayConfig, ...gateway.value };
   } catch (e) { console.log('Store info fail', e); }
 }
 
@@ -540,6 +551,68 @@ async function saveWATemplate() {
     showToast('Gagal menyimpan template!', 'error');
   }
 }
+
+async function saveWAGatewayConfig() {
+  const botPhone = document.getElementById('settings-wa-bot-phone')?.value.trim() || '081952538106';
+  const targetPhone = document.getElementById('settings-wa-target-phone')?.value.trim() || '08132869806';
+  const token = document.getElementById('settings-wa-token')?.value.trim() || '';
+  const autoSend = document.getElementById('settings-wa-autosend')?.checked ?? true;
+
+  const newConfig = {
+    provider: 'fonnte',
+    token,
+    bot_phone: botPhone,
+    target_phone: targetPhone,
+    auto_send: autoSend
+  };
+
+  const { error } = await db.from('settings').upsert({ key: 'wa_gateway', value: newConfig }, { onConflict: 'key' });
+  if (!error) {
+    waGatewayConfig = newConfig;
+    localStorage.setItem('ks_owner_wa', targetPhone);
+    showToast('Pengaturan Bot WhatsApp berhasil disimpan!', 'success');
+    addActivityLog('Update WA Bot', `Bot: ${botPhone}, Owner: ${targetPhone}`);
+  } else {
+    showToast('Gagal menyimpan pengaturan bot: ' + error.message, 'error');
+  }
+}
+window.saveWAGatewayConfig = saveWAGatewayConfig;
+
+async function testWAGatewaySend() {
+  const targetPhone = document.getElementById('settings-wa-target-phone')?.value.trim() || waGatewayConfig.target_phone || '08132869806';
+  const token = document.getElementById('settings-wa-token')?.value.trim() || waGatewayConfig.token;
+
+  if (!token) {
+    showToast('Token Fonnte belum diisi!', 'error');
+    return;
+  }
+
+  showToast('Mengirim pesan uji coba ke ' + targetPhone + '...', 'info');
+
+  const testMsg = `🤖 *UJI KONEKSI BOT KOPI SEMBILAN*\n\nHalo Owner! Bot WhatsApp berhasil tersambung ke sistem kasir Kopi Sembilan.\nRekap tutup shift akan otomatis dikirim ke nomor ini.\n\nWaktu tes: ${getIndoDateTime(new Date(), { dateStyle: 'full', timeStyle: 'short' })}`;
+
+  try {
+    const params = new URLSearchParams();
+    params.append('target', targetPhone);
+    params.append('message', testMsg);
+
+    const res = await fetch('https://api.fonnte.com/send', {
+      method: 'POST',
+      headers: { 'Authorization': token },
+      body: params
+    });
+
+    const data = await res.json();
+    if (data && data.status) {
+      showToast('Pesan uji coba BERHASIL terkirim ke WhatsApp Owner!', 'success');
+    } else {
+      showToast('Gagal: ' + (data?.reason || data?.detail || 'Periksa nomor/token'), 'error');
+    }
+  } catch (err) {
+    showToast('Gagal koneksi ke server: ' + err.message, 'error');
+  }
+}
+window.testWAGatewaySend = testWAGatewaySend;
 
 async function loadProducts() {
   await loadStoreInfo();
@@ -2772,6 +2845,45 @@ function renderSettings(el) {
         </div>
       </div>
       <div class="card">
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="bot" style="width:18px;height:18px;color:var(--accent);"></i> Bot WhatsApp Gateway (Kirim Otomatis)</h3></div>
+        <div class="card-body">
+          <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:12px; margin-bottom:14px; font-size:12px;">
+            <div style="font-weight:700; color:#166534; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+              <i data-lucide="check-circle" style="width:16px;height:16px;color:#16a34a;"></i> Bot Terhubung: Fonnte API
+            </div>
+            <div style="color:#15803d; line-height:1.4;">
+              Bot Pengirim: <strong>${waGatewayConfig.bot_phone || '081952538106'}</strong><br>
+              Target Owner: <strong>${waGatewayConfig.target_phone || '08132869806'}</strong>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Nomor Bot Pengirim</label>
+            <input type="text" class="form-input" id="settings-wa-bot-phone" value="${waGatewayConfig.bot_phone || '081952538106'}">
+          </div>
+          <div class="form-group">
+            <label>Nomor WhatsApp Owner (Penerima Rekap)</label>
+            <input type="text" class="form-input" id="settings-wa-target-phone" value="${waGatewayConfig.target_phone || '08132869806'}">
+          </div>
+          <div class="form-group">
+            <label>Token API Fonnte</label>
+            <input type="text" class="form-input" id="settings-wa-token" value="${waGatewayConfig.token || ''}" placeholder="Masukkan token Fonnte..." style="font-family:monospace;">
+            <small style="font-size:10px; color:var(--text-muted); display:block; margin-top:2px;">Token didapat dari menu Device di fonnte.com</small>
+          </div>
+          <div class="form-group">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
+              <input type="checkbox" id="settings-wa-autosend" ${waGatewayConfig.auto_send ? 'checked' : ''}>
+              Kirim rekap shift otomatis ke WA Owner saat kasir Tutup Shift
+            </label>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button class="btn btn-brown" style="flex:1;" onclick="saveWAGatewayConfig()">Simpan Pengaturan Bot</button>
+            <button class="btn btn-outline" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testWAGatewaySend()">
+              <i data-lucide="send" style="width:14px;height:14px;"></i> Uji Kirim Pesan
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer Thermal Bluetooth</h3></div>
         <div class="card-body">
           <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
@@ -4874,7 +4986,7 @@ async function submitCloseShift() {
       console.warn('Auto clock-out on close shift note:', attErr);
     }
 
-    showShiftAuditResult({
+    const auditDataPayload = {
       shiftType: closedShiftType,
       cashierName: closedCashier,
       startingCash: startCash,
@@ -4886,7 +4998,14 @@ async function submitCloseShift() {
       actualCash: actualCash,
       difference: difference,
       date: new Date()
-    });
+    };
+
+    showShiftAuditResult(auditDataPayload);
+
+    // Otomatis kirim via Bot WhatsApp Gateway jika aktif
+    if (waGatewayConfig && waGatewayConfig.auto_send && waGatewayConfig.token) {
+      sendShiftAuditViaGateway(auditDataPayload);
+    }
   } catch (err) {
     console.error('Close shift error:', err);
     showToast('Gagal menutup shift: ' + (err.message || err), 'error');
@@ -4993,12 +5112,114 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function sendShiftAuditToOwnerWA() {
+async function sendShiftAuditViaGateway(d) {
+  if (!d) d = currentShiftAuditData;
+  if (!d) return { success: false, message: 'Data shift tidak tersedia' };
+
+  const cfg = waGatewayConfig || {};
+  const token = cfg.token || 't8TZWGUnvKcu8eTWEaw3';
+  const target = cfg.target_phone || localStorage.getItem('ks_owner_wa') || storeInfo.phone || '08132869806';
+
+  if (!token) {
+    console.warn('Token Fonnte belum diatur');
+    return { success: false, message: 'Token Fonnte belum diatur' };
+  }
+
+  const isMinus = d.difference < 0;
+  const isKlop = d.difference === 0;
+  const selisihLabel = isKlop ? '✅ PAS (Rp 0)' : (isMinus ? `❌ MINUS ${fmtRp(Math.abs(d.difference))}` : `⚠️ LEBIH ${fmtRp(d.difference)}`);
+  const statusNote = isKlop 
+    ? 'Uang fisik di laci klop dengan target sistem.' 
+    : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.');
+
+  const timeStr = getIndoDateTime(d.date || new Date(), { dateStyle: 'full', timeStyle: 'short' });
+
+  const msg = 
+`📊 *REKAP TUTUP SHIFT - ${storeInfo.name.toUpperCase()}*
+━━━━━━━━━━━━━━━━━━
+📅 *Waktu:* ${timeStr}
+⏰ *Shift:* ${String(d.shiftType).toUpperCase()}
+👤 *Kasir Bertugas:* ${d.cashierName}
+
+💰 *RINCIAN OMSET PENJUALAN:*
+• Tunai (Cash): ${fmtRp(d.cashSales)}
+• QRIS: ${fmtRp(d.qrisSales)}
+• Debit / Transfer: ${fmtRp(d.transferSales)}
+👉 *TOTAL OMSET: ${fmtRp(d.totalOmset)}*
+
+💵 *REKONSILIASI KAS LACI:*
+• Modal Awal: ${fmtRp(d.startingCash)}
+• Penjualan Tunai: +${fmtRp(d.cashSales)}
+• Target Kas Laci: ${fmtRp(d.expectedCash)}
+• Fisik Dihitung: ${fmtRp(d.actualCash)}
+━━━━━━━━━━━━━━━━━━
+⚖️ *STATUS SELISIH KAS:*
+*${selisihLabel}*
+_${statusNote}_
+
+_(Dikirim otomatis oleh Bot Kasir Kopi Sembilan)_`;
+
+  try {
+    let result = null;
+    // 1. Coba lewat proxy Vercel
+    try {
+      const proxyRes = await fetch('/api/send-wa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, message: msg, token })
+      });
+      if (proxyRes.ok) {
+        result = await proxyRes.json();
+      }
+    } catch (pe) {
+      console.warn('Vercel proxy skip/fail:', pe);
+    }
+
+    // 2. Jika proxy belum merespon status true, coba panggil Fonnte langsung
+    if (!result || !result.status) {
+      const params = new URLSearchParams();
+      params.append('target', target);
+      params.append('message', msg);
+
+      const fonnteRes = await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: { 'Authorization': token },
+        body: params
+      });
+      result = await fonnteRes.json();
+    }
+
+    if (result && result.status) {
+      showToast('Rekap shift otomatis terkirim ke WhatsApp Owner!', 'success');
+      return { success: true, result };
+    } else {
+      console.warn('Fonnte send error:', result);
+      return { success: false, message: result?.reason || result?.detail || 'Gagal mengirim rekap WA' };
+    }
+  } catch (err) {
+    console.error('Send WA gateway error:', err);
+    return { success: false, error: err };
+  }
+}
+window.sendShiftAuditViaGateway = sendShiftAuditViaGateway;
+
+async function sendShiftAuditToOwnerWA() {
   if (!currentShiftAuditData) {
     showToast('Data audit shift tidak tersedia!', 'error');
     return;
   }
-  let ownerPhone = localStorage.getItem('ks_owner_wa') || storeInfo.phone || '08132869806';
+
+  // Jika bot gateway aktif, coba kirim via bot terlebih dahulu
+  if (waGatewayConfig && waGatewayConfig.token) {
+    showToast('Mengirim rekap ke WhatsApp Owner via Bot...', 'info');
+    const sendRes = await sendShiftAuditViaGateway(currentShiftAuditData);
+    if (sendRes && sendRes.success) {
+      return;
+    }
+    showToast('Bot gagal mengirim, membuka WhatsApp langsung...', 'warning');
+  }
+
+  let ownerPhone = localStorage.getItem('ks_owner_wa') || waGatewayConfig?.target_phone || storeInfo.phone || '08132869806';
 
   const d = currentShiftAuditData;
   const isMinus = d.difference < 0;
