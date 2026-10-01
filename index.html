@@ -67,6 +67,12 @@
         <i data-lucide="shopping-cart" class="nav-icon"></i> Kasir
       </div>
       <div class="nav-section">Manajemen</div>
+      <div class="nav-item" onclick="showPage('shifts')">
+        <i data-lucide="calculator" class="nav-icon"></i> Rekap Shift & Kas
+      </div>
+      <div class="nav-item" onclick="showPage('attendance')">
+        <i data-lucide="user-check" class="nav-icon"></i> Absensi Karyawan
+      </div>
       <div class="nav-item" onclick="showPage('inventory')">
         <i data-lucide="package" class="nav-icon"></i> Inventaris Produk
       </div>
@@ -93,6 +99,12 @@
       <div class="nav-section">Kasir</div>
       <div class="nav-item active" onclick="showPage('cashier')">
         <i data-lucide="shopping-cart" class="nav-icon"></i> Kasir
+      </div>
+      <div class="nav-item" onclick="showPage('shifts')">
+        <i data-lucide="calculator" class="nav-icon"></i> Kas & Shift
+      </div>
+      <div class="nav-item" onclick="showPage('attendance')">
+        <i data-lucide="user-check" class="nav-icon"></i> Absensi Masuk/Pulang
       </div>
       <div class="nav-item" onclick="showPage('report')">
         <i data-lucide="bar-chart-3" class="nav-icon"></i> Laporan Hari Ini
@@ -125,6 +137,7 @@
         <h2 id="page-title">Dashboard</h2>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
+        <div id="topbar-shift-badge" style="display:none; align-items:center; gap:8px;"></div>
         <span style="font-size:12px;color:var(--text-muted);" id="current-datetime"></span>
       </div>
     </div>
@@ -200,6 +213,20 @@
             <i data-lucide="credit-card" class="pay-icon"></i>
             <span class="pay-label">Kartu</span>
           </div>
+          <div class="pay-method-card" data-method="staff" onclick="selectPayMethod(this)">
+            <i data-lucide="coffee" class="pay-icon"></i>
+            <span class="pay-label">Jatah Staf</span>
+          </div>
+        </div>
+
+        <div id="staff-input-wrap" class="form-group" style="display:none; margin-top:16px; background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border);">
+          <label style="font-weight:700; color:var(--brown-900); display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:6px;">
+            <i data-lucide="user-check" style="width:16px;height:16px;color:var(--accent);"></i> Nama Karyawan yang Mengambil Minuman
+          </label>
+          <select class="form-select" id="staff-name-select" onchange="checkStaffDailyQuota()">
+            <option value="">-- Pilih Nama Karyawan --</option>
+          </select>
+          <div id="staff-quota-badge" style="font-size:11px; margin-top:8px; line-height:1.4;"></div>
         </div>
 
         <div class="payment-form-grid" style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
@@ -656,6 +683,109 @@
         Menampilkan 0 menu
       </div>
       <button class="btn btn-brown" onclick="closeModal('modal-menu-sales')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Buka Shift Kasir -->
+<div class="modal-overlay modal-overlay-center" id="modal-open-shift">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="calculator" style="width:20px;height:20px;color:var(--brown-800);"></i> Buka Shift Kasir
+      </h3>
+      <button class="modal-close" onclick="closeModal('modal-open-shift')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--cream); padding:12px; border-radius:10px; margin-bottom:16px; border:1px solid var(--border);">
+        <p style="font-size:12px; color:var(--text-muted); margin:0; line-height:1.5;">
+          Masukkan modal kas awal untuk uang kembalian sebelum memulai transaksi kasir hari ini.
+        </p>
+      </div>
+      <div class="form-group">
+        <label>Pilih Shift</label>
+        <select class="form-select" id="open-shift-type">
+          <option value="pagi">Shift Pagi</option>
+          <option value="sore">Shift Sore</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Nama Karyawan / Barista Bertugas</label>
+        <input type="text" class="form-input" id="open-shift-staff-name" placeholder="Contoh: Budi, Siti, Rian..." autocomplete="off">
+        <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:3px;">
+          Nama staf yang sedang bertugas menjaga shift kasir ini.
+        </small>
+      </div>
+      <div class="form-group">
+        <label>Uang Modal Kas Awal (Rp)</label>
+        <input type="text" inputmode="numeric" class="form-input" id="open-shift-cash" value="250.000" placeholder="250.000" oninput="formatPriceInput(this)">
+      </div>
+      <div class="form-group">
+        <label>Catatan Pembukaan (Opsional)</label>
+        <input type="text" class="form-input" id="open-shift-note" placeholder="Contoh: Pecahan 50k 3 lembar, 20k 5 lembar...">
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; gap:10px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeModal('modal-open-shift')">Batal</button>
+      <button class="btn btn-brown" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="submitOpenShift()">
+        <i data-lucide="check-circle" style="width:16px;height:16px;"></i> Mulai Shift
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Serah Terima / Tutup Shift (Blind Cash Count) -->
+<div class="modal-overlay modal-overlay-center" id="modal-close-shift">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="lock" style="width:20px;height:20px;color:var(--brown-800);"></i> Serah Terima / Tutup Shift
+      </h3>
+      <button class="modal-close" onclick="closeModal('modal-close-shift')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#fef3c7; border:1px solid #f59e0b; padding:12px 14px; border-radius:10px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#92400e; font-size:13px; margin-bottom:4px;">
+          <i data-lucide="shield-alert" style="width:16px;height:16px;"></i> Prosedur Blind Cash Handover
+        </div>
+        <p style="font-size:11px; color:#78350f; margin:0; line-height:1.4;">
+          Hitung seluruh uang tunai fisik yang ada di laci kasir (kertas & koin). Masukkan jumlah sebenarnya. Data akan dikunci dan dibandingkan otomatis dengan sistem.
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label style="font-weight:700; color:var(--brown-900);">Total Uang Tunai Fisik di Laci (Rp)</label>
+        <input type="text" inputmode="numeric" class="form-input" id="close-shift-actual-cash" placeholder="0" oninput="formatPriceInput(this)" style="font-size:18px; font-weight:700; text-align:right;">
+      </div>
+
+      <div class="form-group">
+        <label>Catatan Serah Terima / Handover</label>
+        <textarea class="form-input" id="close-shift-notes" rows="2" placeholder="Catatan untuk shift berikutnya atau laporan ke owner..." style="resize:none;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; gap:10px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeModal('modal-close-shift')">Batal</button>
+      <button class="btn btn-brown" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="submitCloseShift()">
+        <i data-lucide="lock" style="width:16px;height:16px;"></i> Kunci & Tutup Shift
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Audit Rekap Shift (Hasil Komparasi) -->
+<div class="modal-overlay modal-overlay-center" id="modal-shift-audit">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="file-check" style="width:20px;height:20px;color:var(--brown-800);"></i> Laporan Hasil Rekap Shift
+      </h3>
+      <button class="modal-close" onclick="closeModal('modal-shift-audit')"><i data-lucide="x" style="width:20px;height:20px;"></i></button>
+    </div>
+    <div class="modal-body" id="shift-audit-content">
+      <!-- Diisi secara dinamis -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-brown w-full" onclick="closeModal('modal-shift-audit')">Selesai & Tutup</button>
     </div>
   </div>
 </div>
