@@ -4638,9 +4638,15 @@ function updateTopBarShiftBadge() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function openModalOpenShift() {
+async function openModalOpenShift() {
   const cashInput = document.getElementById('open-shift-cash');
   if (cashInput) cashInput.value = '';
+
+  const hintContainer = document.getElementById('prev-shift-cash-hint');
+  if (hintContainer) {
+    hintContainer.style.display = 'none';
+    hintContainer.innerHTML = '';
+  }
   
   // Rekomendasi shift otomatis berdasarkan jam operasional saat ini (WIB)
   const currentHour = parseInt(new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: 'numeric', hour12: false }).format(new Date()));
@@ -4657,7 +4663,45 @@ function openModalOpenShift() {
   }
 
   openModal('modal-open-shift');
+
+  // Ambil data uang fisik shift terakhir yang baru ditutup untuk chip cepat
+  try {
+    const { data: lastClosed, error } = await db.from('cash_shifts')
+      .select('shift_type, cashier_name, actual_cash, closed_at')
+      .eq('status', 'closed')
+      .order('closed_at', { ascending: false })
+      .limit(1);
+
+    if (!error && lastClosed && lastClosed.length > 0) {
+      const prev = lastClosed[0];
+      const prevCash = Number(prev.actual_cash) || 0;
+      if (prevCash > 0 && hintContainer) {
+        hintContainer.style.display = 'block';
+        hintContainer.innerHTML = `
+          <button type="button" class="btn btn-sm" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; border-radius:8px; padding:6px 12px; font-size:11px; font-weight:700; display:inline-flex; align-items:center; gap:6px; cursor:pointer;" onclick="applyPrevShiftCash(${prevCash})">
+            <i data-lucide="arrow-down-left" style="width:14px;height:14px;color:#d97706;"></i>
+            Lanjutkan Kas Shift ${(prev.shift_type || 'sebelumnya').toUpperCase()}: <strong>${fmtRp(prevCash)}</strong>
+          </button>
+          <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">
+            💡 Klik tombol di atas jika uang kas shift sebelumnya tetap ditinggal di laci.
+          </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+    }
+  } catch (err) {
+    console.warn('Load prev shift cash error:', err);
+  }
 }
+
+function applyPrevShiftCash(amount) {
+  const cashInput = document.getElementById('open-shift-cash');
+  if (cashInput) {
+    cashInput.value = formatPrice(amount);
+    showToast(`Modal kas diisi: ${fmtRp(amount)} (Sisa shift sebelumnya)`, 'success');
+  }
+}
+window.applyPrevShiftCash = applyPrevShiftCash;
 
 async function submitOpenShift() {
   const shiftType = document.getElementById('open-shift-type')?.value || 'pagi';
@@ -4840,7 +4884,8 @@ async function submitCloseShift() {
       totalOmset: totalOmset,
       expectedCash: expectedCash,
       actualCash: actualCash,
-      difference: difference
+      difference: difference,
+      date: new Date()
     });
   } catch (err) {
     console.error('Close shift error:', err);
@@ -4848,7 +4893,23 @@ async function submitCloseShift() {
   }
 }
 
-function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales, qrisSales = 0, transferSales = 0, totalOmset = cashSales, expectedCash, actualCash, difference }) {
+let currentShiftAuditData = null;
+
+function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales, qrisSales = 0, transferSales = 0, totalOmset = cashSales, expectedCash, actualCash, difference, date }) {
+  currentShiftAuditData = {
+    shiftType,
+    cashierName,
+    startingCash,
+    cashSales,
+    qrisSales,
+    transferSales,
+    totalOmset,
+    expectedCash,
+    actualCash,
+    difference,
+    date: date || new Date()
+  };
+
   const auditModal = document.getElementById('modal-shift-audit');
   const auditContent = document.getElementById('shift-audit-content');
   if (!auditModal || !auditContent) return;
@@ -4932,6 +4993,77 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+function sendShiftAuditToOwnerWA() {
+  if (!currentShiftAuditData) {
+    showToast('Data audit shift tidak tersedia!', 'error');
+    return;
+  }
+  let ownerPhone = localStorage.getItem('ks_owner_wa');
+  if (!ownerPhone) {
+    const defaultNum = storeInfo.phone || '085336688839';
+    const input = prompt('Masukkan nomor WhatsApp Owner untuk menerima laporan rekap shift:\n(Contoh: 085336688839 atau 08123456789)', defaultNum);
+    if (!input || !input.trim()) {
+      showToast('Pengiriman rekap WA dibatalkan.', 'info');
+      return;
+    }
+    ownerPhone = input.trim();
+    localStorage.setItem('ks_owner_wa', ownerPhone);
+  }
+
+  const d = currentShiftAuditData;
+  const isMinus = d.difference < 0;
+  const isKlop = d.difference === 0;
+  const selisihLabel = isKlop ? '✅ PAS (Rp 0)' : (isMinus ? `❌ MINUS ${fmtRp(Math.abs(d.difference))}` : `⚠️ LEBIH ${fmtRp(d.difference)}`);
+  const statusNote = isKlop 
+    ? 'Uang fisik di laci klop dengan target sistem.' 
+    : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.');
+
+  const timeStr = getIndoDateTime(d.date || new Date(), { dateStyle: 'full', timeStyle: 'short' });
+
+  const msg = 
+`📊 *REKAP TUTUP SHIFT - ${storeInfo.name.toUpperCase()}*
+━━━━━━━━━━━━━━━━━━
+📅 *Waktu:* ${timeStr}
+⏰ *Shift:* ${String(d.shiftType).toUpperCase()}
+👤 *Kasir Bertugas:* ${d.cashierName}
+
+💰 *RINCIAN OMSET PENJUALAN:*
+• Tunai (Cash): ${fmtRp(d.cashSales)}
+• QRIS: ${fmtRp(d.qrisSales)}
+• Debit / Transfer: ${fmtRp(d.transferSales)}
+👉 *TOTAL OMSET: ${fmtRp(d.totalOmset)}*
+
+💵 *REKONSILIASI KAS LACI:*
+• Modal Awal: ${fmtRp(d.startingCash)}
+• Penjualan Tunai: +${fmtRp(d.cashSales)}
+• Target Kas Laci: ${fmtRp(d.expectedCash)}
+• Fisik Dihitung: ${fmtRp(d.actualCash)}
+━━━━━━━━━━━━━━━━━━
+⚖️ *STATUS SELISIH KAS:*
+*${selisihLabel}*
+_${statusNote}_`;
+
+  const waUrl = `https://wa.me/${formatPhoneWA(ownerPhone)}?text=${encodeURIComponent(msg)}`;
+  window.open(waUrl, '_blank');
+}
+window.sendShiftAuditToOwnerWA = sendShiftAuditToOwnerWA;
+
+function changeOwnerWANumber() {
+  const current = localStorage.getItem('ks_owner_wa') || storeInfo.phone || '085336688839';
+  const input = prompt('Masukkan nomor WhatsApp Owner untuk menerima laporan rekap shift:\n(Contoh: 085336688839 atau 08123456789)', current);
+  if (input !== null) {
+    const clean = input.trim();
+    if (clean) {
+      localStorage.setItem('ks_owner_wa', clean);
+      showToast('Nomor WhatsApp Owner berhasil disimpan: ' + clean, 'success');
+    } else {
+      localStorage.removeItem('ks_owner_wa');
+      showToast('Nomor WhatsApp Owner dihapus (kembali ke default)', 'info');
+    }
+  }
+}
+window.changeOwnerWANumber = changeOwnerWANumber;
+
 async function viewHistoricalShiftAudit(shiftId) {
   try {
     const { data: s, error } = await db.from('cash_shifts').select('*').eq('id', shiftId).single();
@@ -4987,7 +5119,8 @@ async function viewHistoricalShiftAudit(shiftId) {
       totalOmset: totalOmset,
       expectedCash: Number(s.expected_cash) || 0,
       actualCash: Number(s.actual_cash) || 0,
-      difference: Number(s.difference) || 0
+      difference: Number(s.difference) || 0,
+      date: s.closed_at ? new Date(s.closed_at) : (s.created_at ? new Date(s.created_at) : new Date())
     });
   } catch (err) {
     console.error('View historical shift audit error:', err);

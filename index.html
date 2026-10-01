@@ -722,6 +722,7 @@
       <div class="form-group">
         <label>Uang Modal Kas Awal (Rp)</label>
         <input type="text" inputmode="numeric" class="form-input" id="open-shift-cash" value="" placeholder="Hitung uang di laci lalu masukkan di sini..." oninput="formatPriceInput(this)" autocomplete="off">
+        <div id="prev-shift-cash-hint" style="margin-top:6px; display:none;"></div>
         <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:3px;">
           Hitung uang fisik yang ada di dalam laci kas sebelum shift dimulai.
         </small>
@@ -790,8 +791,16 @@
     <div class="modal-body" id="shift-audit-content">
       <!-- Diisi secara dinamis -->
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-brown w-full" onclick="closeModal('modal-shift-audit')">Selesai & Tutup</button>
+    <div class="modal-footer" style="display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; gap:8px; width:100%;">
+        <button class="btn btn-green" id="btn-send-audit-wa" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 14px; font-weight:700;" onclick="sendShiftAuditToOwnerWA()">
+          <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA ke Owner
+        </button>
+        <button class="btn btn-brown" style="flex:1;" onclick="closeModal('modal-shift-audit')">Selesai & Tutup</button>
+      </div>
+      <div style="display:flex; justify-content:center;">
+        <a href="javascript:void(0)" onclick="changeOwnerWANumber()" style="font-size:11px; color:var(--text-muted); text-decoration:underline;">Ubah Nomor WhatsApp Owner</a>
+      </div>
     </div>
   </div>
 </div>
