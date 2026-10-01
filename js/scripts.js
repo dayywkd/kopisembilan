@@ -133,9 +133,19 @@ function getCategoryIcon(categoryName) {
 }
 
 function escapeAttr(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtml(value = '') {
+  if (value === null || value === undefined) return '';
   return String(value)
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
@@ -5142,10 +5152,11 @@ window.deleteAttendanceRecord = deleteAttendanceRecord;
 
 async function renderAttendance(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat data absensi...</div>`;
-  const today = getIndoDate();
-  const isAdmin = currentUser && currentUser.role === 'admin';
+  try {
+    const today = getIndoDate();
+    const isAdmin = currentUser && currentUser.role === 'admin';
 
-  let allAttendance = [];
+    let allAttendance = [];
   try {
     let query = db.from('attendance').select('*');
     if (attendanceSelectedDate) {
@@ -5339,6 +5350,16 @@ async function renderAttendance(el) {
   }
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
+  } catch (err) {
+    console.error('Fatal renderAttendance error:', err);
+    el.innerHTML = `
+      <div style="padding:40px; text-align:center;">
+        <div style="color:#ef4444; font-weight:700; font-size:15px; margin-bottom:8px;">Gagal memuat modul absensi</div>
+        <div style="color:var(--text-muted); font-size:12px; margin-bottom:16px;">${escapeHtml(err.message || err)}</div>
+        <button class="btn btn-outline btn-sm" onclick="renderAttendance(document.getElementById('page-content'))">Muat Ulang Halaman</button>
+      </div>
+    `;
+  }
 }
 
 async function submitClockIn() {
