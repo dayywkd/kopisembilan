@@ -589,7 +589,7 @@ async function testWAGatewaySend() {
 
   showToast('Mengirim pesan uji coba ke ' + targetPhone + '...', 'info');
 
-  const testMsg = `🤖 *UJI KONEKSI BOT KOPI SEMBILAN*\n\nHalo Owner! Bot WhatsApp berhasil tersambung ke sistem kasir Kopi Sembilan.\nRekap tutup shift akan otomatis dikirim ke nomor ini.\n\nWaktu tes: ${getIndoDateTime(new Date(), { dateStyle: 'full', timeStyle: 'short' })}`;
+  const testMsg = `*UJI KONEKSI BOT KOPI SEMBILAN*\n----------------------------------------\nHalo Owner! Bot WhatsApp berhasil tersambung ke sistem kasir Kopi Sembilan.\nRekap tutup shift akan otomatis dikirim ke nomor ini.\n\nWaktu tes: ${getIndoDateTime(new Date(), { dateStyle: 'full', timeStyle: 'short' })}`;
 
   try {
     const params = new URLSearchParams();
@@ -5034,12 +5034,12 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
   if (!auditModal || !auditContent) return;
 
   const isMinus = difference < 0;
-  const isKlop = difference === 0;
+  const isPas = difference === 0;
 
   auditContent.innerHTML = `
     <div style="text-align:center; padding:10px 0;">
-      <div style="display:inline-flex; align-items:center; justify-content:center; width:52px; height:52px; border-radius:50%; background:${isKlop ? '#dcfce7' : (isMinus ? '#fee2e2' : '#fef3c7')}; color:${isKlop ? '#16a34a' : (isMinus ? '#dc2626' : '#d97706')}; margin-bottom:8px;">
-        <i data-lucide="${isKlop ? 'check-circle' : (isMinus ? 'alert-triangle' : 'plus-circle')}" style="width:28px;height:28px;"></i>
+      <div style="display:inline-flex; align-items:center; justify-content:center; width:52px; height:52px; border-radius:50%; background:${isPas ? '#dcfce7' : (isMinus ? '#fee2e2' : '#fef3c7')}; color:${isPas ? '#16a34a' : (isMinus ? '#dc2626' : '#d97706')}; margin-bottom:8px;">
+        <i data-lucide="${isPas ? 'check-circle' : (isMinus ? 'alert-triangle' : 'plus-circle')}" style="width:28px;height:28px;"></i>
       </div>
       <h3 style="margin:0; font-size:18px; color:var(--brown-900);">
         Shift ${shiftType.toUpperCase()} Ditutup
@@ -5074,15 +5074,15 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
       </div>
 
       <!-- KOTAK 2: STATUS SELISIH UANG KAS LACI -->
-      <div style="background:${isKlop ? '#f0fdf4' : (isMinus ? '#fef2f2' : '#fffbeb')}; border:1.5px solid ${isKlop ? '#86efac' : (isMinus ? '#fca5a5' : '#fde68a')}; padding:14px; border-radius:12px; margin-bottom:14px;">
-        <div style="font-size:11px; text-transform:uppercase; font-weight:700; color:${isKlop ? '#15803d' : (isMinus ? '#b91c1c' : '#b45309')};">
+      <div style="background:${isPas ? '#f0fdf4' : (isMinus ? '#fef2f2' : '#fffbeb')}; border:1.5px solid ${isPas ? '#86efac' : (isMinus ? '#fca5a5' : '#fde68a')}; padding:14px; border-radius:12px; margin-bottom:14px;">
+        <div style="font-size:11px; text-transform:uppercase; font-weight:700; color:${isPas ? '#15803d' : (isMinus ? '#b91c1c' : '#b45309')};">
           STATUS SELISIH KAS LACI
         </div>
-        <div style="font-size:22px; font-weight:800; color:${isKlop ? '#15803d' : (isMinus ? '#b91c1c' : '#b45309')}; margin:4px 0;">
-          ${isKlop ? 'PAS (Rp 0)' : (isMinus ? `MINUS ${fmtRp(Math.abs(difference))}` : `LEBIH ${fmtRp(difference)}`)}
+        <div style="font-size:22px; font-weight:800; color:${isPas ? '#15803d' : (isMinus ? '#b91c1c' : '#b45309')}; margin:4px 0;">
+          ${isPas ? 'PAS (Rp 0)' : (isMinus ? `MINUS ${fmtRp(Math.abs(difference))}` : `LEBIH ${fmtRp(difference)}`)}
         </div>
         <div style="font-size:11px; color:var(--text-muted);">
-          ${isKlop ? 'Uang fisik di laci sesuai dengan perhitungan sistem.' : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.')}
+          ${isPas ? 'Uang fisik di laci pas dengan perhitungan sistem.' : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.')}
         </div>
       </div>
 
@@ -5117,6 +5117,45 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+function formatShiftAuditWAMessage(d) {
+  const diff = Number(d.difference) || 0;
+  const isPas = diff === 0;
+  const isMinus = diff < 0;
+  const selisihLabel = isPas 
+    ? 'PAS (Rp 0)' 
+    : (isMinus ? `MINUS ${fmtRp(Math.abs(diff))}` : `LEBIH ${fmtRp(diff)}`);
+
+  const statusNote = isPas 
+    ? 'Uang fisik di laci pas dengan perhitungan sistem.' 
+    : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.');
+
+  const timeStr = getIndoDateTime(d.date || new Date(), { dateStyle: 'full', timeStyle: 'short' });
+
+  return `*REKAP TUTUP SHIFT - ${storeInfo.name.toUpperCase()}*
+----------------------------------------
+*Waktu:* ${timeStr}
+*Shift:* ${String(d.shiftType).toUpperCase()}
+*Kasir Bertugas:* ${d.cashierName}
+
+*RINCIAN OMSET PENJUALAN:*
+- Tunai (Cash): ${fmtRp(d.cashSales)}
+- QRIS: ${fmtRp(d.qrisSales)}
+- Debit / Transfer: ${fmtRp(d.transferSales)}
+*TOTAL OMSET: ${fmtRp(d.totalOmset)}*
+
+*REKONSILIASI KAS LACI:*
+- Modal Awal: ${fmtRp(d.startingCash)}
+- Penjualan Tunai: +${fmtRp(d.cashSales)}
+- Target Kas Laci: ${fmtRp(d.expectedCash)}
+- Fisik Dihitung Kasir: ${fmtRp(d.actualCash)}
+----------------------------------------
+*STATUS SELISIH KAS:*
+*${selisihLabel}*
+_${statusNote}_
+
+_(Dikirim otomatis oleh Bot Kasir Kopi Sembilan)_`;
+}
+
 async function sendShiftAuditViaGateway(d) {
   if (!d) d = currentShiftAuditData;
   if (!d) return { success: false, message: 'Data shift tidak tersedia' };
@@ -5130,39 +5169,7 @@ async function sendShiftAuditViaGateway(d) {
     return { success: false, message: 'Token Fonnte belum diatur' };
   }
 
-  const isMinus = d.difference < 0;
-  const isKlop = d.difference === 0;
-  const selisihLabel = isKlop ? '✅ PAS (Rp 0)' : (isMinus ? `❌ MINUS ${fmtRp(Math.abs(d.difference))}` : `⚠️ LEBIH ${fmtRp(d.difference)}`);
-  const statusNote = isKlop 
-    ? 'Uang fisik di laci klop dengan target sistem.' 
-    : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.');
-
-  const timeStr = getIndoDateTime(d.date || new Date(), { dateStyle: 'full', timeStyle: 'short' });
-
-  const msg = 
-`📊 *REKAP TUTUP SHIFT - ${storeInfo.name.toUpperCase()}*
-━━━━━━━━━━━━━━━━━━
-📅 *Waktu:* ${timeStr}
-⏰ *Shift:* ${String(d.shiftType).toUpperCase()}
-👤 *Kasir Bertugas:* ${d.cashierName}
-
-💰 *RINCIAN OMSET PENJUALAN:*
-• Tunai (Cash): ${fmtRp(d.cashSales)}
-• QRIS: ${fmtRp(d.qrisSales)}
-• Debit / Transfer: ${fmtRp(d.transferSales)}
-👉 *TOTAL OMSET: ${fmtRp(d.totalOmset)}*
-
-💵 *REKONSILIASI KAS LACI:*
-• Modal Awal: ${fmtRp(d.startingCash)}
-• Penjualan Tunai: +${fmtRp(d.cashSales)}
-• Target Kas Laci: ${fmtRp(d.expectedCash)}
-• Fisik Dihitung: ${fmtRp(d.actualCash)}
-━━━━━━━━━━━━━━━━━━
-⚖️ *STATUS SELISIH KAS:*
-*${selisihLabel}*
-_${statusNote}_
-
-_(Dikirim otomatis oleh Bot Kasir Kopi Sembilan)_`;
+  const msg = formatShiftAuditWAMessage(d);
 
   try {
     let result = null;
@@ -5225,39 +5232,7 @@ async function sendShiftAuditToOwnerWA() {
   }
 
   let ownerPhone = localStorage.getItem('ks_owner_wa') || waGatewayConfig?.target_phone || storeInfo.phone || '08132869806';
-
-  const d = currentShiftAuditData;
-  const isMinus = d.difference < 0;
-  const isKlop = d.difference === 0;
-  const selisihLabel = isKlop ? '✅ PAS (Rp 0)' : (isMinus ? `❌ MINUS ${fmtRp(Math.abs(d.difference))}` : `⚠️ LEBIH ${fmtRp(d.difference)}`);
-  const statusNote = isKlop 
-    ? 'Uang fisik di laci klop dengan target sistem.' 
-    : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.');
-
-  const timeStr = getIndoDateTime(d.date || new Date(), { dateStyle: 'full', timeStyle: 'short' });
-
-  const msg = 
-`📊 *REKAP TUTUP SHIFT - ${storeInfo.name.toUpperCase()}*
-━━━━━━━━━━━━━━━━━━
-📅 *Waktu:* ${timeStr}
-⏰ *Shift:* ${String(d.shiftType).toUpperCase()}
-👤 *Kasir Bertugas:* ${d.cashierName}
-
-💰 *RINCIAN OMSET PENJUALAN:*
-• Tunai (Cash): ${fmtRp(d.cashSales)}
-• QRIS: ${fmtRp(d.qrisSales)}
-• Debit / Transfer: ${fmtRp(d.transferSales)}
-👉 *TOTAL OMSET: ${fmtRp(d.totalOmset)}*
-
-💵 *REKONSILIASI KAS LACI:*
-• Modal Awal: ${fmtRp(d.startingCash)}
-• Penjualan Tunai: +${fmtRp(d.cashSales)}
-• Target Kas Laci: ${fmtRp(d.expectedCash)}
-• Fisik Dihitung: ${fmtRp(d.actualCash)}
-━━━━━━━━━━━━━━━━━━
-⚖️ *STATUS SELISIH KAS:*
-*${selisihLabel}*
-_${statusNote}_`;
+  const msg = formatShiftAuditWAMessage(currentShiftAuditData);
 
   const waUrl = `https://wa.me/${formatPhoneWA(ownerPhone)}?text=${encodeURIComponent(msg)}`;
   window.open(waUrl, '_blank');
