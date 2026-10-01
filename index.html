@@ -721,7 +721,10 @@
       </div>
       <div class="form-group">
         <label>Uang Modal Kas Awal (Rp)</label>
-        <input type="text" inputmode="numeric" class="form-input" id="open-shift-cash" value="250.000" placeholder="250.000" oninput="formatPriceInput(this)">
+        <input type="text" inputmode="numeric" class="form-input" id="open-shift-cash" value="" placeholder="Hitung uang di laci lalu masukkan di sini..." oninput="formatPriceInput(this)" autocomplete="off">
+        <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:3px;">
+          Hitung uang fisik yang ada di dalam laci kas sebelum shift dimulai.
+        </small>
       </div>
       <div class="form-group">
         <label>Catatan Pembukaan (Opsional)</label>

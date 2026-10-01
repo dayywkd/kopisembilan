@@ -4640,7 +4640,7 @@ function updateTopBarShiftBadge() {
 
 function openModalOpenShift() {
   const cashInput = document.getElementById('open-shift-cash');
-  if (cashInput && !cashInput.value) cashInput.value = '250.000';
+  if (cashInput) cashInput.value = '';
   
   // Rekomendasi shift otomatis berdasarkan jam operasional saat ini (WIB)
   const currentHour = parseInt(new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: 'numeric', hour12: false }).format(new Date()));
@@ -4661,12 +4661,15 @@ function openModalOpenShift() {
 
 async function submitOpenShift() {
   const shiftType = document.getElementById('open-shift-type')?.value || 'pagi';
-  const cashVal = parsePrice(document.getElementById('open-shift-cash')?.value);
+  const cashInput = document.getElementById('open-shift-cash');
+  const rawCash = cashInput ? cashInput.value.trim() : '';
+  const cashVal = parsePrice(rawCash);
   const note = document.getElementById('open-shift-note')?.value.trim() || '';
   const staffInput = document.getElementById('open-shift-staff-name')?.value.trim();
 
-  if (isNaN(cashVal) || cashVal < 0) {
-    showToast('Nominal modal kas awal tidak valid!', 'error');
+  if (!rawCash || isNaN(cashVal) || cashVal < 0) {
+    showToast('Wajib memasukkan nominal uang modal yang ada di laci!', 'error');
+    if (cashInput) cashInput.focus();
     return;
   }
 

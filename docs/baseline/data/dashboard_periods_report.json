@@ -1,0 +1,113 @@
+{
+  "timestamp": "2026-09-22T13:23:22.621Z",
+  "environment": "Vanilla JS (Sistem Eksisting)",
+  "database": "Production Supabase (3,826 Transaksi Riil)",
+  "results": {
+    "monthly": {
+      "periodName": "Bulanan",
+      "periodKey": "monthly",
+      "durationMs": 8665,
+      "requestsCount": 14,
+      "payloadKB": "92.15",
+      "longTasksCount": 2,
+      "longTasks": [
+        {
+          "name": "self",
+          "duration": 6016,
+          "startTime": 7690,
+          "blocking": 5966
+        },
+        {
+          "name": "self",
+          "duration": 1108,
+          "startTime": 13803,
+          "blocking": 1058
+        }
+      ],
+      "tbtMs": 7024,
+      "jsHeapUsedMB": "7.57",
+      "jsHeapTotalMB": "30.00",
+      "stats": {
+        "rev": "Rp 26.430.000",
+        "txCount": "507",
+        "sold": "953",
+        "chartTitle": "Pendapatan Bulanan (2026)",
+        "topList": [
+          {
+            "title": "Kopi Susu Sembilan",
+            "qty": "149 porsi"
+          },
+          {
+            "title": "Butterscotch - Regular",
+            "qty": "139 porsi"
+          },
+          {
+            "title": "Filter Coffee",
+            "qty": "93 porsi"
+          },
+          {
+            "title": "Black - Specialty",
+            "qty": "76 porsi"
+          }
+        ]
+      },
+      "screenshots": {
+        "clean": "C:\\Users\\ASUS\\.gemini\\antigravity\\brain\\1a146654-7baa-4687-8332-9cd4b58b4bdd\\baseline_dashboard_monthly.png",
+        "devtools": "C:\\Users\\ASUS\\.gemini\\antigravity\\brain\\1a146654-7baa-4687-8332-9cd4b58b4bdd\\baseline_devtools_monthly.png"
+      }
+    },
+    "yearly": {
+      "periodName": "Tahunan",
+      "periodKey": "yearly",
+      "durationMs": 5889,
+      "requestsCount": 42,
+      "payloadKB": "211.84",
+      "longTasksCount": 2,
+      "longTasks": [
+        {
+          "name": "self",
+          "duration": 3261,
+          "startTime": 21172,
+          "blocking": 3211
+        },
+        {
+          "name": "self",
+          "duration": 591,
+          "startTime": 24449,
+          "blocking": 541
+        }
+      ],
+      "tbtMs": 3752,
+      "jsHeapUsedMB": "16.24",
+      "jsHeapTotalMB": "30.25",
+      "stats": {
+        "rev": "Rp 213.236.300",
+        "txCount": "3827",
+        "sold": "8060",
+        "chartTitle": "Pendapatan Per Tahun (2024 - 2026)",
+        "topList": [
+          {
+            "title": "Kopi Susu Sembilan",
+            "qty": "997 porsi"
+          },
+          {
+            "title": "Butterscotch - Regular",
+            "qty": "918 porsi"
+          },
+          {
+            "title": "Filter Coffee",
+            "qty": "658 porsi"
+          },
+          {
+            "title": "Black - Specialty",
+            "qty": "462 porsi"
+          }
+        ]
+      },
+      "screenshots": {
+        "clean": "C:\\Users\\ASUS\\.gemini\\antigravity\\brain\\1a146654-7baa-4687-8332-9cd4b58b4bdd\\baseline_dashboard_yearly.png",
+        "devtools": "C:\\Users\\ASUS\\.gemini\\antigravity\\brain\\1a146654-7baa-4687-8332-9cd4b58b4bdd\\baseline_devtools_yearly.png"
+      }
+    }
+  }
+}
