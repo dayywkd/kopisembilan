@@ -5109,6 +5109,11 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
   `;
 
   openModal('modal-shift-audit');
+  const phoneDisplay = document.getElementById('shift-audit-owner-phone');
+  if (phoneDisplay) {
+    const activeOwnerPhone = localStorage.getItem('ks_owner_wa') || waGatewayConfig?.target_phone || storeInfo.phone || '08132869806';
+    phoneDisplay.textContent = activeOwnerPhone;
+  }
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -5259,19 +5264,72 @@ _${statusNote}_`;
 }
 window.sendShiftAuditToOwnerWA = sendShiftAuditToOwnerWA;
 
-function changeOwnerWANumber() {
-  const current = localStorage.getItem('ks_owner_wa') || storeInfo.phone || '08132869806';
-  const input = prompt('Masukkan nomor WhatsApp Owner untuk menerima laporan rekap shift:\n(Contoh: 08132869806):', current);
-  if (input !== null) {
-    const clean = input.trim();
-    if (clean) {
-      localStorage.setItem('ks_owner_wa', clean);
-      showToast('Nomor WhatsApp Owner berhasil disimpan: ' + clean, 'success');
-    } else {
-      localStorage.removeItem('ks_owner_wa');
-      showToast('Nomor WhatsApp Owner direset ke default (08132869806)', 'info');
-    }
+function openChangeOwnerWAModal() {
+  const current = localStorage.getItem('ks_owner_wa') || waGatewayConfig?.target_phone || storeInfo.phone || '08132869806';
+  const input = document.getElementById('input-new-owner-wa');
+  if (input) {
+    input.value = current;
   }
+  openModal('modal-change-owner-wa');
+  setTimeout(() => {
+    if (input) input.focus();
+  }, 150);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+window.openChangeOwnerWAModal = openChangeOwnerWAModal;
+
+async function submitSaveOwnerWA() {
+  const input = document.getElementById('input-new-owner-wa');
+  const raw = input?.value || '';
+  let clean = raw.replace(/\D/g, '');
+
+  if (!clean || clean.length < 9) {
+    showToast('Masukkan nomor WhatsApp yang sah (minimal 9 digit)!', 'error');
+    if (input) input.focus();
+    return;
+  }
+
+  if (clean.startsWith('62')) {
+    clean = '0' + clean.slice(2);
+  } else if (!clean.startsWith('0')) {
+    clean = '0' + clean;
+  }
+
+  // Simpan ke localStorage
+  localStorage.setItem('ks_owner_wa', clean);
+
+  // Update konfigurasi runtime
+  if (waGatewayConfig) {
+    waGatewayConfig.target_phone = clean;
+  }
+
+  // Perbarui tampilan nomor di modal audit
+  const phoneDisplay = document.getElementById('shift-audit-owner-phone');
+  if (phoneDisplay) phoneDisplay.textContent = clean;
+
+  // Perbarui input di tab Settings jika sedang terbuka
+  const settingsInput = document.getElementById('settings-wa-target-phone');
+  if (settingsInput) settingsInput.value = clean;
+
+  closeModal('modal-change-owner-wa');
+  showToast(`Nomor WhatsApp Owner berhasil disimpan: ${clean}`, 'success');
+  addActivityLog('Update WA Owner', `Nomor baru: ${clean}`);
+
+  // Sinkronkan ke database Supabase
+  try {
+    const updatedCfg = {
+      ...(waGatewayConfig || {}),
+      target_phone: clean
+    };
+    await db.from('settings').upsert({ key: 'wa_gateway', value: updatedCfg }, { onConflict: 'key' });
+  } catch (err) {
+    console.warn('Sync owner WA to db warning:', err);
+  }
+}
+window.submitSaveOwnerWA = submitSaveOwnerWA;
+
+function changeOwnerWANumber() {
+  openChangeOwnerWAModal();
 }
 window.changeOwnerWANumber = changeOwnerWANumber;
 

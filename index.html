@@ -791,16 +791,62 @@
     <div class="modal-body" id="shift-audit-content">
       <!-- Diisi secara dinamis -->
     </div>
-    <div class="modal-footer" style="display:flex; flex-direction:column; gap:8px;">
+    <div class="modal-footer" style="display:flex; flex-direction:column; gap:10px; padding:16px;">
+      <!-- Bar Info Nomor WhatsApp Owner + Tombol Ubah -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:8px; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i data-lucide="smartphone" style="width:18px;height:18px;"></i>
+          </div>
+          <div style="line-height:1.2;">
+            <div style="font-size:10px; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.3px;">Nomor WA Owner:</div>
+            <div id="shift-audit-owner-phone" style="font-size:13px; font-weight:700; color:#0f172a; margin-top:2px;">08132869806</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" id="btn-open-change-owner-wa" style="font-size:11px; padding:6px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:5px; font-weight:700; background:white;" onclick="openChangeOwnerWAModal()">
+          <i data-lucide="edit-3" style="width:13px;height:13px;"></i> Ubah Nomor
+        </button>
+      </div>
+
+      <!-- Tombol Aksi Utama -->
       <div style="display:flex; gap:8px; width:100%;">
-        <button class="btn btn-green" id="btn-send-audit-wa" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 14px; font-weight:700;" onclick="sendShiftAuditToOwnerWA()">
+        <button class="btn btn-green" id="btn-send-audit-wa" style="flex:1.5; display:flex; align-items:center; justify-content:center; gap:6px; padding:12px 14px; font-weight:700; border-radius:8px;" onclick="sendShiftAuditToOwnerWA()">
           <i data-lucide="send" style="width:16px;height:16px;"></i> Kirim WA ke Owner
         </button>
-        <button class="btn btn-brown" style="flex:1;" onclick="closeModal('modal-shift-audit')">Selesai & Tutup</button>
+        <button class="btn btn-brown" style="flex:1; border-radius:8px; padding:12px 14px;" onclick="closeModal('modal-shift-audit')">Selesai & Tutup</button>
       </div>
-      <div style="display:flex; justify-content:center;">
-        <a href="javascript:void(0)" onclick="changeOwnerWANumber()" style="font-size:11px; color:var(--text-muted); text-decoration:underline;">Ubah Nomor WhatsApp Owner</a>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ubah Nomor WhatsApp Owner -->
+<div class="modal-overlay modal-overlay-center" id="modal-change-owner-wa" style="z-index: 1100;">
+  <div class="modal" style="max-width: 420px;">
+    <div class="modal-header">
+      <h3 style="display:flex; align-items:center; gap:8px; font-size:16px;">
+        <i data-lucide="smartphone" style="width:18px;height:18px;color:var(--accent);"></i> Ubah Nomor WA Owner
+      </h3>
+      <button class="modal-close" onclick="closeModal('modal-change-owner-wa')"><i data-lucide="x" style="width:18px;height:18px;"></i></button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px;">
+      <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px; line-height:1.5;">
+        Nomor WhatsApp Owner ini akan menerima seluruh laporan rekap kasir otomatis setiap kali shift ditutup.
+      </p>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:700; color:var(--brown-900); margin-bottom:6px; display:block;">Nomor WhatsApp Owner (Aktif)</label>
+        <div style="position:relative;">
+          <input type="tel" inputmode="tel" class="form-input" id="input-new-owner-wa" placeholder="Contoh: 08132869806" style="font-size:15px; font-weight:700; padding:10px 14px; border:1.5px solid var(--border); border-radius:8px;">
+        </div>
+        <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:6px;">
+          💡 Rekap dari Bot <strong>081952538106</strong> akan otomatis meluncur ke nomor ini.
+        </small>
       </div>
+    </div>
+    <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; padding:14px 20px;">
+      <button type="button" class="btn btn-outline" style="border-radius:8px; padding:8px 16px;" onclick="closeModal('modal-change-owner-wa')">Batal</button>
+      <button type="button" class="btn btn-brown" style="border-radius:8px; padding:8px 18px; display:flex; align-items:center; gap:6px; font-weight:700;" onclick="submitSaveOwnerWA()">
+        <i data-lucide="check" style="width:16px;height:16px;"></i> Simpan Nomor
+      </button>
     </div>
   </div>
 </div>
