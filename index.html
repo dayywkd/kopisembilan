@@ -221,11 +221,14 @@
 
         <div id="staff-input-wrap" class="form-group" style="display:none; margin-top:16px; background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border);">
           <label style="font-weight:700; color:var(--brown-900); display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:6px;">
-            <i data-lucide="user-check" style="width:16px;height:16px;color:var(--accent);"></i> Nama Karyawan yang Mengambil Minuman
+            <i data-lucide="user-check" style="width:16px;height:16px;color:var(--accent);"></i> Nama Karyawan / Barista Penerima Jatah
           </label>
-          <select class="form-select" id="staff-name-select" onchange="checkStaffDailyQuota()">
-            <option value="">-- Pilih Nama Karyawan --</option>
-          </select>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <select class="form-select" id="staff-name-select" onchange="onStaffSelectChange()">
+              <option value="">-- Memuat Nama Karyawan... --</option>
+            </select>
+            <input type="text" class="form-input" id="staff-custom-name" placeholder="Ketik nama karyawan lain..." style="display:none;" oninput="checkStaffDailyQuota()">
+          </div>
           <div id="staff-quota-badge" style="font-size:11px; margin-top:8px; line-height:1.4;"></div>
         </div>
 

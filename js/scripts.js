@@ -1004,26 +1004,77 @@ function selectPayMethod(el) {
   }
 }
 
+function onStaffSelectChange() {
+  const select = document.getElementById('staff-name-select');
+  const customInput = document.getElementById('staff-custom-name');
+  if (select && customInput) {
+    if (select.value === '__custom__') {
+      customInput.style.display = 'block';
+      customInput.focus();
+    } else {
+      customInput.style.display = 'none';
+    }
+  }
+  checkStaffDailyQuota();
+}
+
 async function populateStaffSelect() {
   const select = document.getElementById('staff-name-select');
   if (!select) return;
-  // Jika sudah terisi, tidak perlu fetch ulang
-  if (select.options.length > 1) return;
+
+  const activeStaff = getActiveCashierName() || (currentUser ? currentUser.name : 'Kasir');
+  const shiftText = activeShift ? `Shift ${activeShift.shift_type.toUpperCase()}` : 'Kasir';
 
   try {
-    const { data: usersList, error } = await db.from('users').select('id, name, username, role').eq('active', true).order('name');
-    if (!error && usersList) {
-      select.innerHTML = '<option value="">-- Pilih Nama Karyawan --</option>' + 
-        usersList.map(u => `<option value="${escapeAttr(u.name || u.username)}">${escapeAttr(u.name || u.username)} (${u.role.toUpperCase()})</option>`).join('');
-      
-      // Auto pilih jika user yang login adalah kasir
-      if (currentUser && currentUser.name) {
-        select.value = currentUser.name;
-        checkStaffDailyQuota();
-      }
+    const { data: usersList } = await db.from('users').select('id, name, username, role').eq('active', true).order('name');
+    const today = getIndoDate();
+    const { data: attendList } = await db.from('attendance').select('user_name').eq('date', today);
+
+    const namesSet = new Set();
+    if (activeStaff) namesSet.add(activeStaff);
+
+    if (usersList) {
+      usersList.forEach(u => {
+        if (u.name) namesSet.add(u.name);
+        else if (u.username) namesSet.add(u.username);
+      });
     }
+
+    if (attendList) {
+      attendList.forEach(a => {
+        if (a.user_name) namesSet.add(a.user_name);
+      });
+    }
+
+    let optionsHtml = '';
+    // Pilihan pertama: Barista aktif yang sedang bertugas di shift ini
+    optionsHtml += `<option value="${escapeAttr(activeStaff)}">${escapeAttr(activeStaff)} (Bertugas ${shiftText})</option>`;
+
+    namesSet.forEach(name => {
+      if (name !== activeStaff) {
+        optionsHtml += `<option value="${escapeAttr(name)}">${escapeAttr(name)}</option>`;
+      }
+    });
+
+    optionsHtml += `<option value="__custom__">+ Ketik Nama Karyawan Lain...</option>`;
+    select.innerHTML = optionsHtml;
+    select.value = activeStaff;
+
+    const customInput = document.getElementById('staff-custom-name');
+    if (customInput) {
+      customInput.style.display = 'none';
+      customInput.value = '';
+    }
+
+    checkStaffDailyQuota();
   } catch (e) {
-    console.error('Error fetching staff list:', e);
+    console.error('Error populating staff list:', e);
+    select.innerHTML = `
+      <option value="${escapeAttr(activeStaff)}">${escapeAttr(activeStaff)} (Bertugas ${shiftText})</option>
+      <option value="__custom__">+ Ketik Nama Karyawan Lain...</option>
+    `;
+    select.value = activeStaff;
+    checkStaffDailyQuota();
   }
 }
 
@@ -1031,45 +1082,90 @@ let isStaffOverQuota = false;
 async function checkStaffDailyQuota() {
   const select = document.getElementById('staff-name-select');
   const badge = document.getElementById('staff-quota-badge');
-  if (!select || !badge) return;
+  if (!badge) return;
 
-  const staffName = select.value.trim();
-  if (!staffName) {
-    badge.innerHTML = '';
-    isStaffOverQuota = false;
+  // 1. Cek apakah ada Shift Kasir aktif
+  if (!activeShift) {
+    isStaffOverQuota = true;
+    badge.innerHTML = `
+      <div style="background:#fee2e2; border:1px solid #ef4444; color:#b91c1c; padding:8px 12px; border-radius:8px; font-weight:600;">
+        ⚠️ Belum ada Shift Kasir yang dibuka! Buka Shift Kasir terlebih dahulu sebelum transaksi jatah staf.
+      </div>
+    `;
     return;
   }
 
-  badge.innerHTML = '<span style="color:var(--text-muted);">Memeriksa kuota harian...</span>';
+  let staffName = '';
+  if (select) {
+    if (select.value === '__custom__') {
+      const customInput = document.getElementById('staff-custom-name');
+      staffName = customInput ? customInput.value.trim() : '';
+    } else {
+      staffName = select.value.trim();
+    }
+  }
+  if (!staffName) {
+    staffName = getActiveCashierName() || (currentUser ? currentUser.name : 'Kasir');
+  }
+
+  badge.innerHTML = '<span style="color:var(--text-muted); font-size:11px;">Memeriksa jatah shift...</span>';
   try {
-    const today = getIndoDate();
-    const startIso = `${today}T00:00:00+07:00`;
-    const endIso = `${today}T23:59:59+07:00`;
+    const shiftStart = activeShift.opened_at;
+    const shiftType = (activeShift.shift_type || 'pagi').toUpperCase();
+    const MAX_QUOTA = 2; // Kuota 2 cup per shift kasir
 
+    // Ambil transaksi 'staff' pada rentang waktu shift kasir aktif saat ini
     const { data: prevOrders, error } = await db.from('transactions')
-      .select('id, notes, date')
+      .select('id, notes, date, transaction_items(qty)')
       .eq('payment_method', 'staff')
-      .gte('date', startIso)
-      .lte('date', endIso)
-      .ilike('notes', `%${staffName}%`);
+      .gte('date', shiftStart);
 
-    const count = (prevOrders || []).length;
-    if (count >= 1) {
+    let usedCups = 0;
+    if (prevOrders && prevOrders.length > 0) {
+      prevOrders.forEach(o => {
+        if (o.transaction_items && o.transaction_items.length > 0) {
+          o.transaction_items.forEach(it => {
+            usedCups += (Number(it.qty) || 1);
+          });
+        } else {
+          usedCups += 1;
+        }
+      });
+    }
+
+    const currentCartQty = (typeof cart !== 'undefined' && Array.isArray(cart)) 
+      ? cart.reduce((sum, it) => sum + (Number(it.qty) || 1), 0)
+      : 1;
+
+    const remaining = Math.max(0, MAX_QUOTA - usedCups);
+
+    if (usedCups >= MAX_QUOTA) {
       isStaffOverQuota = true;
       badge.innerHTML = `
-        <div style="background:#fee2e2; border:1px solid #ef4444; color:#b91c1c; padding:6px 10px; border-radius:6px; font-weight:600;">
-          ⚠️ Karyawan ini sudah mengambil ${count} cup hari ini! Transaksi ini akan ditandai: <strong>[DI LUAR JATAH]</strong> untuk audit owner.
+        <div style="background:#fee2e2; border:1px solid #ef4444; color:#b91c1c; padding:8px 12px; border-radius:8px; font-weight:600;">
+          ⚠️ Kuota Shift ${shiftType} sudah habis (${usedCups}/${MAX_QUOTA} cup terpakai)!<br>
+          <span style="font-size:10px; font-weight:normal;">Transaksi ini akan ditandai: <strong>[DI LUAR JATAH]</strong> untuk audit owner. (Reset otomatis ke 2 cup saat ganti shift)</span>
+        </div>
+      `;
+    } else if (usedCups + currentCartQty > MAX_QUOTA) {
+      isStaffOverQuota = true;
+      badge.innerHTML = `
+        <div style="background:#fffbeb; border:1px solid #fde68a; color:#b45309; padding:8px 12px; border-radius:8px; font-weight:600;">
+          ⚠️ Sisa jatah Shift ${shiftType} tinggal <strong>${remaining} cup</strong> (pesanan saat ini: ${currentCartQty} cup).<br>
+          <span style="font-size:10px; font-weight:normal;">Pesanan ini melebihi kuota 2 cup/shift dan akan ditandai: <strong>[DI LUAR JATAH]</strong>.</span>
         </div>
       `;
     } else {
       isStaffOverQuota = false;
       badge.innerHTML = `
-        <div style="background:#dcfce7; border:1px solid #22c55e; color:#15803d; padding:6px 10px; border-radius:6px; font-weight:600;">
-          ✅ Jatah staf hari ini tersedia (0/1 cup digunakan).
+        <div style="background:#dcfce7; border:1px solid #22c55e; color:#15803d; padding:8px 12px; border-radius:8px; font-weight:600;">
+          ✅ Jatah Shift ${shiftType} tersedia (${usedCups}/${MAX_QUOTA} cup terpakai). Sisa kuota: <strong>${remaining} cup</strong>.<br>
+          <span style="font-size:10px; font-weight:normal;">Penerima: <strong>${escapeHtml(staffName)}</strong> | Reset otomatis ke 2 cup saat ganti shift.</span>
         </div>
       `;
     }
   } catch (e) {
+    console.error('Error checking staff shift quota:', e);
     badge.innerHTML = '';
     isStaffOverQuota = false;
   }
@@ -1435,17 +1531,22 @@ async function confirmPayment(sendMode = 'none') {
 
     // 2. Cek nama staf
     const staffSelect = document.getElementById('staff-name-select');
-    const staffName = staffSelect ? staffSelect.value.trim() : '';
+    let staffName = '';
+    if (staffSelect) {
+      if (staffSelect.value === '__custom__') {
+        const customInput = document.getElementById('staff-custom-name');
+        staffName = customInput ? customInput.value.trim() : '';
+      } else {
+        staffName = staffSelect.value.trim();
+      }
+    }
     if (!staffName) {
-      showToast('Wajib memilih nama karyawan penerima jatah!', 'error');
-      if (staffSelect) staffSelect.focus();
-      payButtons.forEach(btn => btn.disabled = false);
-      isProcessingPayment = false;
-      return;
+      staffName = getActiveCashierName() || (currentUser ? currentUser.name : 'Kasir');
     }
 
+    const currentShiftType = activeShift ? activeShift.shift_type.toUpperCase() : 'UMUM';
     const quotaTag = isStaffOverQuota ? '[DI LUAR JATAH]' : '[JATAH SAH]';
-    finalNote = `[JATAH STAF: ${staffName} ${quotaTag}] ${note}`.trim();
+    finalNote = `[JATAH STAF: ${staffName} ${quotaTag} (Shift ${currentShiftType})] ${note}`.trim();
     cashAmount = 0;
     cashChange = 0;
   } else if (selectedPaymentMethod === 'cash') {
@@ -4439,6 +4540,13 @@ function generateStaffDrinksSummaryHTML(transactionsList) {
     `;
   }).join('');
 
+  const totalCups = staffTxns.reduce((sum, t) => {
+    if (t.transaction_items && t.transaction_items.length > 0) {
+      return sum + t.transaction_items.reduce((s, it) => s + (Number(it.qty) || 1), 0);
+    }
+    return sum + 1;
+  }, 0);
+
   return `
     <div class="card" style="margin-bottom:20px; border-left:4px solid #d97706; padding:0; overflow:hidden;">
       <div style="background:#fffbeb; padding:12px 18px; border-bottom:1px solid #fef3c7; display:flex; justify-content:space-between; align-items:center;">
@@ -4446,7 +4554,7 @@ function generateStaffDrinksSummaryHTML(transactionsList) {
           <i data-lucide="coffee" style="width:18px;height:18px;color:#d97706;"></i>
           <span style="font-weight:700; font-size:13px; color:#92400e;">Log Konsumsi Minuman Karyawan (Staff Drinks)</span>
         </div>
-        <span class="badge badge-amber">${staffTxns.length} Cup Terambil</span>
+        <span class="badge badge-amber">${totalCups} Cup Terambil</span>
       </div>
       <div style="overflow-x:auto;">
         <table class="table" style="margin:0;">
@@ -4778,7 +4886,7 @@ function showShiftAuditResult({ shiftType, cashierName, startingCash, cashSales,
           STATUS SELISIH KAS LACI
         </div>
         <div style="font-size:22px; font-weight:800; color:${isKlop ? '#15803d' : (isMinus ? '#b91c1c' : '#b45309')}; margin:4px 0;">
-          ${isKlop ? 'KLOP / PAS (Rp 0)' : (isMinus ? `MINUS ${fmtRp(Math.abs(difference))}` : `LEBIH ${fmtRp(difference)}`)}
+          ${isKlop ? 'PAS (Rp 0)' : (isMinus ? `MINUS ${fmtRp(Math.abs(difference))}` : `LEBIH ${fmtRp(difference)}`)}
         </div>
         <div style="font-size:11px; color:var(--text-muted);">
           ${isKlop ? 'Uang fisik di laci sesuai dengan perhitungan sistem.' : (isMinus ? 'Uang fisik di laci KURANG dari target sistem.' : 'Uang fisik di laci LEBIH dari target sistem.')}
@@ -4903,7 +5011,7 @@ async function renderShifts(el) {
       const diff = Number(s.difference) || 0;
       let diffBadge = '<span class="badge badge-amber">Aktif (Open)</span>';
       if (isClosed) {
-        if (diff === 0) diffBadge = '<span class="badge badge-green">Klop (Pas)</span>';
+        if (diff === 0) diffBadge = '<span class="badge badge-green">Pas</span>';
         else if (diff < 0) diffBadge = `<span class="badge badge-red">Minus ${fmtRp(Math.abs(diff))}</span>`;
         else diffBadge = `<span class="badge badge-blue">Lebih ${fmtRp(diff)}</span>`;
       }
