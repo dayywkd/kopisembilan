@@ -4998,17 +4998,7 @@ function sendShiftAuditToOwnerWA() {
     showToast('Data audit shift tidak tersedia!', 'error');
     return;
   }
-  let ownerPhone = localStorage.getItem('ks_owner_wa');
-  if (!ownerPhone) {
-    const defaultNum = storeInfo.phone || '085336688839';
-    const input = prompt('Masukkan nomor WhatsApp Owner untuk menerima laporan rekap shift:\n(Contoh: 085336688839 atau 08123456789)', defaultNum);
-    if (!input || !input.trim()) {
-      showToast('Pengiriman rekap WA dibatalkan.', 'info');
-      return;
-    }
-    ownerPhone = input.trim();
-    localStorage.setItem('ks_owner_wa', ownerPhone);
-  }
+  let ownerPhone = localStorage.getItem('ks_owner_wa') || storeInfo.phone || '08132869806';
 
   const d = currentShiftAuditData;
   const isMinus = d.difference < 0;
@@ -5049,8 +5039,8 @@ _${statusNote}_`;
 window.sendShiftAuditToOwnerWA = sendShiftAuditToOwnerWA;
 
 function changeOwnerWANumber() {
-  const current = localStorage.getItem('ks_owner_wa') || storeInfo.phone || '085336688839';
-  const input = prompt('Masukkan nomor WhatsApp Owner untuk menerima laporan rekap shift:\n(Contoh: 085336688839 atau 08123456789)', current);
+  const current = localStorage.getItem('ks_owner_wa') || storeInfo.phone || '08132869806';
+  const input = prompt('Masukkan nomor WhatsApp Owner untuk menerima laporan rekap shift:\n(Contoh: 08132869806):', current);
   if (input !== null) {
     const clean = input.trim();
     if (clean) {
@@ -5058,7 +5048,7 @@ function changeOwnerWANumber() {
       showToast('Nomor WhatsApp Owner berhasil disimpan: ' + clean, 'success');
     } else {
       localStorage.removeItem('ks_owner_wa');
-      showToast('Nomor WhatsApp Owner dihapus (kembali ke default)', 'info');
+      showToast('Nomor WhatsApp Owner direset ke default (08132869806)', 'info');
     }
   }
 }
