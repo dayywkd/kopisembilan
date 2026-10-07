@@ -3271,18 +3271,30 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
   }
 
   if (period === 'yearly') {
+    // Tampilan tahunan per bulan: Januari s/d Desember pada tahun terpilih
     const currentYear = getJakartaYear(refDate);
-    const years = [currentYear - 2, currentYear - 1, currentYear];
-    const labels = years.map(y => String(y));
+    const labels = monthNames; // ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
     const values = labels.map(() => 0);
+    const counts = labels.map(() => 0);
+
     txns.forEach(t => {
       if (t.payment_status && t.payment_status !== 'Lunas') return;
       const d = parseSafeDate(t.date);
-      const y = getJakartaYear(d);
-      const idx = years.indexOf(y);
-      if (idx >= 0) values[idx] += Number(t.total) || 0;
+      if (getJakartaYear(d) === currentYear) {
+        const m = getJakartaMonth(d);
+        if (m >= 0 && m < 12) {
+          values[m] += Number(t.total) || 0;
+          counts[m] += 1;
+        }
+      }
     });
-    return { labels, values, title: `Pendapatan Per Tahun (${years[0]} - ${years[years.length - 1]})` };
+
+    return {
+      labels,
+      values,
+      counts,
+      title: `Pendapatan Tahun ${currentYear} (Januari - Desember)`
+    };
   }
 
   const labels = [];
@@ -3350,12 +3362,19 @@ function renderDashboardRevenueChart(period = 'weekly') {
             title: function (items) {
               if (!items || !items.length) return '';
               const label = items[0].label;
+              const idx = items[0].dataIndex;
               if (period === 'monthly') {
                 const refDate = parseSafeDate(selectedDateStr + 'T12:00:00');
                 const m = getJakartaMonth(refDate);
                 const y = getJakartaYear(refDate);
                 const indoMonthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
                 return `Tanggal ${label} ${indoMonthNames[m]} ${y}`;
+              }
+              if (period === 'yearly') {
+                const refDate = parseSafeDate(selectedDateStr + 'T12:00:00');
+                const y = getJakartaYear(refDate);
+                const indoMonthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                return `Bulan ${indoMonthNames[idx]} ${y}`;
               }
               if (period === 'daily' || period === 'peak_hours') {
                 return `Pukul ${label} WIB`;
@@ -3371,6 +3390,10 @@ function renderDashboardRevenueChart(period = 'weekly') {
               if (period === 'peak_hours' && series.counts) {
                 const cnt = series.counts[idx] || 0;
                 return ` Omzet: ${fmtRp(val)} (${cnt} transaksi)`;
+              }
+              if (period === 'yearly' && series.counts) {
+                const cnt = series.counts[idx] || 0;
+                return ` Total Omzet: ${fmtRp(val)} (${cnt} transaksi)`;
               }
               return ` Pendapatan: ${fmtRp(val)}`;
             }
@@ -3460,7 +3483,7 @@ async function renderDashboard(el) {
                   <button onclick="selectQuickPreset('weekly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">7 Hari Terakhir</button>
                   <button onclick="selectQuickPreset('monthly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Bulan Ini</button>
                   <button onclick="selectQuickPreset('peak_hours')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Jam Ramai</button>
-                  <button onclick="selectQuickPreset('yearly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Tahun Ini</button>
+                  <button onclick="selectQuickPreset('yearly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Tahun Ini (Jan-Des)</button>
                 </div>
               </div>
               <div class="kibana-time-picker-date">
@@ -3473,7 +3496,7 @@ async function renderDashboard(el) {
               <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')" title="Filter 7 hari terakhir">7 Hari</button>
               <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')" title="Filter tgl 1 s/d akhir bulan">Bulan Ini</button>
               <button class="period-tab ${activeDashboardPeriod === 'peak_hours' ? 'active' : ''}" onclick="changeDashboardPeriod('peak_hours')" title="Analisis jam ramai cafe">Jam Ramai</button>
-              <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')" title="Filter tahun ini">Tahun Ini</button>
+              <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')" title="Filter tahun ini (per bulan Jan-Des)">Tahun Ini</button>
             </div>
           </div>
         </div>
@@ -3545,7 +3568,7 @@ async function loadDashboardData() {
     endDateStr = `${yr}-${moStr}-${String(lastDay).padStart(2, '0')}`;
   } else if (activeDashboardPeriod === 'yearly') {
     const yr = refDate.getFullYear();
-    startDateStr = `${yr - 2}-01-01`;
+    startDateStr = `${yr}-01-01`;
     endDateStr = `${yr}-12-31`;
   }
 
