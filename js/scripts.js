@@ -1069,6 +1069,7 @@ function selectPayMethod(el) {
   const cashWrap = document.getElementById('cash-input-wrap');
   const changeDisplay = document.getElementById('change-display');
   const staffWrap = document.getElementById('staff-input-wrap');
+  const splitWrap = document.getElementById('split-input-wrap');
 
   if (qris) qris.style.display = selectedPaymentMethod === 'qris' ? 'block' : 'none';
   if (cashWrap) cashWrap.style.display = selectedPaymentMethod === 'cash' ? 'block' : 'none';
@@ -1083,6 +1084,104 @@ function selectPayMethod(el) {
       // Auto isi input tunai menjadi 0
       const cashIn = document.getElementById('cash-input');
       if (cashIn) cashIn.value = '0';
+    }
+  }
+
+  if (splitWrap) {
+    splitWrap.style.display = selectedPaymentMethod === 'split' ? 'block' : 'none';
+    if (selectedPaymentMethod === 'split') {
+      initSplitPayment();
+    }
+  }
+  updateReceiptPreviewContent();
+}
+
+function initSplitPayment() {
+  const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
+  const totalBillEl = document.getElementById('split-total-bill');
+  if (totalBillEl) totalBillEl.textContent = fmtRp(total);
+
+  updateSplitStatus();
+
+  const cashInput = document.getElementById('split-cash-input');
+  if (cashInput) {
+    setTimeout(() => cashInput.focus(), 150);
+  }
+}
+
+function onSplitCashInput() {
+  updateSplitStatus();
+  updateReceiptPreviewContent();
+}
+
+function onSplitSecondInput() {
+  updateSplitStatus();
+  updateReceiptPreviewContent();
+}
+
+function onSplitMethodChange() {
+  updateSplitStatus();
+  updateReceiptPreviewContent();
+}
+
+function autoFillSplitRemaining() {
+  const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
+  const cash = parsePrice(document.getElementById('split-cash-input')?.value || 0);
+  const remaining = Math.max(0, total - cash);
+  const secondInput = document.getElementById('split-second-input');
+  if (secondInput) {
+    secondInput.value = formatIDR(remaining);
+  }
+  updateSplitStatus();
+  updateReceiptPreviewContent();
+}
+
+function updateSplitStatus() {
+  const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
+  const cash = parsePrice(document.getElementById('split-cash-input')?.value || 0);
+  const second = parsePrice(document.getElementById('split-second-input')?.value || 0);
+  const allocated = cash + second;
+  const balance = total - allocated;
+
+  const totalBillEl = document.getElementById('split-total-bill');
+  const allocatedEl = document.getElementById('split-total-allocated');
+  const balanceLabelEl = document.getElementById('split-balance-label');
+  const balanceValEl = document.getElementById('split-balance-val');
+  const badgeEl = document.getElementById('split-status-badge');
+
+  if (totalBillEl) totalBillEl.textContent = fmtRp(total);
+  if (allocatedEl) allocatedEl.textContent = fmtRp(allocated);
+
+  if (badgeEl && balanceLabelEl && balanceValEl) {
+    if (allocated === 0) {
+      badgeEl.textContent = 'Belum Diisi';
+      badgeEl.style.background = '#F3F4F6';
+      badgeEl.style.color = '#6B7280';
+      balanceLabelEl.textContent = 'Sisa Tagihan:';
+      balanceValEl.textContent = fmtRp(total);
+      balanceValEl.style.color = 'var(--brown-900)';
+    } else if (allocated === total) {
+      badgeEl.textContent = 'Pas (Sesuai)';
+      badgeEl.style.background = '#DEF7EC';
+      badgeEl.style.color = '#03543F';
+      balanceLabelEl.textContent = 'Status:';
+      balanceValEl.textContent = 'Lengkap / Pas';
+      balanceValEl.style.color = '#03543F';
+    } else if (allocated < total) {
+      badgeEl.textContent = 'Kurang ' + fmtRp(balance);
+      badgeEl.style.background = '#FDE8E8';
+      badgeEl.style.color = '#9B1C1C';
+      balanceLabelEl.textContent = 'Kurang:';
+      balanceValEl.textContent = fmtRp(balance);
+      balanceValEl.style.color = '#E02424';
+    } else {
+      const over = allocated - total;
+      badgeEl.textContent = 'Lebih ' + fmtRp(over);
+      badgeEl.style.background = '#FEF08A';
+      badgeEl.style.color = '#713F12';
+      balanceLabelEl.textContent = 'Kelebihan:';
+      balanceValEl.textContent = fmtRp(over);
+      balanceValEl.style.color = '#B45309';
     }
   }
 }
@@ -1283,9 +1382,16 @@ function resetPaymentModalForCheckout() {
   const qris = document.getElementById('qris-display');
   const cashWrap = document.getElementById('cash-input-wrap');
   const staffWrap = document.getElementById('staff-input-wrap');
+  const splitWrap = document.getElementById('split-input-wrap');
   if (qris) qris.style.display = 'none';
   if (cashWrap) cashWrap.style.display = 'block';
   if (staffWrap) staffWrap.style.display = 'none';
+  if (splitWrap) splitWrap.style.display = 'none';
+
+  const splitCashIn = document.getElementById('split-cash-input');
+  const splitSecIn = document.getElementById('split-second-input');
+  if (splitCashIn) splitCashIn.value = '';
+  if (splitSecIn) splitSecIn.value = '';
 
   const phoneGroup = document.getElementById('phone-input-group');
   if (phoneGroup) phoneGroup.style.display = 'none';
@@ -1419,6 +1525,18 @@ function updateReceiptPreviewContent() {
           <span>${fmtRp(total)}</span>
         </div>
         
+        ${selectedPaymentMethod === 'split' && status === 'Lunas' ? `
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-top:4px; opacity:0.85;">
+            <span>METODE:</span><span>SPLIT PAYMENT</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-top:2px; opacity:0.85;">
+            <span>- Tunai:</span><span>${fmtRp(parsePrice(document.getElementById('split-cash-input')?.value || 0))}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-top:2px; opacity:0.85;">
+            <span>- ${((document.getElementById('split-second-method')?.value || 'qris')).toUpperCase()}:</span><span>${fmtRp(parsePrice(document.getElementById('split-second-input')?.value || 0))}</span>
+          </div>
+        ` : ''}
+
         ${status === 'Belum Bayar' ? `<div class="receipt-status">BELUM LUNAS</div>` : ''}
         
         <div class="receipt-footer">
@@ -1642,6 +1760,37 @@ async function confirmPayment(sendMode = 'none') {
       return;
     }
     cashChange = Math.max(0, cashAmount - total);
+  } else if (selectedPaymentMethod === 'split') {
+    const splitCash = parsePrice(document.getElementById('split-cash-input')?.value || 0);
+    const splitSecMethod = document.getElementById('split-second-method')?.value || 'qris';
+    const splitSec = parsePrice(document.getElementById('split-second-input')?.value || 0);
+    const allocated = splitCash + splitSec;
+
+    if (splitCash <= 0 || splitSec <= 0) {
+      showToast('Nominal Tunai dan Non-Tunai wajib diisi pada pembayaran Split!', 'error');
+      payButtons.forEach(btn => btn.disabled = false);
+      isProcessingPayment = false;
+      return;
+    }
+
+    if (allocated < total && status === 'Lunas') {
+      showToast('Total bayar kurang Rp ' + formatIDR(total - allocated) + '!', 'error');
+      payButtons.forEach(btn => btn.disabled = false);
+      isProcessingPayment = false;
+      return;
+    }
+
+    if (allocated > total) {
+      showToast('Total bayar melebihi tagihan sebesar Rp ' + formatIDR(allocated - total) + '!', 'error');
+      payButtons.forEach(btn => btn.disabled = false);
+      isProcessingPayment = false;
+      return;
+    }
+
+    const secLabel = splitSecMethod.toUpperCase();
+    finalNote = ('[SPLIT: Tunai ' + fmtRp(splitCash) + ' + ' + secLabel + ' ' + fmtRp(splitSec) + '] ' + note).trim();
+    cashAmount = splitCash;
+    cashChange = 0;
   }
 
   try {
@@ -2049,6 +2198,7 @@ async function renderReport(el) {
       qris: 'QRIS',
       transfer: 'Transfer',
       card: 'Debit',
+      split: 'Split',
       staff: 'Jatah Staf'
     };
 
@@ -2099,11 +2249,11 @@ async function renderReport(el) {
           </td>
           <td style="font-size:12px; max-width:240px; white-space:normal; word-break:break-word; line-height:1.45; text-align:left;">${itemsText}</td>
           <td style="font-family:monospace; font-size:12px; font-weight:600; color:var(--text);">${t.customer_phone || '<span style="color:#cbd5e1; font-weight:400;">-</span>'}</td>
-          <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : (t.payment_method === 'staff' ? 'badge-amber' : 'badge-blue')}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
+          <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : (t.payment_method === 'split' ? 'badge-purple' : (t.payment_method === 'staff' ? 'badge-amber' : 'badge-blue'))}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
           <td><span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
           <td style="font-weight:700; font-size:13px; color:var(--brown-900); text-align:right;">${fmtRp(t.total)}</td>
-          <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? fmtRp(t.cash_amount || 0) : '<span style="color:#cbd5e1;">-</span>'}</td>
-          <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? ((t.cash_change || 0) > 0 ? fmtRp(t.cash_change) : 'Pas') : '<span style="color:#cbd5e1;">-</span>'}</td>
+          <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? fmtRp(t.cash_amount || 0) : (isLunas && t.payment_method === 'split') ? `<div style="font-size:11px; line-height:1.2;"><div>T: ${fmtRp(t.cash_amount || 0)}</div><div>N: ${fmtRp(Math.max(0, (t.total || 0) - (t.cash_amount || 0)))}</div></div>` : '<span style="color:#cbd5e1;">-</span>'}</td>
+          <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? ((t.cash_change || 0) > 0 ? fmtRp(t.cash_change) : 'Pas') : (isLunas && t.payment_method === 'split') ? 'Pas' : '<span style="color:#cbd5e1;">-</span>'}</td>
           <td>
             <div style="display:flex; gap:6px; justify-content:center;">
               <button class="btn-action" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
@@ -2231,6 +2381,7 @@ async function renderReport(el) {
             <option value="qris">QRIS</option>
             <option value="transfer">Transfer</option>
             <option value="card">Debit</option>
+            <option value="split">Split</option>
             <option value="staff">Jatah Staf</option>
           </select>
         </div>
@@ -3094,6 +3245,10 @@ async function viewTxnDetail(id) {
       ${txn.payment_method === 'cash' && !isBelumBayar ? `
         <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px; opacity:0.8;"><span>BAYAR (TUNAI)</span><span>${fmtRp(txn.cash_amount || 0)}</span></div>
         <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:2px; opacity:0.8;"><span>KEMBALIAN</span><span>${fmtRp(Math.max(0, txn.cash_change || 0))}</span></div>
+      ` : txn.payment_method === 'split' && !isBelumBayar ? `
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px; opacity:0.8;"><span>METODE</span><span>SPLIT PAYMENT</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:2px; opacity:0.8;"><span>- TUNAI</span><span>${fmtRp(txn.cash_amount || 0)}</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:2px; opacity:0.8;"><span>- NON-TUNAI</span><span>${fmtRp(Math.max(0, (txn.total || 0) - (txn.cash_amount || 0)))}</span></div>
       ` : !isBelumBayar ? `<div style="font-size:12px; margin-top:4px; opacity:0.8; text-align:right;">Metode: ${String(txn.payment_method).toUpperCase()}</div>` : ''}
       
       ${isBelumBayar ? `<div class="receipt-status">BELUM LUNAS</div>` : ''}
@@ -3969,7 +4124,19 @@ async function renderDashboardContent(itemsLoaded = false) {
 
 
   const payStats = { cash: 0, qris: 0, transfer: 0, card: 0 };
-  filteredTxns.forEach(t => { if (payStats[t.payment_method] !== undefined) payStats[t.payment_method] += Number(t.total) || 0; });
+  filteredTxns.forEach(t => {
+    if (t.payment_method === 'split') {
+      const splitCash = Number(t.cash_amount) || 0;
+      const nonCash = Math.max(0, (Number(t.total) || 0) - splitCash);
+      payStats.cash += splitCash;
+      const noteStr = (t.notes || '').toLowerCase();
+      if (noteStr.includes('transfer')) payStats.transfer += nonCash;
+      else if (noteStr.includes('card') || noteStr.includes('kartu') || noteStr.includes('debit')) payStats.card += nonCash;
+      else payStats.qris += nonCash;
+    } else if (payStats[t.payment_method] !== undefined) {
+      payStats[t.payment_method] += Number(t.total) || 0;
+    }
+  });
   const payHtml = [
     ['qr-code', 'QRIS', payStats.qris],
     ['banknote', 'Tunai', payStats.cash],
@@ -5108,7 +5275,7 @@ async function submitCloseShift() {
 
     // Ambil SEMUA transaksi lunas pada rentang waktu shift aktif
     const { data: shiftTxns, error: txnErr } = await db.from('transactions')
-      .select('payment_method, total')
+      .select('payment_method, total, cash_amount, notes')
       .eq('payment_status', 'Lunas')
       .gte('date', openedAt)
       .lte('date', nowIso);
@@ -5122,9 +5289,23 @@ async function submitCloseShift() {
     (shiftTxns || []).forEach(t => {
       const tot = Number(t.total) || 0;
       const m = (t.payment_method || '').toLowerCase();
-      if (m === 'cash') totalCashSales += tot;
-      else if (m === 'qris') totalQrisSales += tot;
-      else if (m === 'transfer' || m === 'debit') totalTransferSales += tot;
+      if (m === 'cash') {
+        totalCashSales += tot;
+      } else if (m === 'qris') {
+        totalQrisSales += tot;
+      } else if (m === 'transfer' || m === 'debit' || m === 'card') {
+        totalTransferSales += tot;
+      } else if (m === 'split') {
+        const splitCash = Number(t.cash_amount) || 0;
+        const nonCash = Math.max(0, tot - splitCash);
+        totalCashSales += splitCash;
+        const noteStr = (t.notes || '').toLowerCase();
+        if (noteStr.includes('transfer') || noteStr.includes('card') || noteStr.includes('debit')) {
+          totalTransferSales += nonCash;
+        } else {
+          totalQrisSales += nonCash;
+        }
+      }
     });
 
     const totalOmset = totalCashSales + totalQrisSales + totalTransferSales;
@@ -6733,6 +6914,11 @@ class BluetoothPrinterService {
       b.twoColumns('Bayar (Tunai)', fmtRp(txn.cash_amount || txn.total || 0));
       const kembalian = Math.max(0, (txn.cash_change || (txn.cash_amount ? txn.cash_amount - txn.total : 0)));
       b.twoColumns('Kembalian', kembalian > 0 ? fmtRp(kembalian) : 'Pas');
+    } else if (txn.payment_method === 'split' && isLunas) {
+      b.twoColumns('Metode Bayar', 'SPLIT PAYMENT');
+      b.twoColumns('  - Tunai', fmtRp(txn.cash_amount || 0));
+      const nonCash = Math.max(0, (Number(txn.total) || 0) - (Number(txn.cash_amount) || 0));
+      b.twoColumns('  - Non-Tunai', fmtRp(nonCash));
     } else {
       b.twoColumns('Metode Bayar', methodStr);
       if (!isLunas) {

@@ -458,6 +458,7 @@ body {
 .badge-amber { background: #FFF8E1; color: #996600; }
 .badge-blue { background: var(--blue-light); color: var(--blue); }
 .badge-brown { background: var(--brown-100); color: var(--brown-700); }
+.badge-purple { background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; }
 
 /* ─── TABLE ─── */
 .table { width: 100%; border-collapse: collapse; }

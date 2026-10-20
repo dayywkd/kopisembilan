@@ -213,6 +213,10 @@
             <i data-lucide="credit-card" class="pay-icon"></i>
             <span class="pay-label">Kartu</span>
           </div>
+          <div class="pay-method-card" data-method="split" onclick="selectPayMethod(this)">
+            <i data-lucide="layers" class="pay-icon"></i>
+            <span class="pay-label">Split</span>
+          </div>
           <div class="pay-method-card" data-method="staff" onclick="selectPayMethod(this)">
             <i data-lucide="coffee" class="pay-icon"></i>
             <span class="pay-label">Jatah Staf</span>
@@ -230,6 +234,52 @@
             <input type="text" class="form-input" id="staff-custom-name" placeholder="Ketik nama karyawan lain..." style="display:none;" oninput="checkStaffDailyQuota()">
           </div>
           <div id="staff-quota-badge" style="font-size:11px; margin-top:8px; line-height:1.4;"></div>
+        </div>
+
+        <div id="split-input-wrap" class="form-group" style="display:none; margin-top:16px; background:var(--cream); padding:14px 16px; border-radius:12px; border:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <label style="font-weight:700; color:var(--brown-900); font-size:12px; display:flex; align-items:center; gap:6px; margin:0;">
+              <i data-lucide="layers" style="width:16px;height:16px;color:var(--accent);"></i> Rincian Pembayaran Split
+            </label>
+            <span id="split-status-badge" style="font-size:11px; padding:2px 8px; border-radius:6px; font-weight:700;"></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr; gap:10px;">
+            <div>
+              <label style="font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px; display:block;">1. Nominal Tunai (Cash)</label>
+              <input type="text" inputmode="numeric" class="form-input" id="split-cash-input" placeholder="0" oninput="formatPriceInput(this); onSplitCashInput();" style="font-weight:700; font-size:14px;">
+            </div>
+
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label style="font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin:0;">2. Nominal Non-Tunai</label>
+                <button type="button" class="btn btn-outline btn-sm" onclick="autoFillSplitRemaining()" style="font-size:10px; padding:1px 8px; height:20px; line-height:1; border-radius:4px; font-weight:600;">Isi Sisa</button>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1.3fr; gap:8px;">
+                <select class="form-select" id="split-second-method" onchange="onSplitMethodChange()" style="font-size:12px;">
+                  <option value="qris">QRIS</option>
+                  <option value="transfer">Transfer</option>
+                  <option value="card">Kartu</option>
+                </select>
+                <input type="text" inputmode="numeric" class="form-input" id="split-second-input" placeholder="0" oninput="formatPriceInput(this); onSplitSecondInput();" style="font-weight:700; font-size:14px;">
+              </div>
+            </div>
+          </div>
+
+          <div style="background:white; border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-top:10px; font-size:12px; line-height:1.5;">
+            <div style="display:flex; justify-content:space-between; color:var(--text-muted);">
+              <span>Total Tagihan:</span>
+              <strong style="color:var(--brown-900);" id="split-total-bill">Rp 0</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; color:var(--text-muted);">
+              <span>Total Terbagi:</span>
+              <strong id="split-total-allocated">Rp 0</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:4px; padding-top:4px; border-top:1px dashed var(--border);">
+              <span id="split-balance-label">Sisa:</span>
+              <strong id="split-balance-val">Rp 0</strong>
+            </div>
+          </div>
         </div>
 
         <div class="payment-form-grid" style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
@@ -452,6 +502,7 @@
             <option value="qris">QRIS</option>
             <option value="transfer">Transfer</option>
             <option value="card">Debit Card</option>
+            <option value="split">Split (Kombinasi)</option>
           </select>
         </div>
         <div class="form-group">
