@@ -1813,8 +1813,8 @@ async function confirmPayment(sendMode = 'none') {
       // Hapus item lama dan insert ulang (cara paling simpel untuk sinkronisasi)
       await db.from('transaction_items').delete().eq('transaction_id', txnId);
     } else {
-      // INSERT transaksi baru
-      const { data, error } = await db.from('transactions').insert([{
+      // INSERT transaksi baru - default order_status 'Menunggu' agar barista langsung melihat antrean
+      let insertTxnPayload = {
         id: txnId,
         total: total,
         customer_phone: phone,
@@ -1823,10 +1823,21 @@ async function confirmPayment(sendMode = 'none') {
         notes: finalNote,
         cashier_name: getActiveCashierName(),
         cash_amount: cashAmount,
-        cash_change: cashChange
-      }]).select().single();
+        cash_change: cashChange,
+        order_status: 'Menunggu'
+      };
 
-      if (error) throw error;
+      let { data, error } = await db.from('transactions').insert([insertTxnPayload]).select().single();
+      if (error && error.message && error.message.toLowerCase().includes('order_status')) {
+        // Fallback jika kolom order_status belum dijalankan di SQL Supabase: simpan tag di notes
+        delete insertTxnPayload.order_status;
+        insertTxnPayload.notes = (insertTxnPayload.notes ? insertTxnPayload.notes + ' ' : '') + '[ORDER_STATUS:Menunggu]';
+        const retry = await db.from('transactions').insert([insertTxnPayload]).select().single();
+        if (retry.error) throw retry.error;
+        data = retry.data;
+      } else if (error) {
+        throw error;
+      }
       txnResult = data;
     }
 
@@ -1865,6 +1876,22 @@ async function confirmPayment(sendMode = 'none') {
       window.bluetoothPrinter.printReceipt(receiptData, cart).catch(err => {
         console.warn('Auto-print Bluetooth gagal:', err);
       });
+    }
+
+    // Otomatis cetak stiker cup jika fitur Auto-Cup aktif
+    if (window.bluetoothPrinter && window.bluetoothPrinter.autoCup) {
+      const cupData = {
+        id: txnId,
+        date: now,
+        notes: note
+      };
+      if (window.bluetoothPrinter.isConnected) {
+        window.bluetoothPrinter.printCupStickers(cupData, cart).catch(err => {
+          console.warn('Auto-print stiker cup Bluetooth gagal:', err);
+        });
+      } else if (typeof openCupStickersPrintDialog === 'function') {
+        openCupStickersPrintDialog(cupData, cart);
+      }
     }
 
     showToast(editingTransactionId ? 'Transaksi diperbarui!' : 'Transaksi Berhasil!', 'success');
@@ -2122,6 +2149,75 @@ function getIndoTimeString(date = new Date(), options = {}) {
   return new Intl.DateTimeFormat('id-ID', defaultOptions).format(date);
 }
 
+// ─── HELPER STATUS PENYAJIAN / PEMBUATAN ORDERAN (KITCHEN & BAR) ───
+function getTransactionOrderStatus(t) {
+  if (!t) return 'Selesai';
+  if (t.order_status) return t.order_status;
+  if (t.notes) {
+    if (t.notes.includes('[ORDER_STATUS:Menunggu]')) return 'Menunggu';
+    if (t.notes.includes('[ORDER_STATUS:Selesai]')) return 'Selesai';
+  }
+  // Default transaksi historis yang tidak memiliki status: 'Selesai'
+  return 'Selesai';
+}
+
+async function updateTransactionOrderStatus(txnId, newStatus) {
+  try {
+    const { error } = await db.from('transactions').update({ order_status: newStatus }).eq('id', txnId);
+    if (error && error.message && error.message.toLowerCase().includes('order_status')) {
+      // Fallback jika kolom order_status belum ada di schema database Supabase: simpan di tag notes
+      const { data: curTxn } = await db.from('transactions').select('notes').eq('id', txnId).single();
+      let notes = curTxn ? (curTxn.notes || '') : '';
+      notes = notes.replace(/\[ORDER_STATUS:[^\]]+\]/g, '').trim();
+      notes = notes ? `${notes} [ORDER_STATUS:${newStatus}]` : `[ORDER_STATUS:${newStatus}]`;
+      const fallbackRes = await db.from('transactions').update({ notes }).eq('id', txnId);
+      if (fallbackRes.error) throw fallbackRes.error;
+    } else if (error) {
+      throw error;
+    }
+    return true;
+  } catch (err) {
+    console.error('Gagal memperbarui status orderan:', err);
+    return false;
+  }
+}
+
+window.toggleOrderStatusFromReport = async function (txnId, targetStatus) {
+  // 1. Update instan di memori agar UI langsung berubah tanpa delay (0ms)
+  if (window.currentReportTxns) {
+    const t = window.currentReportTxns.find(item => item.id === txnId);
+    if (t) {
+      t.order_status = targetStatus;
+      if (t.notes) {
+        t.notes = t.notes.replace(/\[ORDER_STATUS:[^\]]+\]/g, '').trim();
+        t.notes = (t.notes ? t.notes + ' ' : '') + `[ORDER_STATUS:${targetStatus}]`;
+      } else {
+        t.notes = `[ORDER_STATUS:${targetStatus}]`;
+      }
+    }
+  }
+
+  if (window.dashboardTxns) {
+    const dt = window.dashboardTxns.find(item => item.id === txnId);
+    if (dt) dt.order_status = targetStatus;
+  }
+
+  if (typeof transactions !== 'undefined' && Array.isArray(transactions)) {
+    const gt = transactions.find(item => item.id === txnId);
+    if (gt) gt.order_status = targetStatus;
+  }
+
+  // Refresh tampilan tabel laporan
+  if (typeof window.applyReportFilters === 'function') {
+    window.applyReportFilters(false);
+  }
+
+  showToast(`Orderan ${txnId} ditandai ${targetStatus}!`, 'success');
+
+  // 2. Simpan ke database Supabase di background
+  await updateTransactionOrderStatus(txnId, targetStatus);
+};
+
 async function renderReport(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat data laporan...</div>`;
 
@@ -2138,7 +2234,7 @@ async function renderReport(el) {
   let currentSortKey = 'date';
   let currentSortDirection = 'desc';
   let currentPageReport = 1;
-  let itemsPerPageReport = 12;
+  let itemsPerPageReport = 100;
 
   window.changeReportPage = (page) => {
     currentPageReport = page;
@@ -2146,7 +2242,7 @@ async function renderReport(el) {
   };
 
   window.changeReportItemsPerPage = (val) => {
-    itemsPerPageReport = parseInt(val) || 12;
+    itemsPerPageReport = parseInt(val) || 100;
     currentPageReport = 1;
     window.applyReportFilters(false);
   };
@@ -2161,14 +2257,16 @@ async function renderReport(el) {
     window.applyReportFilters(true);
   };
 
-  const renderContent = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
+  const renderContent = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua', orderStatus = 'Semua') => {
     const filtered = txns.filter(t => {
       // Bandingkan tanggal transaksi di zona waktu Indonesia
       const tDate = getIndoDate(new Date(t.date));
       const matchesDate = (!startDate || tDate >= startDate) && (!endDate || tDate <= endDate);
       const matchesStatus = status === 'Semua' || t.payment_status === status;
       const matchesMethod = method === 'Semua' || t.payment_method === method;
-      return matchesDate && matchesStatus && matchesMethod;
+      const tOrderStatus = getTransactionOrderStatus(t);
+      const matchesOrder = orderStatus === 'Semua' || tOrderStatus === orderStatus;
+      return matchesDate && matchesStatus && matchesMethod && matchesOrder;
     });
 
     // Lakukan pengurutan (Sorting)
@@ -2193,6 +2291,7 @@ async function renderReport(el) {
     const totalRev = filtered.filter(t => t.payment_status === 'Lunas').reduce((s, t) => s + (Number(t.total) || 0), 0);
     const avgTxn = filtered.length ? Math.round(totalRev / filtered.length) : 0;
     const lunasCount = filtered.filter(t => t.payment_status === 'Lunas').length;
+    const pendingOrdersCount = filtered.filter(t => getTransactionOrderStatus(t) === 'Menunggu').length;
     const methodLabel = {
       cash: 'Tunai',
       qris: 'QRIS',
@@ -2237,9 +2336,11 @@ async function renderReport(el) {
 
       const formattedDate = getIndoDateTime(new Date(t.date), { day: '2-digit', month: 'short' });
       const formattedTime = getIndoDateTime(new Date(t.date), { hour: '2-digit', minute: '2-digit' });
+      const tOrderStatus = getTransactionOrderStatus(t);
+      const isOrderSelesai = tOrderStatus === 'Selesai';
 
       return `
-        <tr>
+        <tr style="${!isOrderSelesai ? 'background:#FFFBEB; border-left:4px solid #F59E0B;' : 'border-left:4px solid transparent;'}">
           <td><span style="font-family:monospace; font-weight:700; font-size:12px; color:var(--brown-700);">${t.id}</span></td>
           <td>
             <div style="display:flex; flex-direction:column; gap:2px; font-size:12px; font-weight:500; line-height:1.2;">
@@ -2250,12 +2351,23 @@ async function renderReport(el) {
           <td style="font-size:12px; max-width:240px; white-space:normal; word-break:break-word; line-height:1.45; text-align:left;">${itemsText}</td>
           <td style="font-family:monospace; font-size:12px; font-weight:600; color:var(--text);">${t.customer_phone || '<span style="color:#cbd5e1; font-weight:400;">-</span>'}</td>
           <td><span class="badge ${t.payment_method === 'cash' ? 'badge-brown' : (t.payment_method === 'split' ? 'badge-purple' : (t.payment_method === 'staff' ? 'badge-amber' : 'badge-blue'))}">${methodLabel[t.payment_method] || String(t.payment_method || '-').toUpperCase()}</span></td>
-          <td><span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span></td>
+          <td>
+            <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+              <span class="badge ${isLunas ? 'badge-green' : 'badge-red'}">${t.payment_status}</span>
+              <span class="badge" style="${!isOrderSelesai ? 'background:#FEF3C7; color:#92400E; border:1px solid #F59E0B; font-weight:700;' : 'background:#DCFCE7; color:#166534; border:1px solid #86EFAC; font-weight:600;'}">
+                ${!isOrderSelesai ? 'Menunggu Dibuat' : 'Selesai'}
+              </span>
+            </div>
+          </td>
           <td style="font-weight:700; font-size:13px; color:var(--brown-900); text-align:right;">${fmtRp(t.total)}</td>
           <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? fmtRp(t.cash_amount || 0) : (isLunas && t.payment_method === 'split') ? `<div style="font-size:11px; line-height:1.2;"><div>T: ${fmtRp(t.cash_amount || 0)}</div><div>N: ${fmtRp(Math.max(0, (t.total || 0) - (t.cash_amount || 0)))}</div></div>` : '<span style="color:#cbd5e1;">-</span>'}</td>
           <td style="font-size:12px; color:var(--text-muted); text-align:right;">${(isLunas && isCash) ? ((t.cash_change || 0) > 0 ? fmtRp(t.cash_change) : 'Pas') : (isLunas && t.payment_method === 'split') ? 'Pas' : '<span style="color:#cbd5e1;">-</span>'}</td>
           <td>
-            <div style="display:flex; gap:6px; justify-content:center;">
+            <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+              <button class="btn-action" style="${!isOrderSelesai ? 'background:#10B981; color:white; border-color:#059669;' : 'background:#F3F4F6; color:#6B7280;'}" onclick="toggleOrderStatusFromReport('${t.id}', '${!isOrderSelesai ? 'Selesai' : 'Menunggu'}')" title="${!isOrderSelesai ? 'Tandai Orderan Sudah Selesai' : 'Tandai Belum Selesai'}">
+                <i data-lucide="${!isOrderSelesai ? 'check' : 'rotate-ccw'}" style="width:14px;height:14px;"></i>
+              </button>
+              <button class="btn-action" onclick="printCupStickersById('${t.id}')" title="Cetak Stiker Cup"><i data-lucide="tag" style="width:14px;height:14px;color:var(--accent);"></i></button>
               <button class="btn-action" onclick="viewTxnDetail('${t.id}')" title="Detail"><i data-lucide="eye" style="width:14px;height:14px;"></i></button>
               ${currentUser && currentUser.role === 'admin' ? `
                 <button class="btn-action" onclick="editTransaction('${t.id}')" title="Edit Transaksi"><i data-lucide="pencil" style="width:14px;height:14px;"></i></button>
@@ -2290,9 +2402,10 @@ async function renderReport(el) {
             <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Tampilkan:</span>
             <select class="select-input" onchange="changeReportItemsPerPage(this.value)" style="padding:4px 8px; font-size:12px; border-radius:6px; height:32px;">
               <option value="12" ${itemsPerPageReport === 12 ? 'selected' : ''}>12</option>
-              <option value="24" ${itemsPerPageReport === 24 ? 'selected' : ''}>24</option>
-              <option value="48" ${itemsPerPageReport === 48 ? 'selected' : ''}>48</option>
+              <option value="25" ${itemsPerPageReport === 25 ? 'selected' : ''}>25</option>
+              <option value="50" ${itemsPerPageReport === 50 ? 'selected' : ''}>50</option>
               <option value="100" ${itemsPerPageReport === 100 ? 'selected' : ''}>100</option>
+              <option value="200" ${itemsPerPageReport === 200 ? 'selected' : ''}>200</option>
             </select>
           </div>
         </div>
@@ -2312,14 +2425,14 @@ async function renderReport(el) {
           <div class="sub-value">Per kunjungan pelanggan</div>
         </div>
         <div class="report-card">
+          <div class="label">Status Orderan</div>
+          <div class="value" style="color:${pendingOrdersCount > 0 ? '#D97706' : 'var(--brown-900)'};">${pendingOrdersCount} Menunggu</div>
+          <div class="sub-value">${filtered.length - pendingOrdersCount} Sudah selesai disajikan</div>
+        </div>
+        <div class="report-card">
           <div class="label">Status Lunas</div>
           <div class="value">${lunasCount}</div>
           <div class="sub-value">${filtered.length - lunasCount} Menunggu pembayaran</div>
-        </div>
-        <div class="report-card">
-          <div class="label">Metode Dipilih</div>
-          <div class="value" style="font-size:20px;">${method === 'Semua' ? 'Semua' : methodLabel[method]}</div>
-          <div class="sub-value">${filtered.length} transaksi cocok</div>
         </div>
       </div>
       
@@ -2385,6 +2498,14 @@ async function renderReport(el) {
             <option value="staff">Jatah Staf</option>
           </select>
         </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; font-weight:600; color:var(--text-muted);">ORDERAN:</span>
+          <select class="select-input" id="report-order-status-filter" onchange="applyReportFilters(true)" style="padding:6px 10px; font-size:13px;">
+            <option value="Semua">Semua Order</option>
+            <option value="Menunggu">Menunggu Dibuat</option>
+            <option value="Selesai">Selesai</option>
+          </select>
+        </div>
       </div>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <button class="btn btn-outline btn-sm" style="display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; border-radius:8px; font-weight:600; font-size:13px;" onclick="invalidateTransactionCache(); applyReportFilters(false);" title="Segarkan data transaksi dari server">
@@ -2397,7 +2518,7 @@ async function renderReport(el) {
         </button>
       </div>
     </div>
-    <div id="report-container">${await renderContent(today, today, 'Semua', 'Semua')}</div>
+    <div id="report-container">${await renderContent(today, today, 'Semua', 'Semua', 'Semua')}</div>
   `;
 
   if (typeof flatpickr !== 'undefined') {
@@ -2419,8 +2540,8 @@ async function renderReport(el) {
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
 
-  window.renderReportTable = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua') => {
-    const html = await renderContent(startDate, endDate, status, method);
+  window.renderReportTable = async (startDate = today, endDate = today, status = 'Semua', method = 'Semua', orderStatus = 'Semua') => {
+    const html = await renderContent(startDate, endDate, status, method, orderStatus);
     if (typeof lucide !== 'undefined') {
       requestAnimationFrame(() => lucide.createIcons());
     }
@@ -2435,6 +2556,7 @@ async function renderReport(el) {
     const endDate = document.getElementById('report-end-date')?.value || today;
     const status = document.getElementById('report-status-filter')?.value || 'Semua';
     const method = document.getElementById('report-method-filter')?.value || 'Semua';
+    const orderStatus = document.getElementById('report-order-status-filter')?.value || 'Semua';
 
     // Tampilkan skeleton INSTAN (0ms) agar user tidak merasa menunggu
     const reportContainer = document.getElementById('report-container');
@@ -2478,7 +2600,7 @@ async function renderReport(el) {
       console.error('Report filter load fail', e);
     }
 
-    const html = await window.renderReportTable(startDate, endDate, status, method);
+    const html = await window.renderReportTable(startDate, endDate, status, method, orderStatus);
     const container = document.getElementById('report-container');
     if (container) container.innerHTML = html;
   };
@@ -3055,23 +3177,36 @@ function renderSettings(el) {
               <span>${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
             </button>
             <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintBluetooth()">
-              <i data-lucide="printer" style="width:14px;height:14px;"></i> Uji Cetak (Test Print)
+              <i data-lucide="printer" style="width:14px;height:14px;"></i> Uji Cetak Struk
+            </button>
+            <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintCupBluetooth()">
+              <i data-lucide="tag" style="width:14px;height:14px;color:var(--accent);"></i> Uji Stiker Cup
             </button>
           </div>
 
           <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Ukuran Lebar Kertas Struk</label>
+            <label style="font-size:12px; font-weight:600;">Ukuran Lebar Kertas Struk / Label</label>
             <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
-              <option value="58" ${(window.bluetoothPrinter?.paperWidth || '58') === '58' ? 'selected' : ''}>58 mm (Standar Struk Kecil - 32 Karakter)</option>
-              <option value="80" ${(window.bluetoothPrinter?.paperWidth || '58') === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar - 48 Karakter)</option>
+              <option value="58" ${(window.bluetoothPrinter?.paperWidth || '58') === '58' ? 'selected' : ''}>58 mm (Standar Struk / Label Cup Kecil)</option>
+              <option value="80" ${(window.bluetoothPrinter?.paperWidth || '58') === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar)</option>
             </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
+              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${(window.bluetoothPrinter?.autoPrint) ? 'checked' : ''}>
+              Cetak struk belanja otomatis setiap transaksi selesai
+            </label>
           </div>
 
           <div class="form-group" style="margin-bottom:0;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
-              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${(window.bluetoothPrinter?.autoPrint) ? 'checked' : ''}>
-              Cetak struk otomatis setiap transaksi selesai
+              <input type="checkbox" id="settings-printer-autocup" onchange="togglePrinterAutoCup(this.checked)" ${(window.bluetoothPrinter?.autoCup) ? 'checked' : ''}>
+              Cetak stiker cup otomatis per pesanan saat checkout selesai
             </label>
+            <small style="font-size:11px; color:var(--text-muted); display:block; margin-left:22px; margin-top:2px;">
+              Mencetak label stiker tempel per cup (memuat ID, Dine In/Take Away, varian, dan catatan barista).
+            </small>
           </div>
         </div>
       </div>
@@ -3218,6 +3353,10 @@ async function viewTxnDetail(id) {
         <span>ID: ${txn.id}</span>
         <span>Kasir: ${txn.cashier_name}</span>
       </div>
+      <div class="receipt-info">
+        <span>Status Order: <strong style="${getTransactionOrderStatus(txn) === 'Menunggu' ? 'color:#d97706;' : 'color:#16a34a;'}">${getTransactionOrderStatus(txn) === 'Menunggu' ? 'Menunggu Dibuat' : 'Selesai'}</strong></span>
+        <span>Jenis: <strong>${(txn.notes && txn.notes.toUpperCase().includes('TAKE AWAY')) ? 'TAKE AWAY' : ((txn.notes && txn.notes.toUpperCase().includes('DINE IN')) ? 'DINE IN' : 'Reguler')}</strong></span>
+      </div>
       
       <hr class="receipt-divider">
       
@@ -3269,17 +3408,30 @@ async function viewTxnDetail(id) {
   const footer = document.querySelector('#modal-payment .modal-footer');
   if (footer) {
     const formattedItems = JSON.stringify(groupedItems.map(i => ({ name: i.products?.name, qty: i.qty, totalPrice: i.price, note: i.item_note }))).replace(/"/g, '&quot;');
+    const isOrderSelesai = getTransactionOrderStatus(txn) === 'Selesai';
     footer.innerHTML = `
       <div style="display:flex; gap:8px; width:100%; flex-wrap:wrap; justify-content:center; padding-top:10px;">
-        <button class="btn btn-brown" style="flex:1 1 120px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="printTransactionByIdBluetooth('${txn.id}')">
+        <button class="btn btn-brown" style="flex:1 1 110px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="printTransactionByIdBluetooth('${txn.id}')">
           <i data-lucide="printer" style="width:16px;height:16px;"></i> Cetak Struk
         </button>
-        <button class="btn btn-green" style="flex:1 1 110px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('image', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+        <button class="btn btn-outline" style="flex:1 1 110px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="printCupStickersById('${txn.id}')">
+          <i data-lucide="tag" style="width:16px;height:16px;color:var(--accent);"></i> Stiker Cup
+        </button>
+        <button class="btn btn-green" style="flex:1 1 100px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('image', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
           <i data-lucide="image" style="width:16px;height:16px;"></i> WA Gambar
         </button>
-        <button class="btn btn-outline" style="flex:1 1 100px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('text', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
+        <button class="btn btn-outline" style="flex:1 1 90px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="promptAndSendWA('text', '${txn.customer_phone || ''}', '${txn.id}', ${txn.total}, ${formattedItems})">
           <i data-lucide="message-square" style="width:16px;height:16px;"></i> WA Teks
         </button>
+        ${!isOrderSelesai ? `
+          <button class="btn btn-green" style="flex:1 1 120px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="toggleOrderStatusFromReport('${txn.id}', 'Selesai'); viewTxnDetail('${txn.id}');">
+            <i data-lucide="check" style="width:16px;height:16px;"></i> Tandai Selesai
+          </button>
+        ` : `
+          <button class="btn btn-outline" style="flex:1 1 120px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="toggleOrderStatusFromReport('${txn.id}', 'Menunggu'); viewTxnDetail('${txn.id}');">
+            <i data-lucide="rotate-ccw" style="width:16px;height:16px;"></i> Set Menunggu
+          </button>
+        `}
         <button class="btn btn-red" style="flex:0 0 70px; font-size:13px; padding:10px 6px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="closeModal('modal-payment')">
           <i data-lucide="x" style="width:16px;height:16px;"></i> Tutup
         </button>
@@ -3448,7 +3600,7 @@ function getRevenueSeries(txns, period, selectedDateStr = getIndoDate()) {
       labels,
       values,
       counts,
-      title: `Pendapatan Tahun ${currentYear} (Januari - Desember)`
+      title: `Pendapatan Per Bulan Tahun ${currentYear} (Jan - Des)`
     };
   }
 
@@ -3638,7 +3790,7 @@ async function renderDashboard(el) {
                   <button onclick="selectQuickPreset('weekly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">7 Hari Terakhir</button>
                   <button onclick="selectQuickPreset('monthly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Bulan Ini</button>
                   <button onclick="selectQuickPreset('peak_hours')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Jam Ramai</button>
-                  <button onclick="selectQuickPreset('yearly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Tahun Ini (Jan-Des)</button>
+                  <button onclick="selectQuickPreset('yearly')" style="width:100%; text-align:left; padding:8px 14px; background:none; border:none; font-size:12px; cursor:pointer; font-weight:600; color:var(--brown-800);">Per Bulan (Jan - Des)</button>
                 </div>
               </div>
               <div class="kibana-time-picker-date">
@@ -3649,9 +3801,9 @@ async function renderDashboard(el) {
             <div class="period-tabs">
               <button class="period-tab ${activeDashboardPeriod === 'daily' ? 'active' : ''}" onclick="changeDashboardPeriod('daily')" title="Filter data hari ini">Hari Ini</button>
               <button class="period-tab ${activeDashboardPeriod === 'weekly' ? 'active' : ''}" onclick="changeDashboardPeriod('weekly')" title="Filter 7 hari terakhir">7 Hari</button>
-              <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')" title="Filter tgl 1 s/d akhir bulan">Bulan Ini</button>
+              <button class="period-tab ${activeDashboardPeriod === 'monthly' ? 'active' : ''}" onclick="changeDashboardPeriod('monthly')" title="Filter tgl 1 s/d akhir bulan (harian)">Bulan Ini</button>
+              <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')" title="Lihat total pendapatan tiap bulan (Januari - Desember)">Per Bulan</button>
               <button class="period-tab ${activeDashboardPeriod === 'peak_hours' ? 'active' : ''}" onclick="changeDashboardPeriod('peak_hours')" title="Analisis jam ramai cafe">Jam Ramai</button>
-              <button class="period-tab ${activeDashboardPeriod === 'yearly' ? 'active' : ''}" onclick="changeDashboardPeriod('yearly')" title="Filter tahun ini (per bulan Jan-Des)">Tahun Ini</button>
             </div>
           </div>
         </div>
@@ -4194,13 +4346,24 @@ async function renderDashboardContent(itemsLoaded = false) {
 
     <div class="dashboard-grid dashboard-grid-primary">
       <div class="card" style="position:relative; display:flex; flex-direction:column;">
-        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+        <div class="card-header dashboard-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:8px;">
           <h3 id="revenue-chart-title" style="margin:0; display:flex; align-items:center; gap:8px;">
             <i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--accent);"></i> Grafik Pendapatan
           </h3>
-          <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('chart')" title="Sembunyikan/Tampilkan Grafik">
-            <i data-lucide="${dashboardPrivacy.chart ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
-          </button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${activeDashboardPeriod === 'monthly' ? `
+              <button class="btn btn-outline btn-sm" onclick="changeDashboardPeriod('yearly')" title="Lihat total pendapatan per bulan (Januari - Desember)" style="font-size:11px; padding:3px 10px; height:28px; border-radius:6px; display:inline-flex; align-items:center; gap:5px; font-weight:600; color:var(--brown-800);">
+                <span>Lihat Per Bulan (Jan-Des)</span> <i data-lucide="arrow-right" style="width:13px;height:13px;"></i>
+              </button>
+            ` : activeDashboardPeriod === 'yearly' ? `
+              <button class="btn btn-outline btn-sm" onclick="changeDashboardPeriod('monthly')" title="Kembali ke grafik harian bulan ini" style="font-size:11px; padding:3px 10px; height:28px; border-radius:6px; display:inline-flex; align-items:center; gap:5px; font-weight:600; color:var(--brown-800);">
+                <i data-lucide="arrow-left" style="width:13px;height:13px;"></i> <span>Bulan Ini (Harian)</span>
+              </button>
+            ` : ''}
+            <button class="btn-privacy-toggle" style="position:static; padding:4px;" onclick="toggleDashboardPrivacy('chart')" title="Sembunyikan/Tampilkan Grafik">
+              <i data-lucide="${dashboardPrivacy.chart ? 'eye-off' : 'eye'}" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
         </div>
         <div class="card-body dashboard-chart-body" style="position:relative; flex:1;">
           ${dashboardPrivacy.chart ? `
@@ -6626,6 +6789,53 @@ function renderMenuSalesModalList() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+// Helper untuk memfilter item pesanan agar hanya produk minuman/cup yang dicetak stiker
+// Produk makanan seperti roti, saltbread, bapao, snack, kentang, dan beans dikecualikan
+function isBeverageCupItem(item) {
+  let prodName = item.name || (item.products && item.products.name) || item.product_name || '';
+  let prodCat = item.category || (item.products && item.products.category) || '';
+
+  if ((!prodCat || !prodName) && typeof products !== 'undefined' && Array.isArray(products)) {
+    const prodId = item.productId || item.product_id;
+    const p = products.find(x => x.id === prodId);
+    if (p) {
+      if (!prodName) prodName = p.name || '';
+      if (!prodCat) prodCat = p.category || '';
+    }
+  }
+
+  const nameLower = prodName.toLowerCase();
+  const catLower = prodCat.toLowerCase();
+
+  // 1. Kategori makanan / non-cup
+  const nonCupCategories = [
+    'food', 'makanan', 'snack', 'camilan', 'pastry', 'bakery', 'roti',
+    'dessert', 'toast', 'beans', 'biji kopi', 'biji', 'merchandise', 'merch', 'retail'
+  ];
+  if (nonCupCategories.some(cat => catLower.includes(cat))) {
+    return false;
+  }
+
+  // 2. Kata kunci nama produk makanan/snack/roti/beans
+  const nonCupKeywords = [
+    'roti', 'bread', 'saltbread', 'toast', 'bapao', 'bakpao', 'croissant', 'pastry', 'bakery',
+    'snack', 'kentang', 'french fries', 'fries', 'cireng', 'singkong', 'pisang', 'platter',
+    'dimsum', 'waffle', 'donut', 'donat', 'cookies', 'cookie', 'cake', 'brownies', 'pie',
+    'nasi', 'mie', 'ayam', 'pasta', 'spaghetti', 'burger', 'sandwich',
+    'beans', 'biji kopi'
+  ];
+  if (nonCupKeywords.some(kw => nameLower.includes(kw))) {
+    return false;
+  }
+
+  // Cek kemasan gramasi beans
+  if (/\b(100g|200g|250g|500g|1kg|2kg)\b/i.test(prodName)) {
+    return false;
+  }
+
+  return true;
+}
+
 // ══════════════════════════════════════════════
 // WEB BLUETOOTH THERMAL PRINTER SERVICE (ESC/POS)
 // ══════════════════════════════════════════════
@@ -6638,6 +6848,7 @@ class BluetoothPrinterService {
     this.isConnected = false;
     this.paperWidth = localStorage.getItem('ks_printer_paper') || '58'; // '58' (32 cols) / '80' (48 cols)
     this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
+    this.autoCup = localStorage.getItem('ks_printer_autocup') === 'true';
 
     // Service UUIDs yang umum pada printer thermal Bluetooth BLE
     this.SERVICE_UUIDS = [
@@ -6946,6 +7157,134 @@ class BluetoothPrinterService {
     await this.writeBytes(b.getBytes());
     showToast('Struk berhasil dicetak ke printer Bluetooth!', 'success');
   }
+
+  async printCupStickers(txn, items = null) {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    let txnItems = items || txn.transaction_items || [];
+    if (typeof txnItems === 'string') {
+      try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
+    }
+
+    const cups = [];
+    txnItems.forEach(item => {
+      // Hanya proses item minuman/cup (lewati makanan, snack, roti, beans, dll)
+      if (!isBeverageCupItem(item)) return;
+
+      let name = item.name;
+      if (!name && item.products && item.products.name) name = item.products.name;
+      if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
+      if (!name) name = 'Menu Kopi Sembilan';
+
+      let variantsStr = '';
+      if (item.selected_variants && Array.isArray(item.selected_variants) && item.selected_variants.length > 0) {
+        variantsStr = item.selected_variants.map(v => v.name).join(', ');
+      }
+      const noteStr = item.item_note || item.note || '';
+      const qty = Math.max(1, parseInt(item.qty) || 1);
+
+      for (let q = 0; q < qty; q++) {
+        cups.push({
+          name,
+          variants: variantsStr,
+          note: noteStr
+        });
+      }
+    });
+
+    if (cups.length === 0) {
+      showToast('Tidak ada item minuman/cup pada pesanan ini (roti/snack tidak dicetak)', 'info');
+      return;
+    }
+
+    const totalCups = cups.length;
+    const d = txn.date ? new Date(txn.date) : new Date();
+    const tglStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const shortId = (txn.id || '').split('-').pop() || txn.id || '-';
+
+    let orderType = 'DINE IN';
+    if (txn.notes) {
+      const upperNotes = txn.notes.toUpperCase();
+      if (upperNotes.includes('TAKE AWAY') || upperNotes.includes('TAKEAWAY') || upperNotes.includes('TA')) {
+        orderType = 'TAKE AWAY';
+      }
+    }
+
+    showToast(`Mencetak ${totalCups} stiker cup via Bluetooth...`, 'info');
+
+    for (let i = 0; i < totalCups; i++) {
+      const cup = cups[i];
+      const cupNum = i + 1;
+      const b = this.createEscPosBuilder();
+      b.init();
+
+      // Header tipe order
+      b.alignCenter();
+      b.doubleWidthHeight();
+      b.boldOn();
+      b.textLine(`[ ${orderType} ]`);
+      b.normalSize();
+      b.boldOff();
+
+      b.divider('-');
+      b.alignLeft();
+      b.twoColumns(`#${shortId}`, `Cup ${cupNum}/${totalCups}`);
+      b.twoColumns(jamStr, tglStr);
+      b.divider('=');
+
+      // Nama Minuman
+      b.alignLeft();
+      b.doubleHeight();
+      b.boldOn();
+      b.textLine(cup.name);
+      b.normalSize();
+      b.boldOff();
+
+      // Varian / Opsi
+      if (cup.variants) {
+        b.textLine(`* ${cup.variants}`);
+      }
+      // Catatan
+      if (cup.note) {
+        b.textLine(`Catatan: ${cup.note}`);
+      }
+
+      b.divider('-');
+      b.alignCenter();
+      b.boldOn();
+      b.textLine('KOPI SEMBILAN');
+      b.boldOff();
+      b.feed(3);
+      b.cut();
+
+      await this.writeBytes(b.getBytes());
+      if (i < totalCups - 1) {
+        await new Promise(r => setTimeout(r, 250));
+      }
+    }
+
+    showToast(`Selesai mencetak ${totalCups} stiker cup!`, 'success');
+  }
+
+  async testPrintCup() {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+    const dummyTxn = {
+      id: 'TXN-TEST-9999',
+      date: new Date().toISOString(),
+      notes: 'TAKE AWAY',
+      cashier_name: 'Barista Sembilan'
+    };
+    const dummyItems = [
+      { name: 'Kopi Susu Sembilan', qty: 1, selected_variants: [{ name: 'Regular' }, { name: 'Less Ice' }, { name: 'Normal Sugar' }], item_note: 'Gula aren dipisah' },
+      { name: 'Butterscotch Latte', qty: 1, selected_variants: [{ name: 'Large' }, { name: 'Extra Shot' }], item_note: 'Cup takeaway' }
+    ];
+    await this.printCupStickers(dummyTxn, dummyItems);
+  }
 }
 
 // Inisialisasi Instance Global
@@ -7025,4 +7364,393 @@ function updatePrinterStatusUI() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 }
+
+function togglePrinterAutoCup(enabled) {
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.autoCup = enabled;
+    localStorage.setItem('ks_printer_autocup', enabled ? 'true' : 'false');
+    showToast(enabled ? 'Cetak stiker cup otomatis diaktifkan' : 'Cetak stiker cup otomatis dinonaktifkan', 'info');
+  }
+}
+
+async function testPrintCupBluetooth() {
+  try {
+    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
+      await window.bluetoothPrinter.testPrintCup();
+    } else {
+      const dummyTxn = {
+        id: 'TXN-TEST-9999',
+        date: new Date().toISOString(),
+        notes: 'TAKE AWAY',
+        cashier_name: 'Barista Sembilan'
+      };
+      const dummyItems = [
+        { name: 'Kopi Susu Sembilan', qty: 1, selected_variants: [{ name: 'Regular' }, { name: 'Less Ice' }, { name: 'Normal Sugar' }], item_note: 'Gula aren dipisah' },
+        { name: 'Butterscotch Latte', qty: 1, selected_variants: [{ name: 'Large' }, { name: 'Extra Shot' }], item_note: 'Cup takeaway' }
+      ];
+      openCupStickersPrintDialog(dummyTxn, dummyItems);
+    }
+  } catch (e) {
+    console.error('testPrintCup error:', e);
+  }
+}
+
+window.openCupStickersPrintDialog = function (txn, items = null) {
+  let txnItems = items || txn.transaction_items || [];
+  if (typeof txnItems === 'string') {
+    try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
+  }
+
+  const cups = [];
+  txnItems.forEach(item => {
+    // Hanya proses item minuman/cup (lewati makanan, snack, roti, beans, dll)
+    if (!isBeverageCupItem(item)) return;
+
+    let name = item.name;
+    if (!name && item.products && item.products.name) name = item.products.name;
+    if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
+    if (!name) name = 'Menu Kopi Sembilan';
+
+    let variantsStr = '';
+    if (item.selected_variants && Array.isArray(item.selected_variants) && item.selected_variants.length > 0) {
+      variantsStr = item.selected_variants.map(v => v.name).join(', ');
+    }
+    const noteStr = item.item_note || item.note || '';
+    const qty = Math.max(1, parseInt(item.qty) || 1);
+
+    for (let q = 0; q < qty; q++) {
+      cups.push({ name, variants: variantsStr, note: noteStr });
+    }
+  });
+
+  if (cups.length === 0) {
+    showToast('Tidak ada item minuman/cup pada pesanan ini (roti/snack tidak dicetak)', 'info');
+    return;
+  }
+
+  const totalCups = cups.length;
+  const d = txn.date ? new Date(txn.date) : new Date();
+  const tglStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const shortId = (txn.id || '').split('-').pop() || txn.id || '-';
+
+  let orderType = 'DINE IN';
+  if (txn.notes) {
+    const upperNotes = txn.notes.toUpperCase();
+    if (upperNotes.includes('TAKE AWAY') || upperNotes.includes('TAKEAWAY') || upperNotes.includes('TA')) {
+      orderType = 'TAKE AWAY';
+    }
+  }
+
+  const popup = window.open('', '_blank', 'width=420,height=600');
+  if (!popup) {
+    showToast('Popup browser diblokir. Izinkan popup untuk mencetak label stiker.', 'error');
+    return;
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Stiker Cup - ${txn.id}</title>
+  <style id="print-page-style">
+    @page {
+      size: 50mm 40mm;
+      margin: 0;
+    }
+    @media print {
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+        width: 100% !important;
+      }
+      .cup-label {
+        width: 100% !important;
+        max-width: 50mm !important;
+        height: auto !important;
+        max-height: 40mm !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 3px 5px !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+      }
+      body.mode-gabung .cup-label {
+        page-break-after: auto !important;
+        break-after: auto !important;
+        border-bottom: 1.5px dashed #000 !important;
+        padding-bottom: 6px !important;
+        margin-bottom: 6px !important;
+      }
+      body.mode-gabung .cup-label:last-child {
+        border-bottom: none !important;
+      }
+      .no-print { display: none !important; }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: #f1f5f9;
+      margin: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cup-label {
+      width: 50mm;
+      max-height: 40mm;
+      box-sizing: border-box;
+      background: white;
+      padding: 4px 6px;
+      margin-bottom: 10px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      font-size: 9.5px;
+      color: #000;
+      line-height: 1.15;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      overflow: hidden;
+    }
+    body.mode-gabung .cup-label {
+      margin-bottom: 6px;
+      border-bottom: 1.5px dashed #000;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    body.mode-gabung .cup-label:last-child {
+      border-bottom: 1px dashed #cbd5e1;
+    }
+    .header-type {
+      font-size: 11.5px;
+      font-weight: 900;
+      text-align: center;
+      border-bottom: 1.5px solid #000;
+      padding-bottom: 1px;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      font-weight: 600;
+      margin-top: 1px;
+    }
+    .product-name {
+      font-size: 11px;
+      font-weight: 800;
+      margin-top: 2px;
+      line-height: 1.15;
+      word-break: break-word;
+    }
+    .variants {
+      font-size: 8.5px;
+      color: #111;
+      margin-top: 1px;
+      line-height: 1.1;
+    }
+    .note {
+      font-size: 8.5px;
+      color: #000;
+      margin-top: 1px;
+      font-weight: 600;
+      line-height: 1.1;
+    }
+    .footer-brand {
+      text-align: center;
+      font-weight: 800;
+      font-size: 8px;
+      border-top: 1px solid #000;
+      margin-top: 2px;
+      padding-top: 1px;
+      letter-spacing: 0.5px;
+    }
+    .btn-print {
+      background: #8B5320;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
+    .btn-secondary {
+      background: #4B5563;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-size {
+      background: white;
+      border: 1px solid #cbd5e1;
+      color: #374151;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-size.active {
+      background: #8B5320;
+      color: white;
+      border-color: #8B5320;
+    }
+    .tip-box {
+      background: #FEF3C7;
+      border: 1px solid #F59E0B;
+      color: #92400E;
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      max-width: 400px;
+      text-align: center;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom:12px; display:flex; flex-direction:column; align-items:center; gap:8px;">
+    <div class="tip-box">
+      <strong>Catatan:</strong> Jika ukuran kertas di layar print masih A4, pada opsi <strong>Paper size / Ukuran Kertas</strong> di menu print browser, pilih ukuran <strong>50x40mm</strong> atau atur Margins ke <strong>None</strong>.
+    </div>
+    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
+      <span style="font-size:11px; font-weight:700; color:#374151;">Pilihan Ukuran Stiker:</span>
+      <button class="btn-size active" onclick="setLabelDimension('50mm', '40mm', this)">50 x 40 mm</button>
+      <button class="btn-size" onclick="setLabelDimension('50mm', '30mm', this)">50 x 30 mm</button>
+      <button class="btn-size" onclick="setLabelDimension('40mm', '30mm', this)">40 x 30 mm</button>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px;">
+      <button class="btn-print" onclick="printSeparated()">Cetak 1 Stiker Per Cup (${totalCups} Lembar)</button>
+      <button class="btn-secondary" onclick="printCombined()">Gabung 1 Kertas Panjang</button>
+    </div>
+  </div>
+  <div id="labels-container">
+    ${cups.map((cup, idx) => `
+      <div class="cup-label">
+        <div>
+          <div class="header-type">[ ${orderType} ]</div>
+          <div class="meta-row">
+            <span>#${shortId}</span>
+            <span style="font-weight:900;">Cup ${idx + 1}/${totalCups}</span>
+          </div>
+          <div class="meta-row" style="color:#333;">
+            <span>${jamStr}</span>
+            <span>${tglStr}</span>
+          </div>
+          <div style="border-top: 1px dashed #000; margin-top:2px;"></div>
+          <div class="product-name">${cup.name}</div>
+          ${cup.variants ? `<div class="variants">* ${cup.variants}</div>` : ''}
+          ${cup.note ? `<div class="note">Catatan: ${cup.note}</div>` : ''}
+        </div>
+        <div class="footer-brand">KOPI SEMBILAN</div>
+      </div>
+    `).join('')}
+  </div>
+  <script>
+    let currentWidth = '50mm';
+    let currentHeight = '40mm';
+
+    function setLabelDimension(width, height, btn) {
+      currentWidth = width;
+      currentHeight = height;
+      document.querySelectorAll('.btn-size').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      const styleEl = document.getElementById('print-page-style');
+      if (styleEl) {
+        styleEl.innerHTML = '@page { size: ' + width + ' ' + height + '; margin: 0; }' +
+          '@media print {' +
+          '  html, body { margin: 0 !important; padding: 0 !important; background: white !important; width: 100% !important; }' +
+          '  .cup-label {' +
+          '    width: 100% !important;' +
+          '    max-width: ' + width + ' !important;' +
+          '    height: auto !important;' +
+          '    max-height: ' + height + ' !important;' +
+          '    page-break-after: always !important;' +
+          '    break-after: page !important;' +
+          '    page-break-inside: avoid !important;' +
+          '    break-inside: avoid !important;' +
+          '    box-shadow: none !important;' +
+          '    border: none !important;' +
+          '    margin: 0 !important;' +
+          '    padding: 3px 5px !important;' +
+          '    box-sizing: border-box !important;' +
+          '    overflow: hidden !important;' +
+          '  }' +
+          '  body.mode-gabung .cup-label {' +
+          '    page-break-after: auto !important;' +
+          '    break-after: auto !important;' +
+          '    border-bottom: 1.5px dashed #000 !important;' +
+          '    padding-bottom: 6px !important;' +
+          '    margin-bottom: 6px !important;' +
+          '  }' +
+          '  body.mode-gabung .cup-label:last-child { border-bottom: none !important; }' +
+          '  .no-print { display: none !important; }' +
+          '}';
+      }
+      document.querySelectorAll('.cup-label').forEach(el => {
+        el.style.width = width;
+        el.style.maxHeight = height;
+      });
+    }
+
+    function printSeparated() {
+      document.body.classList.remove('mode-gabung');
+      setTimeout(function() { window.print(); }, 150);
+    }
+    function printCombined() {
+      document.body.classList.add('mode-gabung');
+      setTimeout(function() { window.print(); }, 150);
+    }
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 350);
+    };
+  </script>
+</body>
+</html>`;
+
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+};
+
+window.printCupStickersById = async function (id) {
+  try {
+    showToast('Memuat data transaksi untuk stiker cup...', 'info');
+    const { data: txn, error } = await db.from('transactions').select('*, transaction_items(*, products(*))').eq('id', id).single();
+    if (error || !txn) {
+      showToast('Gagal mengambil data transaksi!', 'error');
+      return;
+    }
+
+    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
+      await window.bluetoothPrinter.printCupStickers(txn);
+    } else {
+      openCupStickersPrintDialog(txn);
+    }
+  } catch (e) {
+    console.error('printCupStickersById error:', e);
+    showToast('Terjadi kesalahan saat memproses stiker cup', 'error');
+  }
+};
+
 

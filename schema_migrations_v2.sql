@@ -77,3 +77,8 @@ BEGIN
     END IF;
 END
 $$;
+
+
+-- 6. STATUS PENYAJIAN / PEMBUATAN ORDERAN (KITCHEN/BAR ORDER STATUS)
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS order_status TEXT DEFAULT 'Selesai';
+CREATE INDEX IF NOT EXISTS idx_transactions_order_status ON transactions(order_status);
