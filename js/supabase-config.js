@@ -1,5 +1,10 @@
+// DATABASE PRODUCTION
 const SUPABASE_URL = 'https://xujuhaddzxxxyvoiwuqo.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7-mdoIDZAYQjeCZwQBkZ4A_YwViZlR5';
+
+// DATABASE TESTING / DEVELOPMENT (Aktifkan jika proyek testing aktif)
+// const SUPABASE_URL = 'https://ddoafapaehhmanswidlv.supabase.co';
+// const SUPABASE_KEY = 'sb_publishable_1q2ngqmwLh_NsptXGgdGqw_j3d2CdOW';
 
 // Inisialisasi klien Supabase dengan nama variabel 'db' agar tidak bentrok
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);

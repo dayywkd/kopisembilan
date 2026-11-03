@@ -20,6 +20,28 @@ let selectedProductForVariant = null;
 let editingProductId = null;
 let editingUserId = null;
 let editingTransactionId = null;
+let editingCustomerName = '';
+
+function getCustomerNameFromTxn(txn) {
+  if (!txn) return '';
+  if (txn.customer_name && typeof txn.customer_name === 'string' && txn.customer_name.trim()) {
+    return txn.customer_name.trim();
+  }
+  if (txn.notes && typeof txn.notes === 'string') {
+    const match = txn.notes.match(/\[(?:Pelanggan|Nama Pelanggan|NAMA):\s*([^\]]+)\]/i);
+    if (match && match[1]) return match[1].trim();
+  }
+  return '';
+}
+
+function getCleanNote(notes) {
+  if (!notes) return '';
+  return notes
+    .replace(/\[(?:Pelanggan|Nama Pelanggan|NAMA):[^\]]+\]/gi, '')
+    .replace(/\[ORDER_STATUS:[^\]]+\]/gi, '')
+    .replace(/\[SPLIT:[^\]]+\]/gi, '')
+    .trim();
+}
 let revenueChartInstance = null;
 let activeCashierCategory = 'Semua';
 let cashierSearchQuery = '';
@@ -1445,16 +1467,21 @@ function openPayment() {
   updateReceiptPreviewContent();
 
   const cashIn = document.getElementById('cash-input');
+  const custName = document.getElementById('customer-name');
   const custPhone = document.getElementById('customer-phone');
   const txnNote = document.getElementById('txn-note');
   const changeDisp = document.getElementById('change-display');
 
   if (cashIn) cashIn.value = '';
+  if (custName) custName.value = (editingTransactionId && editingCustomerName) ? editingCustomerName : '';
   if (custPhone) custPhone.value = '';
   if (txnNote) txnNote.value = '';
   if (changeDisp) changeDisp.style.display = 'none';
   renderQuickCashButtons();
   openModal('modal-payment');
+  if (custName && !custName.value) {
+    setTimeout(() => custName.focus(), 150);
+  }
 }
 
 /**
@@ -1639,6 +1666,7 @@ async function loadTransactionToCashier() {
 
     // Set mode edit
     editingTransactionId = id;
+    editingCustomerName = getCustomerNameFromTxn(txn);
 
     // Konversi item transaksi ke format keranjang
     cart = txn.transaction_items.map((i, idx) => ({
@@ -1667,6 +1695,7 @@ function cancelCashierEdit() {
     confirmText: 'Ya, Batalkan',
     onConfirm: () => {
       editingTransactionId = null;
+      editingCustomerName = '';
       cart = [];
       cartItemSeq = 0;
       showPage('report');
@@ -1693,6 +1722,17 @@ async function confirmPayment(sendMode = 'none') {
   isProcessingPayment = true;
 
   const total = cart.reduce((s, c) => s + (c.totalPrice * c.qty), 0);
+  const nameEl = document.getElementById('customer-name');
+  const customerName = nameEl ? nameEl.value.trim() : '';
+
+  if (!customerName) {
+    showToast('Nama pelanggan wajib diisi!', 'error');
+    if (nameEl) nameEl.focus();
+    payButtons.forEach(btn => btn.disabled = false);
+    isProcessingPayment = false;
+    return;
+  }
+
   const phoneEl = document.getElementById('customer-phone');
   const phone = phoneEl ? phoneEl.value.replace(/\D/g, '') : '';
   const status = document.getElementById('payment-status')?.value || 'Lunas';
@@ -1795,19 +1835,32 @@ async function confirmPayment(sendMode = 'none') {
 
   try {
     let txnResult;
+    if (!finalNote.toLowerCase().includes('[pelanggan:')) {
+      finalNote = `[Pelanggan: ${customerName}] ${finalNote}`.trim();
+    }
+
     if (editingTransactionId) {
       // UPDATE transaksi yang sudah ada
-      const { data, error } = await db.from('transactions').update({
+      let updatePayload = {
         total: total,
+        customer_name: customerName,
         customer_phone: phone,
         payment_method: selectedPaymentMethod,
         payment_status: status,
         notes: finalNote,
         cash_amount: cashAmount,
         cash_change: cashChange
-      }).eq('id', txnId).select().single();
+      };
 
-      if (error) throw error;
+      let { data, error } = await db.from('transactions').update(updatePayload).eq('id', txnId).select().single();
+      if (error && error.message && error.message.toLowerCase().includes('customer_name')) {
+        delete updatePayload.customer_name;
+        const retry = await db.from('transactions').update(updatePayload).eq('id', txnId).select().single();
+        if (retry.error) throw retry.error;
+        data = retry.data;
+      } else if (error) {
+        throw error;
+      }
       txnResult = data;
 
       // Hapus item lama dan insert ulang (cara paling simpel untuk sinkronisasi)
@@ -1817,6 +1870,7 @@ async function confirmPayment(sendMode = 'none') {
       let insertTxnPayload = {
         id: txnId,
         total: total,
+        customer_name: customerName,
         customer_phone: phone,
         payment_method: selectedPaymentMethod,
         payment_status: status,
@@ -1828,15 +1882,26 @@ async function confirmPayment(sendMode = 'none') {
       };
 
       let { data, error } = await db.from('transactions').insert([insertTxnPayload]).select().single();
-      if (error && error.message && error.message.toLowerCase().includes('order_status')) {
-        // Fallback jika kolom order_status belum dijalankan di SQL Supabase: simpan tag di notes
-        delete insertTxnPayload.order_status;
-        insertTxnPayload.notes = (insertTxnPayload.notes ? insertTxnPayload.notes + ' ' : '') + '[ORDER_STATUS:Menunggu]';
-        const retry = await db.from('transactions').insert([insertTxnPayload]).select().single();
-        if (retry.error) throw retry.error;
-        data = retry.data;
-      } else if (error) {
-        throw error;
+      if (error && error.message) {
+        let needsRetry = false;
+        if (error.message.toLowerCase().includes('customer_name')) {
+          delete insertTxnPayload.customer_name;
+          needsRetry = true;
+        }
+        if (error.message.toLowerCase().includes('order_status')) {
+          delete insertTxnPayload.order_status;
+          if (!insertTxnPayload.notes.includes('[ORDER_STATUS:')) {
+            insertTxnPayload.notes = (insertTxnPayload.notes ? insertTxnPayload.notes + ' ' : '') + '[ORDER_STATUS:Menunggu]';
+          }
+          needsRetry = true;
+        }
+        if (needsRetry) {
+          const retry = await db.from('transactions').insert([insertTxnPayload]).select().single();
+          if (retry.error) throw retry.error;
+          data = retry.data;
+        } else {
+          throw error;
+        }
       }
       txnResult = data;
     }
@@ -1865,11 +1930,12 @@ async function confirmPayment(sendMode = 'none') {
         id: txnId,
         total: total,
         date: now,
+        customer_name: customerName,
         customer_phone: phone,
         payment_method: selectedPaymentMethod,
         payment_status: status,
         cashier_name: getActiveCashierName(),
-        notes: note,
+        notes: finalNote,
         cash_amount: cashAmount,
         cash_change: cashChange
       };
@@ -1883,7 +1949,10 @@ async function confirmPayment(sendMode = 'none') {
       const cupData = {
         id: txnId,
         date: now,
-        notes: note
+        notes: finalNote,
+        customer_name: customerName,
+        customer_phone: phone,
+        cashier_name: getActiveCashierName()
       };
       if (window.bluetoothPrinter.isConnected) {
         window.bluetoothPrinter.printCupStickers(cupData, cart).catch(err => {
@@ -1903,12 +1972,13 @@ async function confirmPayment(sendMode = 'none') {
       return itemLine;
     }).join('\n');
 
-    const logDetails = `ID: ${txnId}\nTotal: ${fmtRp(total)}\nMetode: ${selectedPaymentMethod.toUpperCase()}\nStatus: ${status}\nCatatan Transaksi: ${note || '-'}\nItem:\n${itemsSummary}`;
+    const logDetails = `ID: ${txnId}\nPelanggan: ${customerName}\nTotal: ${fmtRp(total)}\nMetode: ${selectedPaymentMethod.toUpperCase()}\nStatus: ${status}\nCatatan Transaksi: ${note || '-'}\nItem:\n${itemsSummary}`;
 
     addActivityLog(editingTransactionId ? 'Update Transaksi' : 'Transaksi Baru', logDetails);
 
     // Reset state
     editingTransactionId = null;
+    editingCustomerName = '';
     cart = [];
     cartItemSeq = 0;
     invalidateTransactionCache();
@@ -2341,7 +2411,10 @@ async function renderReport(el) {
 
       return `
         <tr style="${!isOrderSelesai ? 'background:#FFFBEB; border-left:4px solid #F59E0B;' : 'border-left:4px solid transparent;'}">
-          <td><span style="font-family:monospace; font-weight:700; font-size:12px; color:var(--brown-700);">${t.id}</span></td>
+          <td>
+            <span style="font-family:monospace; font-weight:700; font-size:12px; color:var(--brown-700);">${t.id}</span>
+            ${getCustomerNameFromTxn(t) ? `<div style="font-size:11px; font-weight:700; color:var(--brown-900); margin-top:2px;"><i data-lucide="user" style="width:11px;height:11px;display:inline-block;vertical-align:middle;margin-right:2px;color:var(--accent);"></i>${getCustomerNameFromTxn(t)}</div>` : ''}
+          </td>
           <td>
             <div style="display:flex; flex-direction:column; gap:2px; font-size:12px; font-weight:500; line-height:1.2;">
               <span>${formattedDate}</span>
@@ -3354,8 +3427,12 @@ async function viewTxnDetail(id) {
         <span>Kasir: ${txn.cashier_name}</span>
       </div>
       <div class="receipt-info">
+        <span>Pelanggan: <strong>${getCustomerNameFromTxn(txn) || '-'}</strong></span>
         <span>Status Order: <strong style="${getTransactionOrderStatus(txn) === 'Menunggu' ? 'color:#d97706;' : 'color:#16a34a;'}">${getTransactionOrderStatus(txn) === 'Menunggu' ? 'Menunggu Dibuat' : 'Selesai'}</strong></span>
+      </div>
+      <div class="receipt-info">
         <span>Jenis: <strong>${(txn.notes && txn.notes.toUpperCase().includes('TAKE AWAY')) ? 'TAKE AWAY' : ((txn.notes && txn.notes.toUpperCase().includes('DINE IN')) ? 'DINE IN' : 'Reguler')}</strong></span>
+        <span>No. WA: <strong>${txn.customer_phone || '-'}</strong></span>
       </div>
       
       <hr class="receipt-divider">
@@ -7205,10 +7282,22 @@ class BluetoothPrinterService {
     const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const shortId = (txn.id || '').split('-').pop() || txn.id || '-';
 
+    let queueNum = '';
+    if (txn.queue_number) {
+      queueNum = String(txn.queue_number);
+    } else {
+      const digits = (shortId || '').replace(/\D/g, '');
+      queueNum = digits.length >= 2 ? digits.slice(-2) : (digits || shortId || '01');
+    }
+
+    const custName = getCustomerNameFromTxn(txn) || 'Pelanggan';
+    const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
+    const generalNote = getCleanNote(txn.notes);
+
     let orderType = 'DINE IN';
     if (txn.notes) {
       const upperNotes = txn.notes.toUpperCase();
-      if (upperNotes.includes('TAKE AWAY') || upperNotes.includes('TAKEAWAY') || upperNotes.includes('TA')) {
+      if (upperNotes.includes('TAKE AWAY') || upperNotes.includes('TAKEAWAY') || upperNotes.includes('TA') || upperNotes.includes('BUNGKUS')) {
         orderType = 'TAKE AWAY';
       }
     }
@@ -7221,42 +7310,44 @@ class BluetoothPrinterService {
       const b = this.createEscPosBuilder();
       b.init();
 
-      // Header tipe order
-      b.alignCenter();
+      // Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan
+      b.alignLeft();
       b.doubleWidthHeight();
       b.boldOn();
-      b.textLine(`[ ${orderType} ]`);
+      b.text(`${queueNum} `);
       b.normalSize();
       b.boldOff();
+      b.textLine(`  [${orderType}]  Cup ${cupNum}/${totalCups}`);
 
+      // Baris 2: Waktu & Kasir
+      b.twoColumns(`${tglStr} ${jamStr}`, cashierDisplay);
+
+      // Baris 3: Nama Pelanggan (Wajib & Jelas)
       b.divider('-');
-      b.alignLeft();
-      b.twoColumns(`#${shortId}`, `Cup ${cupNum}/${totalCups}`);
-      b.twoColumns(jamStr, tglStr);
-      b.divider('=');
+      b.boldOn();
+      b.textLine(`PELANGGAN: ${custName.toUpperCase()}`);
+      b.boldOff();
 
-      // Nama Minuman
-      b.alignLeft();
+      // Baris 4: Nama Minuman (Besar & Tebal)
       b.doubleHeight();
       b.boldOn();
       b.textLine(cup.name);
       b.normalSize();
       b.boldOff();
 
-      // Varian / Opsi
+      // Baris 5: Varian
       if (cup.variants) {
-        b.textLine(`* ${cup.variants}`);
+        b.textLine(cup.variants);
       }
-      // Catatan
-      if (cup.note) {
-        b.textLine(`Catatan: ${cup.note}`);
+      // Baris 6: Catatan
+      const finalCupNote = cup.note || generalNote;
+      if (finalCupNote) {
+        b.textLine(`Catatan: ${finalCupNote}`);
       }
 
+      // Baris 7: Footer
       b.divider('-');
-      b.alignCenter();
-      b.boldOn();
-      b.textLine('KOPI SEMBILAN');
-      b.boldOff();
+      b.twoColumns(`#${shortId}`, 'KOPI SEMBILAN');
       b.feed(3);
       b.cut();
 
@@ -7275,6 +7366,8 @@ class BluetoothPrinterService {
     }
     const dummyTxn = {
       id: 'TXN-TEST-9999',
+      queue_number: '90',
+      customer_name: 'Budi (Sample)',
       date: new Date().toISOString(),
       notes: 'TAKE AWAY',
       cashier_name: 'Barista Sembilan'
@@ -7380,6 +7473,8 @@ async function testPrintCupBluetooth() {
     } else {
       const dummyTxn = {
         id: 'TXN-TEST-9999',
+        queue_number: '90',
+        customer_name: 'Budi (Sample)',
         date: new Date().toISOString(),
         notes: 'TAKE AWAY',
         cashier_name: 'Barista Sembilan'
@@ -7434,10 +7529,22 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
   const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   const shortId = (txn.id || '').split('-').pop() || txn.id || '-';
 
+  let queueNum = '';
+  if (txn.queue_number) {
+    queueNum = String(txn.queue_number);
+  } else {
+    const digits = (shortId || '').replace(/\D/g, '');
+    queueNum = digits.length >= 2 ? digits.slice(-2) : (digits || shortId || '01');
+  }
+
+  const custName = getCustomerNameFromTxn(txn) || 'Pelanggan';
+  const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
+  const generalNote = getCleanNote(txn.notes);
+
   let orderType = 'DINE IN';
   if (txn.notes) {
     const upperNotes = txn.notes.toUpperCase();
-    if (upperNotes.includes('TAKE AWAY') || upperNotes.includes('TAKEAWAY') || upperNotes.includes('TA')) {
+    if (upperNotes.includes('TAKE AWAY') || upperNotes.includes('TAKEAWAY') || upperNotes.includes('TA') || upperNotes.includes('BUNGKUS')) {
       orderType = 'TAKE AWAY';
     }
   }
@@ -7646,21 +7753,43 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     ${cups.map((cup, idx) => `
       <div class="cup-label">
         <div>
-          <div class="header-type">[ ${orderType} ]</div>
-          <div class="meta-row">
-            <span>#${shortId}</span>
-            <span style="font-weight:900;">Cup ${idx + 1}/${totalCups}</span>
+          <!-- Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan -->
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+            <div style="font-size:24px; font-weight:900; line-height:1; letter-spacing:-0.5px;">${queueNum}</div>
+            <div style="text-align:right;">
+              <span style="font-size:8px; font-weight:800; border:1px solid #000; padding:1px 4px; border-radius:2px; display:inline-block; line-height:1.1;">${orderType}</span>
+              <div style="font-size:11px; font-weight:900; line-height:1.2; margin-top:2px;">Cup ${idx + 1}/${totalCups}</div>
+            </div>
           </div>
-          <div class="meta-row" style="color:#333;">
-            <span>${jamStr}</span>
-            <span>${tglStr}</span>
+
+          <!-- Baris 2: Tanggal, Waktu & Kasir -->
+          <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:600; color:#333; margin-bottom:3px; line-height:1.1;">
+            <span>${tglStr} ${jamStr}</span>
+            <span>${cashierDisplay}</span>
           </div>
-          <div style="border-top: 1px dashed #000; margin-top:2px;"></div>
-          <div class="product-name">${cup.name}</div>
-          ${cup.variants ? `<div class="variants">* ${cup.variants}</div>` : ''}
-          ${cup.note ? `<div class="note">Catatan: ${cup.note}</div>` : ''}
+
+          <!-- Baris 3: Nama Pelanggan (Wajib & Jelas) -->
+          <div style="font-size:10.5px; font-weight:800; border-top:1px dashed #000; padding-top:3px; margin-bottom:3px; line-height:1.2;">
+            <span style="font-weight:600; font-size:8.5px; color:#444; text-transform:uppercase;">Pelanggan:</span> ${custName}
+          </div>
+
+          <!-- Baris 4: Nama Produk Minuman (Tebal) -->
+          <div class="product-name" style="font-size:11.5px; font-weight:900; line-height:1.2; word-break:break-word; margin-bottom:2px;">
+            ${cup.name}
+          </div>
+
+          <!-- Baris 5: Rincian Varian (Es, Gula, dll) -->
+          ${cup.variants ? `<div class="variants" style="font-size:8.5px; color:#111; line-height:1.15; margin-bottom:2px;">${cup.variants}</div>` : ''}
+
+          <!-- Baris 6: Catatan Barista (jika ada) -->
+          ${(cup.note || generalNote) ? `<div class="note" style="font-size:8px; font-weight:700; color:#000; line-height:1.15;">Catatan: ${cup.note || generalNote}</div>` : ''}
         </div>
-        <div class="footer-brand">KOPI SEMBILAN</div>
+
+        <!-- Baris 7 (Footer): ID Transaksi & Brand Kopi Sembilan -->
+        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #000; margin-top:3px; padding-top:2px; font-size:7.5px; font-weight:800;">
+          <span>#${shortId}</span>
+          <span style="letter-spacing:0.5px;">KOPI SEMBILAN</span>
+        </div>
       </div>
     `).join('')}
   </div>
