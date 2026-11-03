@@ -497,8 +497,8 @@ async function fetchTransactionsByRange(startDateStr, endDateStr, isDashboard = 
     try {
       const buildQuery = (from, to) => {
         let q = db.from('transactions').select('*').order('date', { ascending: false });
-        if (startDateStr) q = q.gte('date', `${startDateStr}T00:00:00`);
-        if (endDateStr) q = q.lte('date', `${endDateStr}T23:59:59.999`);
+        if (startDateStr) q = q.gte('date', `${startDateStr}T00:00:00+07:00`);
+        if (endDateStr) q = q.lte('date', `${endDateStr}T23:59:59.999+07:00`);
         return q.range(from, to);
       };
 
@@ -1869,6 +1869,7 @@ async function confirmPayment(sendMode = 'none') {
       // INSERT transaksi baru - default order_status 'Menunggu' agar barista langsung melihat antrean
       let insertTxnPayload = {
         id: txnId,
+        date: now.toISOString(),
         total: total,
         customer_name: customerName,
         customer_phone: phone,
@@ -1893,6 +1894,10 @@ async function confirmPayment(sendMode = 'none') {
           if (!insertTxnPayload.notes.includes('[ORDER_STATUS:')) {
             insertTxnPayload.notes = (insertTxnPayload.notes ? insertTxnPayload.notes + ' ' : '') + '[ORDER_STATUS:Menunggu]';
           }
+          needsRetry = true;
+        }
+        if (error.message.toLowerCase().includes('date')) {
+          delete insertTxnPayload.date;
           needsRetry = true;
         }
         if (needsRetry) {
@@ -2200,6 +2205,7 @@ async function promptAndSendWA(type, phone, txnId, total, items) {
 function getIndoDate(date = new Date()) {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Jakarta' }).format(date);
 }
+window.getIndoDate = getIndoDate;
 
 function getIndoDateTime(date = new Date(), options = {}) {
   const defaultOptions = {
@@ -2208,6 +2214,7 @@ function getIndoDateTime(date = new Date(), options = {}) {
   };
   return new Intl.DateTimeFormat('id-ID', defaultOptions).format(date);
 }
+window.getIndoDateTime = getIndoDateTime;
 
 function getIndoTimeString(date = new Date(), options = {}) {
   const defaultOptions = {
@@ -3969,8 +3976,8 @@ async function loadDashboardData() {
         let q = db.from('transactions')
           .select('id, total, payment_method, payment_status, date, cash_amount, cash_change')
           .order('date', { ascending: false });
-        if (startDateStr) q = q.gte('date', `${startDateStr}T00:00:00`);
-        if (endDateStr) q = q.lte('date', `${endDateStr}T23:59:59.999`);
+        if (startDateStr) q = q.gte('date', `${startDateStr}T00:00:00+07:00`);
+        if (endDateStr) q = q.lte('date', `${endDateStr}T23:59:59.999+07:00`);
         return q.range(from, to);
       };
       const { data: batch1, error: err1 } = await buildQ(0, 999);
@@ -5305,10 +5312,8 @@ let activeShift = null;
 
 async function checkAndInitActiveShift() {
   try {
-    const today = getIndoDate();
     const { data, error } = await db.from('cash_shifts')
       .select('*')
-      .eq('shift_date', today)
       .eq('status', 'open')
       .order('opened_at', { ascending: false })
       .limit(1);
@@ -5455,6 +5460,11 @@ async function submitOpenShift() {
     showToast(`Shift ${shiftType.toUpperCase()} berhasil dibuka atas nama ${cashierName}!`, 'success');
     addActivityLog('Buka Shift', `Shift: ${shiftType.toUpperCase()}, Modal: ${fmtRp(cashVal)}, Kasir: ${cashierName}`);
 
+    const shiftPageContent = document.getElementById('page-content');
+    if (shiftPageContent && document.getElementById('shift-date-filter')) {
+      renderShifts(shiftPageContent);
+    }
+
     // Sinkronisasi otomatis: staf pembuka shift otomatis tercatat absen masuk jika belum absen
     try {
       const { data: existingAttend } = await db.from('attendance')
@@ -5577,6 +5587,11 @@ async function submitCloseShift() {
     updateTopBarShiftBadge();
 
     addActivityLog('Tutup Shift', `Shift: ${closedShiftType}, Fisik: ${fmtRp(actualCash)}, Target Laci: ${fmtRp(expectedCash)}, Selisih: ${fmtRp(difference)}, Omset: ${fmtRp(totalOmset)}`);
+
+    const shiftPageContent = document.getElementById('page-content');
+    if (shiftPageContent && document.getElementById('shift-date-filter')) {
+      renderShifts(shiftPageContent);
+    }
 
     // Sinkronisasi otomatis: staf yang menutup shift otomatis tercatat absen pulang jika masih aktif
     try {
@@ -5987,122 +6002,158 @@ async function viewHistoricalShiftAudit(shiftId) {
 }
 window.viewHistoricalShiftAudit = viewHistoricalShiftAudit;
 
+let shiftSelectedDate = getIndoDate();
+
+function renderShiftRowsHTML(list, filterDate) {
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  const colspan = isAdmin ? 11 : 9;
+
+  if (!list || list.length === 0) {
+    return `<tr><td colspan="${colspan}" style="text-align:center; padding:30px; color:var(--text-muted);">Belum ada catatan shift pada tanggal ini.</td></tr>`;
+  }
+
+  return list.map(s => {
+    const isClosed = s.status === 'closed';
+    const diff = Number(s.difference) || 0;
+    let diffBadge = '<span class="badge badge-amber">Aktif (Open)</span>';
+    if (isClosed) {
+      if (diff === 0) diffBadge = '<span class="badge badge-green">Pas</span>';
+      else if (diff < 0) diffBadge = `<span class="badge badge-red">Minus ${fmtRp(Math.abs(diff))}</span>`;
+      else diffBadge = `<span class="badge badge-blue">Lebih ${fmtRp(diff)}</span>`;
+    }
+
+    const openTime = s.opened_at ? getIndoDateTime(new Date(s.opened_at), { hour: '2-digit', minute: '2-digit' }) : '-';
+    const closeTime = s.closed_at ? getIndoDateTime(new Date(s.closed_at), { hour: '2-digit', minute: '2-digit' }) : '-';
+    const cleanNote = s.notes ? s.notes.replace(/\[OMSET_META:[^\]]+\]/g, '').trim() : '-';
+    const shiftDateText = !filterDate ? `<div style="font-size:11px; color:var(--text-muted); font-weight:normal;">${s.shift_date || ''}</div>` : '';
+
+    return `
+      <tr>
+        <td><strong style="color:var(--brown-900);">Shift ${(s.shift_type || '').toUpperCase()}</strong>${shiftDateText}</td>
+        <td><strong>${s.cashier_name || '-'}</strong></td>
+        <td><span style="font-size:12px; color:var(--text-muted);">${openTime} - ${closeTime}</span></td>
+        <td style="font-weight:600;">${fmtRp(s.starting_cash)}</td>
+        <td style="font-weight:600;">${fmtRp(s.cash_sales || 0)}</td>
+        ${isAdmin ? `<td style="font-weight:700; color:var(--brown-900);">${fmtRp(s.expected_cash || 0)}</td>` : ''}
+        <td style="font-weight:700; color:var(--accent);">${s.actual_cash !== null && s.actual_cash !== undefined ? fmtRp(s.actual_cash) : '-'}</td>
+        ${isAdmin ? `<td>${diffBadge}</td>` : ''}
+        <td><span class="badge ${s.status === 'open' ? 'badge-green' : 'badge-brown'}">${(s.status || '').toUpperCase()}</span></td>
+        <td style="font-size:11px; color:var(--text-muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${cleanNote}">${cleanNote || '-'}</td>
+        <td>
+          ${isClosed ? `
+            <button class="btn btn-sm btn-outline" style="padding:3px 8px; font-size:11px; display:inline-flex; align-items:center; gap:4px;" onclick="viewHistoricalShiftAudit('${s.id}')">
+              <i data-lucide="file-text" style="width:12px;height:12px;"></i> Audit
+            </button>
+          ` : '-'}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function fetchShiftData(filterDate) {
+  try {
+    let query = db.from('cash_shifts').select('*');
+    if (filterDate) {
+      query = query.eq('shift_date', filterDate);
+    }
+    const { data, error } = await query.order('opened_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error('Fetch shifts error:', e);
+    return [];
+  }
+}
+
+async function changeShiftFilterDate(dateStr) {
+  shiftSelectedDate = (dateStr !== undefined && dateStr !== null) ? dateStr : getIndoDate();
+
+  // Sinkronkan nilai input tanggal jika elemen masih ada di DOM
+  const dateInput = document.getElementById('shift-date-filter');
+  if (dateInput && dateInput.value !== shiftSelectedDate) {
+    dateInput.value = shiftSelectedDate;
+  }
+
+  // Jika tabel shift sudah aktif di DOM, update isi tbody langsung tanpa merusak DOM input
+  const tbody = document.getElementById('shift-table-body');
+  if (tbody) {
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    tbody.innerHTML = `<tr><td colspan="${isAdmin ? 11 : 9}" style="text-align:center; padding:30px; color:var(--text-muted);">Memuat data rekap shift...</td></tr>`;
+    const list = await fetchShiftData(shiftSelectedDate);
+    tbody.innerHTML = renderShiftRowsHTML(list, shiftSelectedDate);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    return;
+  }
+
+  // Fallback: render halaman secara penuh jika container ada
+  const container = document.getElementById('page-content');
+  if (container) {
+    await renderShifts(container);
+  }
+}
+window.changeShiftFilterDate = changeShiftFilterDate;
+
 async function renderShifts(el) {
   el.innerHTML = `<div style="text-align:center; padding:40px;">Memuat data rekap shift...</div>`;
   const today = getIndoDate();
-
-  const loadShiftData = async (dateStr = today) => {
-    try {
-      const { data, error } = await db.from('cash_shifts')
-        .select('*')
-        .eq('shift_date', dateStr)
-        .order('opened_at', { ascending: false });
-
-      if (error) throw error;
-      return data || [];
-    } catch (e) {
-      console.error('Fetch shifts error:', e);
-      return [];
-    }
-  };
-
-  const renderShiftView = async (dateStr) => {
-    const list = await loadShiftData(dateStr);
-    const isAdmin = currentUser && currentUser.role === 'admin';
-
-    const rows = list.map(s => {
-      const isClosed = s.status === 'closed';
-      const diff = Number(s.difference) || 0;
-      let diffBadge = '<span class="badge badge-amber">Aktif (Open)</span>';
-      if (isClosed) {
-        if (diff === 0) diffBadge = '<span class="badge badge-green">Pas</span>';
-        else if (diff < 0) diffBadge = `<span class="badge badge-red">Minus ${fmtRp(Math.abs(diff))}</span>`;
-        else diffBadge = `<span class="badge badge-blue">Lebih ${fmtRp(diff)}</span>`;
-      }
-
-      const openTime = s.opened_at ? getIndoDateTime(new Date(s.opened_at), { hour: '2-digit', minute: '2-digit' }) : '-';
-      const closeTime = s.closed_at ? getIndoDateTime(new Date(s.closed_at), { hour: '2-digit', minute: '2-digit' }) : '-';
-      const cleanNote = s.notes ? s.notes.replace(/\[OMSET_META:[^\]]+\]/g, '').trim() : '-';
-
-      return `
-        <tr>
-          <td><strong style="color:var(--brown-900);">Shift ${s.shift_type.toUpperCase()}</strong></td>
-          <td><strong>${s.cashier_name}</strong></td>
-          <td><span style="font-size:12px; color:var(--text-muted);">${openTime} - ${closeTime}</span></td>
-          <td style="font-weight:600;">${fmtRp(s.starting_cash)}</td>
-          <td style="font-weight:600;">${fmtRp(s.cash_sales || 0)}</td>
-          ${isAdmin ? `<td style="font-weight:700; color:var(--brown-900);">${fmtRp(s.expected_cash || 0)}</td>` : ''}
-          <td style="font-weight:700; color:var(--accent);">${s.actual_cash !== null ? fmtRp(s.actual_cash) : '-'}</td>
-          ${isAdmin ? `<td>${diffBadge}</td>` : ''}
-          <td><span class="badge ${s.status === 'open' ? 'badge-green' : 'badge-brown'}">${s.status.toUpperCase()}</span></td>
-          <td style="font-size:11px; color:var(--text-muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${cleanNote}">${cleanNote || '-'}</td>
-          <td>
-            ${isClosed ? `
-              <button class="btn btn-sm btn-outline" style="padding:3px 8px; font-size:11px; display:inline-flex; align-items:center; gap:4px;" onclick="viewHistoricalShiftAudit('${s.id}')">
-                <i data-lucide="file-text" style="width:12px;height:12px;"></i> Audit
-              </button>
-            ` : '-'}
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    return `
-      <div class="inv-actions" style="margin-bottom:20px;">
-        <div style="flex:1;">
-          <h3 style="font-family:'DM Serif Display'; font-size:20px; color:var(--brown-800);">Manajemen Shift & Kas Modal</h3>
-          <p style="font-size:12px; color:var(--text-muted);">Pencatatan kas modal awal dan serah terima kas pergantian shift.</p>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
-          <input type="date" class="form-input" id="shift-date-filter" value="${dateStr}" style="width:130px; font-size:13px; padding:6px 10px;">
-          ${!activeShift ? `
-            <button class="btn btn-brown btn-sm" onclick="openModalOpenShift()" style="display:inline-flex; align-items:center; gap:6px;">
-              <i data-lucide="plus" style="width:14px;height:14px;"></i> Buka Shift Baru
-            </button>
-          ` : `
-            <button class="btn btn-brown btn-sm" onclick="openModalCloseShift()" style="display:inline-flex; align-items:center; gap:6px;">
-              <i data-lucide="lock" style="width:14px;height:14px;"></i> Serah Terima Shift
-            </button>
-          `}
-        </div>
-      </div>
-
-      <div class="card" style="padding:0; overflow:hidden;">
-        <div style="overflow-x:auto;">
-          <table class="table" style="margin:0;">
-            <thead>
-              <tr>
-                <th>Shift</th>
-                <th>Kasir Bertugas</th>
-                <th>Jam Shift</th>
-                <th>Modal Awal</th>
-                <th>Penjualan Tunai</th>
-                ${isAdmin ? `<th>Total Harusnya</th>` : ''}
-                <th>Uang Fisik</th>
-                ${isAdmin ? `<th>Status Selisih</th>` : ''}
-                <th>Status</th>
-                <th>Catatan</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody id="shift-table-body">
-              ${rows || '<tr><td colspan="11" style="text-align:center; padding:30px; color:var(--text-muted);">Belum ada catatan shift pada tanggal ini.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  };
-
-  el.innerHTML = await renderShiftView(today);
-  const dateInput = document.getElementById('shift-date-filter');
-  if (dateInput) {
-    dateInput.addEventListener('change', async (e) => {
-      el.innerHTML = await renderShiftView(e.target.value);
-      if (typeof lucide !== 'undefined') lucide.createIcons();
-    });
+  if (typeof shiftSelectedDate === 'undefined' || shiftSelectedDate === null) {
+    shiftSelectedDate = today;
   }
+  const dateStr = shiftSelectedDate;
+  const list = await fetchShiftData(dateStr);
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  const rows = renderShiftRowsHTML(list, dateStr);
+
+  el.innerHTML = `
+    <div class="inv-actions" style="margin-bottom:20px;">
+      <div style="flex:1;">
+        <h3 style="font-family:'DM Serif Display'; font-size:20px; color:var(--brown-800);">Manajemen Shift & Kas Modal</h3>
+        <p style="font-size:12px; color:var(--text-muted);">Pencatatan kas modal awal dan serah terima kas pergantian shift.</p>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="font-size:12px; font-weight:700; color:var(--text-muted);">TANGGAL:</span>
+        <input type="date" class="form-input" id="shift-date-filter" value="${dateStr || ''}" onchange="changeShiftFilterDate(this.value)" style="width:130px; font-size:13px; padding:6px 10px;">
+        <button class="btn btn-outline btn-sm" onclick="changeShiftFilterDate(getIndoDate())" style="font-size:12px; padding:6px 10px;">Hari Ini</button>
+        <button class="btn btn-outline btn-sm" onclick="changeShiftFilterDate('')" style="font-size:12px; padding:6px 10px;">Semua</button>
+        ${!activeShift ? `
+          <button class="btn btn-brown btn-sm" onclick="openModalOpenShift()" style="display:inline-flex; align-items:center; gap:6px;">
+            <i data-lucide="plus" style="width:14px;height:14px;"></i> Buka Shift Baru
+          </button>
+        ` : `
+          <button class="btn btn-brown btn-sm" onclick="openModalCloseShift()" style="display:inline-flex; align-items:center; gap:6px;">
+            <i data-lucide="lock" style="width:14px;height:14px;"></i> Serah Terima Shift
+          </button>
+        `}
+      </div>
+    </div>
+
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div style="overflow-x:auto;">
+        <table class="table" style="margin:0;">
+          <thead>
+            <tr>
+              <th>Shift</th>
+              <th>Kasir Bertugas</th>
+              <th>Jam Shift</th>
+              <th>Modal Awal</th>
+              <th>Penjualan Tunai</th>
+              ${isAdmin ? `<th>Total Harusnya</th>` : ''}
+              <th>Uang Fisik</th>
+              ${isAdmin ? `<th>Status Selisih</th>` : ''}
+              <th>Status</th>
+              <th>Catatan</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="shift-table-body">
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -7319,8 +7370,8 @@ class BluetoothPrinterService {
       b.boldOff();
       b.textLine(`  [${orderType}]  Cup ${cupNum}/${totalCups}`);
 
-      // Baris 2: Waktu & Kasir
-      b.twoColumns(`${tglStr} ${jamStr}`, cashierDisplay);
+      // Baris 2: Waktu (Nama kasir dihapus sesuai permintaan)
+      b.textLine(`${tglStr} ${jamStr}`);
 
       // Baris 3: Nama Pelanggan (Wajib & Jelas)
       b.divider('-');
@@ -7762,10 +7813,9 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
             </div>
           </div>
 
-          <!-- Baris 2: Tanggal, Waktu & Kasir -->
-          <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:600; color:#333; margin-bottom:3px; line-height:1.1;">
+          <!-- Baris 2: Tanggal & Waktu (Nama kasir dihapus sesuai permintaan) -->
+          <div style="font-size:8px; font-weight:600; color:#333; margin-bottom:3px; line-height:1.1;">
             <span>${tglStr} ${jamStr}</span>
-            <span>${cashierDisplay}</span>
           </div>
 
           <!-- Baris 3: Nama Pelanggan (Wajib & Jelas) -->
