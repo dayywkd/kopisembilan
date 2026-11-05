@@ -1725,14 +1725,6 @@ async function confirmPayment(sendMode = 'none') {
   const nameEl = document.getElementById('customer-name');
   const customerName = nameEl ? nameEl.value.trim() : '';
 
-  if (!customerName) {
-    showToast('Nama pelanggan wajib diisi!', 'error');
-    if (nameEl) nameEl.focus();
-    payButtons.forEach(btn => btn.disabled = false);
-    isProcessingPayment = false;
-    return;
-  }
-
   const phoneEl = document.getElementById('customer-phone');
   const phone = phoneEl ? phoneEl.value.replace(/\D/g, '') : '';
   const status = document.getElementById('payment-status')?.value || 'Lunas';
@@ -1835,7 +1827,7 @@ async function confirmPayment(sendMode = 'none') {
 
   try {
     let txnResult;
-    if (!finalNote.toLowerCase().includes('[pelanggan:')) {
+    if (customerName && !finalNote.toLowerCase().includes('[pelanggan:')) {
       finalNote = `[Pelanggan: ${customerName}] ${finalNote}`.trim();
     }
 
@@ -7341,7 +7333,7 @@ class BluetoothPrinterService {
       queueNum = digits.length >= 2 ? digits.slice(-2) : (digits || shortId || '01');
     }
 
-    const custName = getCustomerNameFromTxn(txn) || 'Pelanggan';
+    const custName = getCustomerNameFromTxn(txn) || '-';
     const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
     const generalNote = getCleanNote(txn.notes);
 
@@ -7588,7 +7580,7 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     queueNum = digits.length >= 2 ? digits.slice(-2) : (digits || shortId || '01');
   }
 
-  const custName = getCustomerNameFromTxn(txn) || 'Pelanggan';
+  const custName = getCustomerNameFromTxn(txn) || '-';
   const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
   const generalNote = getCleanNote(txn.notes);
 
