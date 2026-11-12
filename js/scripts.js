@@ -1526,7 +1526,6 @@ function updateReceiptPreviewContent() {
         </div>
         <div class="receipt-info">
           <span>ID: ${txnId}</span>
-          <span>Kasir: ${currentUser ? currentUser.name : 'Kasir'}</span>
         </div>
         
         <hr class="receipt-divider">
@@ -3410,6 +3409,19 @@ async function viewTxnDetail(id) {
   const isBelumBayar = txn.payment_status === 'Belum Bayar';
 
   const detailHtml = `
+    <div style="background:#FFFBEB; border:1px solid #FDE68A; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:12px; line-height:1.5;">
+      <div style="font-weight:700; color:#92400E; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+        <i data-lucide="info" style="width:14px;height:14px;"></i> Info Internal Kasir
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; color:#451A03;">
+        <div>Pelanggan: <strong>${getCustomerNameFromTxn(txn) || '-'}</strong></div>
+        <div>Kasir: <strong>${txn.cashier_name || '-'}</strong></div>
+        <div>Status: <strong style="${getTransactionOrderStatus(txn) === 'Menunggu' ? 'color:#d97706;' : 'color:#16a34a;'}">${getTransactionOrderStatus(txn) === 'Menunggu' ? 'Menunggu Dibuat' : 'Selesai'}</strong></div>
+        <div>Jenis: <strong>${(txn.notes && txn.notes.toUpperCase().includes('TAKE AWAY')) ? 'TAKE AWAY' : ((txn.notes && txn.notes.toUpperCase().includes('DINE IN')) ? 'DINE IN' : 'Reguler')}</strong></div>
+        <div>No. WA: <strong>${txn.customer_phone || '-'}</strong></div>
+      </div>
+    </div>
+
     <div class="receipt" id="receipt-capture">
       <div class="receipt-header">
         <div class="receipt-logo">${storeInfo.name}</div>
@@ -3423,15 +3435,6 @@ async function viewTxnDetail(id) {
       </div>
       <div class="receipt-info">
         <span>ID: ${txn.id}</span>
-        <span>Kasir: ${txn.cashier_name}</span>
-      </div>
-      <div class="receipt-info">
-        <span>Pelanggan: <strong>${getCustomerNameFromTxn(txn) || '-'}</strong></span>
-        <span>Status Order: <strong style="${getTransactionOrderStatus(txn) === 'Menunggu' ? 'color:#d97706;' : 'color:#16a34a;'}">${getTransactionOrderStatus(txn) === 'Menunggu' ? 'Menunggu Dibuat' : 'Selesai'}</strong></span>
-      </div>
-      <div class="receipt-info">
-        <span>Jenis: <strong>${(txn.notes && txn.notes.toUpperCase().includes('TAKE AWAY')) ? 'TAKE AWAY' : ((txn.notes && txn.notes.toUpperCase().includes('DINE IN')) ? 'DINE IN' : 'Reguler')}</strong></span>
-        <span>No. WA: <strong>${txn.customer_phone || '-'}</strong></span>
       </div>
       
       <hr class="receipt-divider">
@@ -7199,7 +7202,7 @@ class BluetoothPrinterService {
     const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     b.twoColumns('Tgl: ' + tglStr, 'Jam: ' + jamStr);
-    b.twoColumns('ID: ' + (txn.id || '-'), 'Kasir: ' + (txn.cashier_name || 'Admin'));
+    b.textLine('ID: ' + (txn.id || '-'));
     b.divider('-');
 
     // 3. Daftar Item Pesanan
