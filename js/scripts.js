@@ -1920,17 +1920,8 @@ async function confirmPayment(sendMode = 'none') {
       sendWhatsAppReceipt(phone, txnId, total, cart);
     }
 
-    const rp = window.receiptPrinter || window.bluetoothPrinter;
-    const cp = window.cupPrinter;
-    const cartSnapshot = cart.map(c => ({ ...c }));
-    const cupWillOpenPopup = !!(cp && cp.autoCup && (
-      cp.connectionType === 'browser' ||
-      (cp.connectionType === 'auto' && !cp.isConnected) ||
-      (cp.connectionType === 'same_as_receipt' && (!rp || !rp.isConnected))
-    ));
-
-    // Otomatis cetak struk via Printer 1 (Struk) jika Auto-Print aktif
-    if (rp && rp.autoPrint) {
+    // Otomatis cetak struk via Bluetooth jika fitur Auto-Print aktif dan printer terhubung
+    if (window.bluetoothPrinter && window.bluetoothPrinter.autoPrint && window.bluetoothPrinter.isConnected) {
       const receiptData = {
         id: txnId,
         total: total,
@@ -1944,17 +1935,13 @@ async function confirmPayment(sendMode = 'none') {
         cash_amount: cashAmount,
         cash_change: cashChange
       };
-      if (rp.connectionType === 'bluetooth' || (rp.connectionType === 'auto' && rp.isConnected)) {
-        rp.printReceipt(receiptData, cartSnapshot).catch(err => {
-          console.warn('Auto-print struk Bluetooth gagal:', err);
-        });
-      } else if (!cupWillOpenPopup && typeof openReceiptPrintDialog === 'function') {
-        openReceiptPrintDialog(receiptData, cartSnapshot);
-      }
+      window.bluetoothPrinter.printReceipt(receiptData, cart).catch(err => {
+        console.warn('Auto-print Bluetooth gagal:', err);
+      });
     }
 
-    // Otomatis cetak stiker cup via Printer 2 (Stiker Cup) jika Auto-Cup aktif
-    if (cp && cp.autoCup) {
+    // Otomatis cetak stiker cup jika fitur Auto-Cup aktif
+    if (window.bluetoothPrinter && window.bluetoothPrinter.autoCup) {
       const cupData = {
         id: txnId,
         date: now,
@@ -1963,10 +1950,12 @@ async function confirmPayment(sendMode = 'none') {
         customer_phone: phone,
         cashier_name: getActiveCashierName()
       };
-      if (typeof dispatchCupPrint === 'function') {
-        dispatchCupPrint(cupData, cartSnapshot).catch(err => {
-          console.warn('Auto-print stiker cup gagal:', err);
+      if (window.bluetoothPrinter.isConnected) {
+        window.bluetoothPrinter.printCupStickers(cupData, cart).catch(err => {
+          console.warn('Auto-print stiker cup Bluetooth gagal:', err);
         });
+      } else if (typeof openCupStickersPrintDialog === 'function') {
+        openCupStickersPrintDialog(cupData, cart);
       }
     }
 
@@ -3152,23 +3141,6 @@ async function deleteUser(id) {
 }
 
 function renderSettings(el) {
-  const rp = window.receiptPrinter || window.bluetoothPrinter;
-  const cp = window.cupPrinter;
-  const cupCfg = getSavedCupLabelConfig();
-
-  const rConnected = !!(rp && rp.isConnected);
-  const rName = rp?.device?.name || localStorage.getItem('ks_receipt_printer_name') || 'Printer Struk';
-  const rConn = rp?.connectionType || localStorage.getItem('ks_receipt_printer_conn') || 'auto';
-  const rMode = rp?.commandMode || localStorage.getItem('ks_receipt_printer_mode') || 'escpos';
-  const rTsplDir = rp?.tsplDirection || localStorage.getItem('ks_receipt_printer_tspl_dir') || '0';
-  const rPaper = rp?.paperWidth || localStorage.getItem('ks_receipt_printer_paper') || localStorage.getItem('ks_printer_paper') || '58';
-
-  const cConnected = !!(cp && cp.isConnected);
-  const cName = cp?.device?.name || localStorage.getItem('ks_cup_printer_name') || 'Printer Stiker';
-  const cConn = cp?.connectionType || localStorage.getItem('ks_cup_printer_conn') || 'auto';
-  const cMode = cp?.commandMode || localStorage.getItem('ks_cup_printer_mode') || 'tspl';
-  const cTsplDir = cp?.tsplDirection || localStorage.getItem('ks_cup_printer_tspl_dir') || '0';
-
   el.innerHTML = `
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;" class="responsive-grid">
       <div class="card">
@@ -3256,91 +3228,27 @@ function renderSettings(el) {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer 1: Struk Belanja</h3></div>
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer Thermal Bluetooth</h3></div>
         <div class="card-body">
           <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
-              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER STRUK:</span>
-              <span id="receipt-printer-status-badge" class="badge ${rConnected ? 'badge-green' : 'badge-amber'}">
-                ${rConnected ? '● Terhubung (' + escapePrintHtml(rName) + ')' : '○ Belum Terhubung'}
+              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER:</span>
+              <span id="printer-status-badge" class="badge ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'badge-green' : 'badge-amber'}">
+                ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? '● Terhubung (' + (window.bluetoothPrinter.device?.name || 'Thermal Printer') + ')' : '○ Belum Terhubung'}
               </span>
             </div>
-            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.45;">
-              Khusus untuk mencetak <strong>struk belanja pelanggan</strong> (58mm / 80mm). Terpisah dari printer stiker cup agar kedua printer bisa jalan bersamaan tanpa saling mengganggu.
+            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.4;">
+              Mendukung printer thermal Bluetooth 58mm & 80mm (Iware, Panda, RPP02N, Blueprint, Eppos, POS-58, dll) menggunakan Google Chrome atau Edge.
             </p>
           </div>
 
           <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
-            <button id="btn-receipt-printer-connect" class="btn ${rConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 150px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${rConnected ? 'disconnectReceiptPrinter()' : 'connectReceiptPrinter()'}">
-              <i data-lucide="${rConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
-              <span>${rConnected ? 'Putuskan Printer Struk' : 'Konek Bluetooth Struk'}</span>
+            <button id="btn-printer-connect" class="btn ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 140px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'disconnectBluetoothPrinter()' : 'connectBluetoothPrinter()'}">
+              <i data-lucide="${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+              <span>${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
             </button>
             <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintBluetooth()">
               <i data-lucide="printer" style="width:14px;height:14px;"></i> Uji Cetak Struk
-            </button>
-          </div>
-
-          <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Jalur Cetak Struk</label>
-            <select class="form-select" id="settings-receipt-conn" onchange="setReceiptPrinterConn(this.value)" style="font-size:13px;">
-              <option value="auto" ${rConn === 'auto' ? 'selected' : ''}>Otomatis (Bluetooth jika terhubung, atau USB/Browser)</option>
-              <option value="bluetooth" ${rConn === 'bluetooth' ? 'selected' : ''}>Bluetooth Langsung (Web Bluetooth Chrome/Edge)</option>
-              <option value="browser" ${rConn === 'browser' ? 'selected' : ''}>USB / Dialog Print Browser (MacBook / Safari / Driver OS)</option>
-            </select>
-          </div>
-
-          <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Mode Perintah Bluetooth</label>
-            <select class="form-select" id="settings-receipt-mode" onchange="setReceiptPrinterMode(this.value)" style="font-size:13px;">
-              <option value="escpos" ${rMode === 'escpos' ? 'selected' : ''}>ESC/POS (Standar Struk Thermal 58mm / 80mm)</option>
-              <option value="tspl" ${rMode === 'tspl' ? 'selected' : ''}>TSPL (Mode Label)</option>
-            </select>
-          </div>
-
-          <div id="settings-receipt-tspl-dir-wrap" class="form-group" style="margin-bottom:12px; display:${rMode === 'tspl' ? 'block' : 'none'};">
-            <label style="font-size:12px; font-weight:600;">Arah Cetak TSPL (Struk)</label>
-            <select class="form-select" id="settings-receipt-tspl-dir" onchange="setReceiptTsplDirection(this.value)" style="font-size:13px;">
-              <option value="0" ${rTsplDir === '0' ? 'selected' : ''}>Normal — DIRECTION 0</option>
-              <option value="1" ${rTsplDir === '1' ? 'selected' : ''}>Terbalik 180° — DIRECTION 1</option>
-            </select>
-          </div>
-
-          <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Ukuran Kertas Struk</label>
-            <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
-              <option value="58" ${rPaper === '58' ? 'selected' : ''}>58 mm (Standar Struk Kecil)</option>
-              <option value="80" ${rPaper === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar)</option>
-            </select>
-          </div>
-
-          <div class="form-group" style="margin-bottom:0;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
-              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${rp?.autoPrint ? 'checked' : ''}>
-              Cetak struk belanja otomatis setiap transaksi selesai
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="tag" style="width:18px;height:18px;color:var(--accent);"></i> Printer 2: Stiker Cup / Label</h3></div>
-        <div class="card-body">
-          <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
-              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER STIKER:</span>
-              <span id="cup-printer-status-badge" class="badge ${cConnected ? 'badge-green' : 'badge-amber'}">
-                ${cConnected ? '● Terhubung (' + escapePrintHtml(cName) + ')' : '○ Belum Terhubung'}
-              </span>
-            </div>
-            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.45;">
-              Khusus untuk mencetak <strong>stiker cup minuman</strong> (termasuk <strong>Sharkpos X265L 58mm</strong>). Gunakan mode <strong>TSPL</strong> untuk stiker ber-gap via Bluetooth atau jalur <strong>USB / Dialog Browser</strong>.
-            </p>
-          </div>
-
-          <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
-            <button id="btn-cup-printer-connect" class="btn ${cConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 150px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${cConnected ? 'disconnectCupPrinter()' : 'connectCupPrinter()'}">
-              <i data-lucide="${cConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
-              <span>${cConnected ? 'Putuskan Printer Stiker' : 'Konek Bluetooth Stiker'}</span>
             </button>
             <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintCupBluetooth()">
               <i data-lucide="tag" style="width:14px;height:14px;color:var(--accent);"></i> Uji Stiker Cup
@@ -3348,70 +3256,23 @@ function renderSettings(el) {
           </div>
 
           <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Jalur Cetak Stiker Cup</label>
-            <select class="form-select" id="settings-cup-conn" onchange="setCupPrinterConn(this.value)" style="font-size:13px;">
-              <option value="auto" ${cConn === 'auto' ? 'selected' : ''}>Otomatis (Bluetooth Stiker jika terhubung, atau USB/Browser)</option>
-              <option value="bluetooth" ${cConn === 'bluetooth' ? 'selected' : ''}>Bluetooth Langsung (Web Bluetooth Chrome/Edge)</option>
-              <option value="browser" ${cConn === 'browser' ? 'selected' : ''}>USB / Dialog Print Browser (MacBook / Safari / Driver OS)</option>
-              <option value="same_as_receipt" ${cConn === 'same_as_receipt' ? 'selected' : ''}>Gunakan Printer 1 (Struk) — Jika Hanya Punya 1 Printer</option>
+            <label style="font-size:12px; font-weight:600;">Ukuran Lebar Kertas Struk / Label</label>
+            <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
+              <option value="58" ${(window.bluetoothPrinter?.paperWidth || '58') === '58' ? 'selected' : ''}>58 mm (Standar Struk / Label Cup Kecil)</option>
+              <option value="80" ${(window.bluetoothPrinter?.paperWidth || '58') === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar)</option>
             </select>
           </div>
 
-          <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Mode Perintah Bluetooth</label>
-            <select class="form-select" id="settings-cup-mode" onchange="setCupPrinterMode(this.value)" style="font-size:13px;">
-              <option value="tspl" ${cMode === 'tspl' ? 'selected' : ''}>TSPL (Printer Label Stiker, mis. Sharkpos X265L Mode Label)</option>
-              <option value="escpos" ${cMode === 'escpos' ? 'selected' : ''}>ESC/POS (Kertas Gulung / Sharkpos Mode Receipt)</option>
-            </select>
-            <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:4px; line-height:1.4;">
-              Jika printer Sharkpos tidak merespons di TSPL, ganti ke ESC/POS atau ubah mode fisik printer (tahan tombol FEED saat menyalakan).
-            </small>
-          </div>
-
-          <div id="settings-cup-tspl-dir-wrap" class="form-group" style="margin-bottom:12px; display:${cMode === 'tspl' ? 'block' : 'none'};">
-            <label style="font-size:12px; font-weight:600;">Arah Cetak TSPL (Stiker)</label>
-            <select class="form-select" id="settings-cup-tspl-dir" onchange="setCupTsplDirection(this.value)" style="font-size:13px;">
-              <option value="0" ${cTsplDir === '0' ? 'selected' : ''}>Normal — DIRECTION 0</option>
-              <option value="1" ${cTsplDir === '1' ? 'selected' : ''}>Terbalik 180° — DIRECTION 1</option>
-            </select>
-          </div>
-
-          <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Ukuran Kertas Stiker Cup</label>
-            <select class="form-select" id="settings-cup-label-size" onchange="setCupLabelPreset(this.value)" style="font-size:13px;">
-              <option value="58x40" ${cupCfg.preset === '58x40' ? 'selected' : ''}>58 x 40 mm (Standar Printer Thermal 58mm)</option>
-              <option value="58x30" ${cupCfg.preset === '58x30' ? 'selected' : ''}>58 x 30 mm (Label 58mm Pendek)</option>
-              <option value="58x50" ${cupCfg.preset === '58x50' ? 'selected' : ''}>58 x 50 mm (Label 58mm Tinggi)</option>
-              <option value="50x40" ${cupCfg.preset === '50x40' ? 'selected' : ''}>50 x 40 mm (Stiker Cup Sedang)</option>
-              <option value="50x30" ${cupCfg.preset === '50x30' ? 'selected' : ''}>50 x 30 mm (Stiker Cup Kecil)</option>
-              <option value="40x30" ${cupCfg.preset === '40x30' ? 'selected' : ''}>40 x 30 mm (Stiker Cup Mini)</option>
-              <option value="58x0" ${cupCfg.preset === '58x0' ? 'selected' : ''}>58 mm Continuous (Kertas Struk Gulung)</option>
-              <option value="custom" ${cupCfg.preset === 'custom' ? 'selected' : ''}>Ukuran Kustom (mm)</option>
-            </select>
-          </div>
-
-          <div id="settings-cup-custom-wrap" style="display:${cupCfg.preset === 'custom' ? 'block' : 'none'}; background:var(--cream); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:8px; align-items:end;">
-              <div>
-                <label style="font-size:11px; font-weight:600; display:block; margin-bottom:3px;">Lebar (mm)</label>
-                <input type="number" class="form-input" id="settings-cup-w" min="30" max="100" value="${cupCfg.width}" style="font-size:12px; padding:6px 8px;">
-              </div>
-              <div>
-                <label style="font-size:11px; font-weight:600; display:block; margin-bottom:3px;">Tinggi (mm)</label>
-                <input type="number" class="form-input" id="settings-cup-h" min="0" max="150" value="${cupCfg.height}" title="0 = kertas gulung continuous" style="font-size:12px; padding:6px 8px;">
-              </div>
-              <div>
-                <label style="font-size:11px; font-weight:600; display:block; margin-bottom:3px;">Gap (mm)</label>
-                <input type="number" class="form-input" id="settings-cup-gap" min="0" max="10" value="${cupCfg.gap}" style="font-size:12px; padding:6px 8px;">
-              </div>
-              <button type="button" class="btn btn-brown btn-sm" onclick="saveCustomCupLabelSize()" style="height:34px; padding:0 12px; font-size:12px;">Terapkan</button>
-            </div>
-            <small style="font-size:10px; color:var(--text-muted); display:block; margin-top:4px;">Isi Tinggi = 0 untuk kertas gulung continuous tanpa jeda stiker.</small>
+          <div class="form-group" style="margin-bottom:8px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
+              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${(window.bluetoothPrinter?.autoPrint) ? 'checked' : ''}>
+              Cetak struk belanja otomatis setiap transaksi selesai
+            </label>
           </div>
 
           <div class="form-group" style="margin-bottom:0;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
-              <input type="checkbox" id="settings-printer-autocup" onchange="togglePrinterAutoCup(this.checked)" ${cp?.autoCup ? 'checked' : ''}>
+              <input type="checkbox" id="settings-printer-autocup" onchange="togglePrinterAutoCup(this.checked)" ${(window.bluetoothPrinter?.autoCup) ? 'checked' : ''}>
               Cetak stiker cup otomatis per pesanan saat checkout selesai
             </label>
             <small style="font-size:11px; color:var(--text-muted); display:block; margin-left:22px; margin-top:2px;">
@@ -7099,65 +6960,27 @@ function isBeverageCupItem(item) {
 }
 
 // ══════════════════════════════════════════════
-// WEB BLUETOOTH THERMAL PRINTER SERVICE (ESC/POS & TSPL)
+// WEB BLUETOOTH THERMAL PRINTER SERVICE (ESC/POS)
 // ══════════════════════════════════════════════
 
 class BluetoothPrinterService {
-  constructor(role = 'receipt') {
-    this.role = role === 'cup' ? 'cup' : 'receipt';
-    this.roleLabel = this.role === 'cup' ? 'Printer Stiker Cup' : 'Printer Struk';
-    this.storagePrefix = this.role === 'cup' ? 'ks_cup_printer_' : 'ks_receipt_printer_';
-
+  constructor() {
     this.device = null;
     this.server = null;
     this.characteristic = null;
     this.isConnected = false;
+    this.paperWidth = localStorage.getItem('ks_printer_paper') || '58'; // '58' (32 cols) / '80' (48 cols)
+    this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
+    this.autoCup = localStorage.getItem('ks_printer_autocup') === 'true';
 
-    if (this.role === 'cup') {
-      this.paperWidth = localStorage.getItem('ks_cup_printer_paper') || '58';
-      this.commandMode = localStorage.getItem('ks_cup_printer_mode') || localStorage.getItem('ks_printer_mode') || 'tspl';
-      this.connectionType = localStorage.getItem('ks_cup_printer_conn') || 'auto'; // 'auto' | 'bluetooth' | 'browser' | 'same_as_receipt'
-      const savedDir = localStorage.getItem('ks_cup_printer_tspl_dir') ?? localStorage.getItem('ks_tspl_direction');
-      this.tsplDirection = savedDir === '1' ? '1' : '0';
-
-      const savedW = parseInt(localStorage.getItem('ks_cup_label_w'), 10);
-      const savedH = parseInt(localStorage.getItem('ks_cup_label_h'), 10);
-      const savedGap = parseInt(localStorage.getItem('ks_cup_label_gap'), 10);
-
-      this.labelWidth = (Number.isFinite(savedW) && savedW >= 30 && savedW <= 100) ? savedW : 58;
-      this.labelHeight = (Number.isFinite(savedH) && savedH >= 0 && savedH <= 150) ? savedH : 40;
-      this.labelGap = (Number.isFinite(savedGap) && savedGap >= 0 && savedGap <= 10) ? savedGap : (this.labelHeight === 0 ? 0 : 2);
-
-      this.autoPrint = false;
-      this.autoCup = localStorage.getItem('ks_printer_autocup') === 'true';
-    } else {
-      this.paperWidth = localStorage.getItem('ks_receipt_printer_paper') || localStorage.getItem('ks_printer_paper') || '58';
-      this.commandMode = localStorage.getItem('ks_receipt_printer_mode') || 'escpos'; // tidak mewarisi ks_printer_mode lama agar struk tetap ESC/POS
-      this.connectionType = localStorage.getItem('ks_receipt_printer_conn') || 'auto'; // 'auto' | 'bluetooth' | 'browser'
-      this.tsplDirection = localStorage.getItem('ks_receipt_printer_tspl_dir') === '1' ? '1' : '0';
-
-      this.labelWidth = parseInt(this.paperWidth, 10) || 58;
-      this.labelHeight = 40;
-      this.labelGap = 2;
-
-      this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
-      this.autoCup = false;
-    }
-
-    // Service UUIDs yang umum pada printer thermal & label Bluetooth BLE (Sharkpos X265L, Xprinter, Goojprt, dll)
+    // Service UUIDs yang umum pada printer thermal Bluetooth BLE
     this.SERVICE_UUIDS = [
-      '000018f0-0000-1000-8000-00805f9b34fb',
-      '0000ffe0-0000-1000-8000-00805f9b34fb',
-      '0000fff0-0000-1000-8000-00805f9b34fb',
-      '0000ff00-0000-1000-8000-00805f9b34fb',
-      '0000ff10-0000-1000-8000-00805f9b34fb',
-      '0000ae30-0000-1000-8000-00805f9b34fb',
-      '0000fee7-0000-1000-8000-00805f9b34fb',
-      '0000fee0-0000-1000-8000-00805f9b34fb',
+      '000018f0-0000-1000-8000-00805f9b34fb', // Standard Thermal Printer
       'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-      '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-      '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-      'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f'
+      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent Serial
+      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '0000fff0-0000-1000-8000-00805f9b34fb',
+      '0000fee7-0000-1000-8000-00805f9b34fb'
     ];
   }
 
@@ -7167,19 +6990,12 @@ class BluetoothPrinterService {
 
   async connect() {
     if (!this.isSupported()) {
-      showToast('Browser ini belum mendukung Web Bluetooth. Gunakan Google Chrome/Edge atau pilih jalur cetak USB / Dialog Browser.', 'error');
+      showToast('Browser ini belum mendukung Web Bluetooth. Disarankan menggunakan Google Chrome atau Edge di Android/Laptop.', 'error');
       throw new Error('Web Bluetooth tidak didukung.');
     }
 
     try {
-      // Putuskan device lama milik instance ini saja (tidak mengganggu instance printer lainnya)
-      if (this.device && this.device.gatt && this.device.gatt.connected) {
-        try {
-          await this.device.gatt.disconnect();
-        } catch (e) { /* ignore */ }
-      }
-
-      showToast(`Pilih ${this.roleLabel} pada daftar Bluetooth...`, 'info');
+      showToast('Mencari printer Bluetooth di sekitar...', 'info');
 
       this.device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
@@ -7190,79 +7006,49 @@ class BluetoothPrinterService {
         this.isConnected = false;
         this.characteristic = null;
         this.server = null;
-        updatePrinterStatusUI(this.role);
-        showToast(`Koneksi ${this.roleLabel} Bluetooth terputus`, 'info');
+        updatePrinterStatusUI();
+        showToast('Koneksi printer Bluetooth terputus', 'info');
       });
 
-      showToast(`Menghubungkan ${this.roleLabel} (${this.device.name || 'Printer'})...`, 'info');
+      showToast(`Menghubungkan ke ${this.device.name || 'Printer'}...`, 'info');
       this.server = await this.device.gatt.connect();
 
-      const ignoredServices = ['00001800', '00001801', '0000180a', '0000180f'];
-      const preferredCharFragments = ['2af1', 'ffe1', 'fff2', 'ae01', 'bef8d6c9', '6e400002', '49535343-8841'];
-
-      let preferredChar = null;
-      let fallbackChar = null;
-      let services = [];
-
-      try {
-        services = await this.server.getPrimaryServices();
-      } catch (e) {
-        console.warn('getPrimaryServices gagal, mencoba fallback per-UUID:', e);
-      }
-
-      if (!services || services.length === 0) {
-        services = [];
-        for (const uuid of this.SERVICE_UUIDS) {
-          try {
-            const svc = await this.server.getPrimaryService(uuid);
-            if (svc) services.push(svc);
-          } catch (e) { /* UUID tidak tersedia di perangkat ini */ }
-        }
-      }
+      let foundChar = null;
+      const services = await this.server.getPrimaryServices();
 
       for (const service of services) {
-        const sUuid = (service.uuid || '').toLowerCase();
-        if (ignoredServices.some(prefix => sUuid.startsWith(prefix))) {
-          continue;
-        }
         try {
           const chars = await service.getCharacteristics();
           for (const char of chars) {
-            if (char.properties.writeWithoutResponse || char.properties.write) {
-              const cUuid = (char.uuid || '').toLowerCase();
-              if (!preferredChar && preferredCharFragments.some(frag => cUuid.includes(frag))) {
-                preferredChar = char;
-              }
-              if (!fallbackChar) {
-                fallbackChar = char;
-              }
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+              foundChar = char;
+              break;
             }
           }
-          if (preferredChar) break;
+          if (foundChar) break;
         } catch (e) {
           console.warn('Gagal membaca karakteristik service printer:', e);
         }
       }
 
-      const foundChar = preferredChar || fallbackChar;
       if (!foundChar) {
-        throw new Error(`Tidak ditemukan saluran cetak (Write Characteristic) pada ${this.roleLabel}.`);
+        throw new Error('Tidak ditemukan saluran cetak (Write Characteristic) pada perangkat ini.');
       }
 
       this.characteristic = foundChar;
       this.isConnected = true;
-      localStorage.setItem(this.storagePrefix + 'name', this.device.name || this.roleLabel);
-      updatePrinterStatusUI(this.role);
-      showToast(`${this.roleLabel} (${this.device.name || 'Printer'}) berhasil terhubung!`, 'success');
+      localStorage.setItem('ks_printer_name', this.device.name || 'Thermal Printer');
+      updatePrinterStatusUI();
+      showToast(`Printer ${this.device.name || ''} berhasil terhubung!`, 'success');
       return true;
     } catch (error) {
       this.isConnected = false;
       this.characteristic = null;
       this.server = null;
-      updatePrinterStatusUI(this.role);
+      updatePrinterStatusUI();
       if (error.name !== 'NotFoundError') {
         console.error('Bluetooth connect error:', error);
-        showToast(error.message || `Gagal menghubungkan ${this.roleLabel}`, 'error');
+        showToast(error.message || 'Gagal menghubungkan ke printer Bluetooth', 'error');
       }
       throw error;
     }
@@ -7275,9 +7061,9 @@ class BluetoothPrinterService {
     this.isConnected = false;
     this.characteristic = null;
     this.server = null;
-    localStorage.removeItem(this.storagePrefix + 'name');
-    updatePrinterStatusUI(this.role);
-    showToast(`${this.roleLabel} Bluetooth berhasil diputuskan`, 'info');
+    localStorage.removeItem('ks_printer_name');
+    updatePrinterStatusUI();
+    showToast('Printer Bluetooth berhasil diputuskan', 'info');
   }
 
   async writeBytes(bytes) {
@@ -7285,448 +7071,18 @@ class BluetoothPrinterService {
       throw new Error('Printer belum terhubung via Bluetooth.');
     }
 
-    const CHUNK_SIZE = 20;
+    const CHUNK_SIZE = 100;
     const buffer = new Uint8Array(bytes);
 
     for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
       const chunk = buffer.slice(i, i + CHUNK_SIZE);
       if (this.characteristic.properties.writeWithoutResponse) {
-        try {
-          await this.characteristic.writeValueWithoutResponse(chunk);
-        } catch (e) {
-          if (this.characteristic.properties.write) {
-            await this.characteristic.writeValue(chunk);
-          } else {
-            throw e;
-          }
-        }
+        await this.characteristic.writeValueWithoutResponse(chunk);
       } else {
-        try {
-          await this.characteristic.writeValue(chunk);
-        } catch (e) {
-          if (this.characteristic.properties.writeWithoutResponse) {
-            await this.characteristic.writeValueWithoutResponse(chunk);
-          } else {
-            throw e;
-          }
-        }
+        await this.characteristic.writeValue(chunk);
       }
       await new Promise(r => setTimeout(r, 15));
     }
-  }
-
-  sanitizeTsplText(str) {
-    return String(str || '')
-      .replace(/[\r\n\t]+/g, ' ')
-      .replace(/"/g, "'")
-      .replace(/[^\x20-\x7E]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  wrapTextLines(str, maxChars, maxLines = 2) {
-    const clean = this.sanitizeTsplText(str);
-    if (!clean) return [];
-    const safeMaxChars = Math.max(4, maxChars || 16);
-    const words = clean.split(' ');
-    const lines = [];
-    let current = '';
-
-    for (let i = 0; i < words.length; i++) {
-      let word = words[i];
-      if (!word) continue;
-
-      if (word.length > safeMaxChars) {
-        if (current) {
-          lines.push(current);
-          current = '';
-          if (lines.length >= maxLines) break;
-        }
-        while (word.length > safeMaxChars && lines.length < maxLines) {
-          lines.push(word.slice(0, safeMaxChars));
-          word = word.slice(safeMaxChars);
-        }
-        if (lines.length >= maxLines) break;
-        current = word;
-        continue;
-      }
-
-      const candidate = current ? `${current} ${word}` : word;
-      if (candidate.length <= safeMaxChars) {
-        current = candidate;
-      } else {
-        lines.push(current);
-        current = word;
-        if (lines.length >= maxLines) {
-          current = '';
-          break;
-        }
-      }
-    }
-
-    if (current && lines.length < maxLines) {
-      lines.push(current);
-    }
-
-    return lines.slice(0, maxLines);
-  }
-
-  encodeAsciiBytes(str) {
-    const out = [];
-    const s = String(str || '');
-    for (let i = 0; i < s.length; i++) {
-      let code = s.charCodeAt(i);
-      if (code > 127) code = 32;
-      out.push(code);
-    }
-    return out;
-  }
-
-  formatTsplTwoCols(left, right, maxChars) {
-    const l = this.sanitizeTsplText(left);
-    const r = this.sanitizeTsplText(right);
-    const cols = Math.max(12, maxChars || 30);
-    const spacesNeeded = cols - l.length - r.length;
-    if (spacesNeeded > 0) {
-      return l + ' '.repeat(spacesNeeded) + r;
-    }
-    const availLeft = Math.max(1, cols - r.length - 1);
-    return l.slice(0, availLeft) + ' ' + r;
-  }
-
-  buildTsplCupLabel(cup, meta) {
-    const savedCfg = (typeof getSavedCupLabelConfig === 'function') ? getSavedCupLabelConfig() : { width: 58, height: 40, gap: 2 };
-    const rawW = (this.role === 'cup' && Number.isFinite(parseInt(this.labelWidth, 10))) ? parseInt(this.labelWidth, 10) : savedCfg.width;
-    const rawH = (this.role === 'cup' && Number.isFinite(parseInt(this.labelHeight, 10))) ? parseInt(this.labelHeight, 10) : savedCfg.height;
-    const rawGap = (this.role === 'cup' && Number.isFinite(parseInt(this.labelGap, 10))) ? parseInt(this.labelGap, 10) : savedCfg.gap;
-
-    const wMm = Math.max(30, rawW || 58);
-    const isContinuous = !rawH || rawH <= 0;
-    const hMm = isContinuous ? 40 : Math.max(25, rawH);
-    const gapMm = isContinuous ? 0 : Math.max(0, rawGap || 0);
-    const printableW = Math.min(wMm, 48) * 8; // maks 384 dots untuk printhead 48mm
-    const labelDotsH = hMm * 8;
-    const dir = this.tsplDirection === '1' ? '1' : '0';
-
-    const queueText = this.sanitizeTsplText(meta.queueNum || '01').slice(0, 4);
-    const orderText = `[${this.sanitizeTsplText(meta.orderType || 'DINE IN')}]`;
-    const cupText = `Cup ${meta.cupNum || 1}/${meta.totalCups || 1}`;
-    const timeText = this.sanitizeTsplText(`${meta.tglStr || ''} ${meta.jamStr || ''}`);
-    const custText = `PELANGGAN: ${this.sanitizeTsplText(meta.custName || '-').toUpperCase()}`;
-    const shortIdText = `#${this.sanitizeTsplText(meta.shortId || '-')}`;
-    const brandText = 'KOPI SEMBILAN';
-
-    const lines = [
-      `SIZE ${wMm} mm, ${hMm} mm`,
-      `GAP ${gapMm} mm, 0 mm`,
-      `SPEED 4`,
-      `DENSITY 8`,
-      `DIRECTION ${dir}`,
-      `REFERENCE 0,0`,
-      `CLS`
-    ];
-
-    if (hMm <= 32) {
-      // Mode Compact (mis. 58x30mm / 50x30mm / 40x30mm)
-      const padX = 8;
-      const contentW = printableW - padX * 2;
-      const footerBarY = labelDotsH - 22;
-      const footerTextY = labelDotsH - 16;
-
-      // Baris 1: Queue di kiri (Font 4: 24x32), [ORDER] & Cup X/Y di kanan
-      lines.push(`TEXT ${padX},6,"4",0,1,1,"${queueText}"`);
-      const qWidth = queueText.length * 24 + 8;
-      const orderX = Math.max(padX + qWidth, printableW - padX - orderText.length * 8);
-      const cupX = Math.max(padX + qWidth, printableW - padX - cupText.length * 12);
-      lines.push(`TEXT ${orderX},6,"1",0,1,1,"${orderText}"`);
-      lines.push(`TEXT ${cupX},20,"2",0,1,1,"${cupText}"`);
-
-      // Baris 2: Waktu
-      lines.push(`TEXT ${padX},42,"1",0,1,1,"${timeText.slice(0, Math.floor(contentW / 8))}"`);
-
-      // Garis pemisah atas
-      lines.push(`BAR ${padX},56,${contentW},2`);
-
-      // Baris 3: Pelanggan
-      const maxCustChars = Math.floor(contentW / 12);
-      lines.push(`TEXT ${padX},62,"2",0,1,1,"${custText.slice(0, maxCustChars)}"`);
-
-      // Baris 4: Nama Minuman (Font 3: 16x24, max 2 baris)
-      let curY = 86;
-      const menuLines = this.wrapTextLines(cup.name, Math.floor(contentW / 16), 2);
-      menuLines.forEach(ml => {
-        if (curY + 24 <= footerBarY - 2) {
-          lines.push(`TEXT ${padX},${curY},"3",0,1,1,"${ml}"`);
-          curY += 26;
-        }
-      });
-
-      // Baris 5: Varian (Font 2: 12x20)
-      if (cup.variants && curY + 20 <= footerBarY - 3) {
-        const varLines = this.wrapTextLines(cup.variants, Math.floor(contentW / 12), 1);
-        if (varLines[0]) {
-          lines.push(`TEXT ${padX},${curY},"2",0,1,1,"${varLines[0]}"`);
-          curY += 22;
-        }
-      }
-
-      // Baris 6: Catatan (Font 1: 8x12)
-      if (meta.finalCupNote && curY + 12 <= footerBarY - 3) {
-        const noteLines = this.wrapTextLines(`Catatan: ${meta.finalCupNote}`, Math.floor(contentW / 8), 1);
-        if (noteLines[0]) {
-          lines.push(`TEXT ${padX},${curY},"1",0,1,1,"${noteLines[0]}"`);
-        }
-      }
-
-      // Baris 7: Footer
-      lines.push(`BAR ${padX},${footerBarY},${contentW},2`);
-      lines.push(`TEXT ${padX},${footerTextY},"1",0,1,1,"${shortIdText}"`);
-      const brandX = Math.max(padX + shortIdText.length * 8 + 8, printableW - padX - brandText.length * 8);
-      lines.push(`TEXT ${brandX},${footerTextY},"1",0,1,1,"${brandText}"`);
-    } else {
-      // Mode Standar (mis. 58x40mm / 50x40mm / 58x50mm)
-      const padX = 10;
-      const contentW = printableW - padX * 2;
-      const footerBarY = labelDotsH - 32;
-      const footerTextY = labelDotsH - 24;
-
-      // Baris 1: Queue besar di kiri, [ORDER] & Cup X/Y di kanan
-      const qMulX = queueText.length <= 2 ? 2 : 1;
-      lines.push(`TEXT ${padX},10,"4",0,${qMulX},2,"${queueText}"`);
-      const qWidth = queueText.length * 24 * qMulX + 10;
-      const orderX = Math.max(padX + qWidth, printableW - padX - orderText.length * 12);
-      const cupCharW = (cupText.length * 16 <= printableW - padX - (padX + qWidth)) ? 16 : 12;
-      const cupFont = cupCharW === 16 ? '3' : '2';
-      const cupX = Math.max(padX + qWidth, printableW - padX - cupText.length * cupCharW);
-
-      lines.push(`TEXT ${orderX},12,"2",0,1,1,"${orderText}"`);
-      lines.push(`TEXT ${cupX},40,"${cupFont}",0,1,1,"${cupText}"`);
-
-      // Baris 2: Waktu
-      lines.push(`TEXT ${padX},80,"2",0,1,1,"${timeText.slice(0, Math.floor(contentW / 12))}"`);
-
-      // Garis pemisah atas
-      lines.push(`BAR ${padX},104,${contentW},2`);
-
-      // Baris 3: Pelanggan
-      lines.push(`TEXT ${padX},112,"2",0,1,1,"${custText.slice(0, Math.floor(contentW / 12))}"`);
-
-      // Baris 4: Nama Minuman (Font 3: 16x24, max 2 baris)
-      let curY = 140;
-      const menuLines = this.wrapTextLines(cup.name, Math.floor(contentW / 16), 2);
-      menuLines.forEach(ml => {
-        if (curY + 24 <= footerBarY - 4) {
-          lines.push(`TEXT ${padX},${curY},"3",0,1,1,"${ml}"`);
-          curY += 27;
-        }
-      });
-
-      // Baris 5: Varian (Font 2: 12x20, max 2 baris)
-      if (cup.variants) {
-        const varLines = this.wrapTextLines(cup.variants, Math.floor(contentW / 12), 2);
-        varLines.forEach(vl => {
-          if (curY + 20 <= footerBarY - 4) {
-            lines.push(`TEXT ${padX},${curY},"2",0,1,1,"${vl}"`);
-            curY += 22;
-          }
-        });
-      }
-
-      // Baris 6: Catatan (Font 1: 8x12, max 2 baris)
-      if (meta.finalCupNote) {
-        const noteLines = this.wrapTextLines(`Catatan: ${meta.finalCupNote}`, Math.floor(contentW / 8), 2);
-        noteLines.forEach(nl => {
-          if (curY + 12 <= footerBarY - 4) {
-            lines.push(`TEXT ${padX},${curY},"1",0,1,1,"${nl}"`);
-            curY += 14;
-          }
-        });
-      }
-
-      // Baris 7: Footer
-      lines.push(`BAR ${padX},${footerBarY},${contentW},2`);
-      lines.push(`TEXT ${padX},${footerTextY},"2",0,1,1,"${shortIdText}"`);
-      const brandX = Math.max(padX + shortIdText.length * 12 + 8, printableW - padX - brandText.length * 12);
-      lines.push(`TEXT ${brandX},${footerTextY},"2",0,1,1,"${brandText}"`);
-    }
-
-    lines.push('PRINT 1,1');
-    return lines.join('\r\n') + '\r\n';
-  }
-
-  buildTsplTestLabel() {
-    const wMm = Math.max(30, parseInt(this.labelWidth, 10) || 58);
-    const isContinuous = !this.labelHeight || parseInt(this.labelHeight, 10) <= 0;
-    const hMm = isContinuous ? 40 : Math.max(25, parseInt(this.labelHeight, 10));
-    const gapMm = isContinuous ? 0 : Math.max(0, parseInt(this.labelGap, 10) || 0);
-    const printableW = Math.min(wMm, 48) * 8;
-    const labelDotsH = hMm * 8;
-    const dir = this.tsplDirection === '1' ? '1' : '0';
-    const padX = 10;
-    const contentW = printableW - padX * 2;
-    const sizeText = isContinuous ? `${wMm}mm Continuous` : `${wMm} x ${hMm} mm`;
-    const dateStr = this.sanitizeTsplText(new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }));
-
-    const lines = [
-      `SIZE ${wMm} mm, ${hMm} mm`,
-      `GAP ${gapMm} mm, 0 mm`,
-      `SPEED 4`,
-      `DENSITY 8`,
-      `DIRECTION ${dir}`,
-      `REFERENCE 0,0`,
-      `CLS`,
-      `TEXT ${padX},12,"3",0,1,1,"KOPI SEMBILAN"`,
-      `TEXT ${padX},42,"2",0,1,1,"TEST LABEL [OK]"`,
-      `BAR ${padX},68,${contentW},2`,
-      `TEXT ${padX},78,"2",0,1,1,"Mode: TSPL"`,
-      `TEXT ${padX},104,"2",0,1,1,"Ukuran: ${sizeText}"`,
-      `TEXT ${padX},132,"1",0,1,1,"${dateStr.slice(0, Math.floor(contentW / 8))}"`
-    ];
-
-    if (labelDotsH >= 220) {
-      lines.push(`BAR ${padX},${labelDotsH - 32},${contentW},2`);
-      lines.push(`TEXT ${padX},${labelDotsH - 22},"1",0,1,1,"Web Bluetooth BLE Siap"`);
-    }
-
-    lines.push('PRINT 1,1');
-    return lines.join('\r\n') + '\r\n';
-  }
-
-  buildTsplReceipt(txn, txnItems = []) {
-    const wMm = this.paperWidth === '80' ? 80 : Math.max(30, parseInt(this.labelWidth, 10) || 58);
-    const printableW = Math.min(wMm, this.paperWidth === '80' ? 72 : 48) * 8;
-    const padX = 10;
-    const contentW = printableW - padX * 2;
-    const maxCharsF2 = Math.floor(contentW / 12);
-    const maxCharsF1 = Math.floor(contentW / 8);
-    const dir = this.tsplDirection === '1' ? '1' : '0';
-
-    const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
-      name: 'TOKO KOPI SEMBILAN',
-      address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
-      phone: '085336688839'
-    };
-
-    const cmds = [];
-    let curY = 12;
-
-    const addTextCmd = (font, text, xOffset = padX, xMul = 1, yMul = 1) => {
-      const clean = this.sanitizeTsplText(text);
-      if (!clean) return;
-      const baseH = font === '3' ? 24 : (font === '2' ? 20 : 12);
-      cmds.push(`TEXT ${xOffset},${curY},"${font}",0,${xMul},${yMul},"${clean}"`);
-      curY += baseH * yMul + 4;
-    };
-
-    const addBarCmd = () => {
-      cmds.push(`BAR ${padX},${curY},${contentW},2`);
-      curY += 8;
-    };
-
-    // 1. Header Toko
-    const storeName = this.sanitizeTsplText(store.name || 'TOKO KOPI SEMBILAN').slice(0, Math.floor(contentW / 16));
-    const storeNameX = Math.max(padX, Math.floor((printableW - storeName.length * 16) / 2));
-    addTextCmd('3', storeName, storeNameX);
-
-    if (store.address) {
-      this.wrapTextLines(store.address, maxCharsF1, 3).forEach(line => {
-        const lx = Math.max(padX, Math.floor((printableW - line.length * 8) / 2));
-        addTextCmd('1', line, lx);
-      });
-    }
-    if (store.phone) {
-      const waStr = `WA: ${this.sanitizeTsplText(store.phone)}`;
-      const wx = Math.max(padX, Math.floor((printableW - waStr.length * 8) / 2));
-      addTextCmd('1', waStr, wx);
-    }
-    curY += 6;
-
-    // 2. Info Transaksi (Publik saja: Tgl, Jam, ID)
-    const d = txn.date ? new Date(txn.date) : new Date();
-    const tglStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-    const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    addTextCmd('2', this.formatTsplTwoCols(`Tgl: ${tglStr}`, `Jam: ${jamStr}`, maxCharsF2));
-    addTextCmd('2', `ID: ${this.sanitizeTsplText(txn.id || '-')}`.slice(0, maxCharsF2));
-    addBarCmd();
-
-    // 3. Daftar Item Pesanan
-    txnItems.forEach(item => {
-      let name = item.name;
-      if (!name && item.products && item.products.name) name = item.products.name;
-      if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
-      if (!name) name = 'Produk';
-
-      const qty = item.qty || 1;
-      const price = Number(item.price || item.totalPrice || 0);
-      const subtotal = Number(item.totalPrice ? item.totalPrice : price * qty);
-
-      this.wrapTextLines(name, maxCharsF2, 2).forEach(nl => addTextCmd('2', nl));
-      addTextCmd('2', this.formatTsplTwoCols(`  ${qty} x ${fmtRp(price)}`, fmtRp(subtotal), maxCharsF2));
-
-      if (item.selected_variants && Array.isArray(item.selected_variants) && item.selected_variants.length > 0) {
-        const varText = '  - ' + item.selected_variants.map(v => v.name).join(', ');
-        this.wrapTextLines(varText, maxCharsF1, 2).forEach(vl => addTextCmd('1', vl));
-      }
-      if (item.item_note || item.note) {
-        const noteText = '  * ' + (item.item_note || item.note);
-        this.wrapTextLines(noteText, maxCharsF1, 2).forEach(nl => addTextCmd('1', nl));
-      }
-    });
-
-    addBarCmd();
-
-    // 4. Total & Pembayaran
-    const maxCharsF3 = Math.floor(contentW / 16);
-    addTextCmd('3', this.formatTsplTwoCols('TOTAL', fmtRp(txn.total || 0), maxCharsF3));
-
-    const isLunas = txn.payment_status === 'Lunas';
-    const methodStr = String(txn.payment_method || 'TUNAI').toUpperCase();
-
-    if (txn.payment_method === 'cash' && isLunas) {
-      addTextCmd('2', this.formatTsplTwoCols('Bayar (Tunai)', fmtRp(txn.cash_amount || txn.total || 0), maxCharsF2));
-      const kembalian = Math.max(0, (txn.cash_change || (txn.cash_amount ? txn.cash_amount - txn.total : 0)));
-      addTextCmd('2', this.formatTsplTwoCols('Kembalian', kembalian > 0 ? fmtRp(kembalian) : 'Pas', maxCharsF2));
-    } else if (txn.payment_method === 'split' && isLunas) {
-      addTextCmd('2', this.formatTsplTwoCols('Metode Bayar', 'SPLIT PAYMENT', maxCharsF2));
-      addTextCmd('2', this.formatTsplTwoCols('  - Tunai', fmtRp(txn.cash_amount || 0), maxCharsF2));
-      const nonCash = Math.max(0, (Number(txn.total) || 0) - (Number(txn.cash_amount) || 0));
-      addTextCmd('2', this.formatTsplTwoCols('  - Non-Tunai', fmtRp(nonCash), maxCharsF2));
-    } else {
-      addTextCmd('2', this.formatTsplTwoCols('Metode Bayar', methodStr, maxCharsF2));
-      if (!isLunas) {
-        const blm = '*** STATUS: BELUM LUNAS ***';
-        const bx = Math.max(padX, Math.floor((printableW - blm.length * 12) / 2));
-        addTextCmd('2', blm, bx);
-      }
-    }
-
-    const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : (txn.notes || '');
-    if (cleanNote) {
-      curY += 4;
-      this.wrapTextLines('Catatan: ' + cleanNote, maxCharsF1, 3).forEach(nl => addTextCmd('1', nl));
-    }
-
-    addBarCmd();
-
-    // 5. Footer
-    const thx = 'Terima Kasih Atas Kunjungan Anda';
-    this.wrapTextLines(thx, maxCharsF1, 2).forEach(tl => {
-      const tx = Math.max(padX, Math.floor((printableW - tl.length * 8) / 2));
-      addTextCmd('1', tl, tx);
-    });
-
-    const hMm = Math.max(40, Math.ceil((curY + 24) / 8));
-    const header = [
-      `SIZE ${wMm} mm, ${hMm} mm`,
-      `GAP 0 mm, 0 mm`,
-      `SPEED 4`,
-      `DENSITY 8`,
-      `DIRECTION ${dir}`,
-      `REFERENCE 0,0`,
-      `CLS`
-    ];
-
-    return [...header, ...cmds, 'PRINT 1,1'].join('\r\n') + '\r\n';
   }
 
   createEscPosBuilder() {
@@ -7782,13 +7138,6 @@ class BluetoothPrinterService {
       await this.connect();
     }
 
-    if (this.commandMode === 'tspl') {
-      const tsplStr = this.buildTsplTestLabel();
-      await this.writeBytes(this.encodeAsciiBytes(tsplStr));
-      showToast('Uji cetak label (TSPL) berhasil dikirim ke printer!', 'success');
-      return;
-    }
-
     const b = this.createEscPosBuilder();
     b.init();
     b.alignCenter();
@@ -7798,7 +7147,7 @@ class BluetoothPrinterService {
     b.normalSize();
     b.boldOff();
     b.textLine('Uji Coba Printer Bluetooth');
-    b.textLine(new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' }));
+    b.textLine(new Date().toLocaleDateString('id-ID', { dateStyle: 'full', timeStyle: 'short' }));
     b.feed(1);
     b.divider('=');
     b.alignLeft();
@@ -7821,23 +7170,16 @@ class BluetoothPrinterService {
       await this.connect();
     }
 
-    let txnItems = items || txn.transaction_items || [];
-    if (typeof txnItems === 'string') {
-      try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
-    }
-
-    if (this.commandMode === 'tspl') {
-      const tsplStr = this.buildTsplReceipt(txn, txnItems);
-      await this.writeBytes(this.encodeAsciiBytes(tsplStr));
-      showToast('Struk berhasil dicetak ke printer Bluetooth (TSPL)!', 'success');
-      return;
-    }
-
     const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
       name: 'TOKO KOPI SEMBILAN',
       address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
       phone: '085336688839'
     };
+
+    let txnItems = items || txn.transaction_items || [];
+    if (typeof txnItems === 'string') {
+      try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
+    }
 
     const b = this.createEscPosBuilder();
     b.init();
@@ -7921,11 +7263,10 @@ class BluetoothPrinterService {
       }
     }
 
-    const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : (txn.notes || '');
-    if (cleanNote) {
+    if (txn.notes) {
       b.feed(1);
       b.alignLeft();
-      b.textLine('Catatan: ' + cleanNote);
+      b.textLine('Catatan: ' + txn.notes);
     }
 
     b.divider('-');
@@ -7996,6 +7337,7 @@ class BluetoothPrinterService {
     }
 
     const custName = getCustomerNameFromTxn(txn) || '-';
+    const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
     const generalNote = getCleanNote(txn.notes);
 
     let orderType = 'DINE IN';
@@ -8006,73 +7348,56 @@ class BluetoothPrinterService {
       }
     }
 
-    showToast(`Mencetak ${totalCups} stiker cup via Bluetooth${this.commandMode === 'tspl' ? ' (TSPL)' : ''}...`, 'info');
+    showToast(`Mencetak ${totalCups} stiker cup via Bluetooth...`, 'info');
 
     for (let i = 0; i < totalCups; i++) {
       const cup = cups[i];
       const cupNum = i + 1;
+      const b = this.createEscPosBuilder();
+      b.init();
+
+      // Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan
+      b.alignLeft();
+      b.doubleWidthHeight();
+      b.boldOn();
+      b.text(`${queueNum} `);
+      b.normalSize();
+      b.boldOff();
+      b.textLine(`  [${orderType}]  Cup ${cupNum}/${totalCups}`);
+
+      // Baris 2: Waktu (Nama kasir dihapus sesuai permintaan)
+      b.textLine(`${tglStr} ${jamStr}`);
+
+      // Baris 3: Nama Pelanggan (Wajib & Jelas)
+      b.divider('-');
+      b.boldOn();
+      b.textLine(`PELANGGAN: ${custName.toUpperCase()}`);
+      b.boldOff();
+
+      // Baris 4: Nama Minuman (Besar & Tebal)
+      b.doubleHeight();
+      b.boldOn();
+      b.textLine(cup.name);
+      b.normalSize();
+      b.boldOff();
+
+      // Baris 5: Varian
+      if (cup.variants) {
+        b.textLine(cup.variants);
+      }
+      // Baris 6: Catatan
       const finalCupNote = cup.note || generalNote;
-
-      if (this.commandMode === 'tspl') {
-        const tsplLabel = this.buildTsplCupLabel(cup, {
-          queueNum,
-          orderType,
-          cupNum,
-          totalCups,
-          tglStr,
-          jamStr,
-          custName,
-          shortId,
-          finalCupNote
-        });
-        await this.writeBytes(this.encodeAsciiBytes(tsplLabel));
-      } else {
-        const b = this.createEscPosBuilder();
-        b.init();
-
-        // Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan
-        b.alignLeft();
-        b.doubleWidthHeight();
-        b.boldOn();
-        b.text(`${queueNum} `);
-        b.normalSize();
-        b.boldOff();
-        b.textLine(`  [${orderType}]  Cup ${cupNum}/${totalCups}`);
-
-        // Baris 2: Waktu
-        b.textLine(`${tglStr} ${jamStr}`);
-
-        // Baris 3: Nama Pelanggan
-        b.divider('-');
-        b.boldOn();
-        b.textLine(`PELANGGAN: ${custName.toUpperCase()}`);
-        b.boldOff();
-
-        // Baris 4: Nama Minuman (Besar & Tebal)
-        b.doubleHeight();
-        b.boldOn();
-        b.textLine(cup.name);
-        b.normalSize();
-        b.boldOff();
-
-        // Baris 5: Varian
-        if (cup.variants) {
-          b.textLine(cup.variants);
-        }
-        // Baris 6: Catatan
-        if (finalCupNote) {
-          b.textLine(`Catatan: ${finalCupNote}`);
-        }
-
-        // Baris 7: Footer
-        b.divider('-');
-        b.twoColumns(`#${shortId}`, 'KOPI SEMBILAN');
-        b.feed(3);
-        b.cut();
-
-        await this.writeBytes(b.getBytes());
+      if (finalCupNote) {
+        b.textLine(`Catatan: ${finalCupNote}`);
       }
 
+      // Baris 7: Footer
+      b.divider('-');
+      b.twoColumns(`#${shortId}`, 'KOPI SEMBILAN');
+      b.feed(3);
+      b.cut();
+
+      await this.writeBytes(b.getBytes());
       if (i < totalCups - 1) {
         await new Promise(r => setTimeout(r, 250));
       }
@@ -8101,202 +7426,28 @@ class BluetoothPrinterService {
   }
 }
 
-// Inisialisasi 2 Instance Global Terpisah (Printer 1 Struk & Printer 2 Stiker Cup)
-window.receiptPrinter = new BluetoothPrinterService('receipt');
-window.cupPrinter = new BluetoothPrinterService('cup');
-// Alias backward compatibility mengarah ke Printer 1 (Struk)
-window.bluetoothPrinter = window.receiptPrinter;
+// Inisialisasi Instance Global
+window.bluetoothPrinter = new BluetoothPrinterService();
 
-// Helper Functions Global untuk UI & Konfigurasi Printer
-function getSavedCupLabelConfig() {
-  const presets = ['58x40', '58x30', '58x50', '50x40', '50x30', '40x30', '58x0'];
-  const rawW = parseInt(localStorage.getItem('ks_cup_label_w'), 10);
-  const rawH = parseInt(localStorage.getItem('ks_cup_label_h'), 10);
-  const rawGap = parseInt(localStorage.getItem('ks_cup_label_gap'), 10);
-  const savedPreset = localStorage.getItem('ks_cup_label_preset');
-
-  const width = (Number.isFinite(rawW) && rawW >= 30 && rawW <= 100) ? rawW : 58;
-  const height = (Number.isFinite(rawH) && rawH >= 0 && rawH <= 150) ? rawH : 40;
-  const gap = (Number.isFinite(rawGap) && rawGap >= 0 && rawGap <= 10) ? rawGap : (height === 0 ? 0 : 2);
-  const key = `${width}x${height}`;
-  let preset = savedPreset;
-  if (!preset || (preset !== 'custom' && preset !== key)) {
-    preset = presets.includes(key) ? key : 'custom';
-  }
-  return {
-    width,
-    height,
-    gap,
-    preset,
-    isContinuous: height === 0
-  };
-}
-
-function escapePrintHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-async function dispatchReceiptPrint(txn, items = null) {
-  const rp = window.receiptPrinter || window.bluetoothPrinter;
-  if (!rp || rp.connectionType === 'browser') {
-    openReceiptPrintDialog(txn, items);
-    return;
-  }
-  if (rp.connectionType === 'bluetooth') {
-    await rp.printReceipt(txn, items);
-    return;
-  }
-  // Mode 'auto'
-  if (rp.isConnected) {
-    await rp.printReceipt(txn, items);
-  } else {
-    openReceiptPrintDialog(txn, items);
-  }
-}
-
-async function dispatchCupPrint(txn, items = null) {
-  const cp = window.cupPrinter;
-  if (!cp || cp.connectionType === 'browser') {
-    openCupStickersPrintDialog(txn, items);
-    return;
-  }
-  if (cp.connectionType === 'bluetooth') {
-    await cp.printCupStickers(txn, items);
-    return;
-  }
-  if (cp.connectionType === 'same_as_receipt') {
-    const rp = window.receiptPrinter;
-    if (rp && rp.isConnected) {
-      const cfg = getSavedCupLabelConfig();
-      rp.labelWidth = cfg.width;
-      rp.labelHeight = cfg.height;
-      rp.labelGap = cfg.gap;
-      await rp.printCupStickers(txn, items);
-    } else {
-      openCupStickersPrintDialog(txn, items);
-    }
-    return;
-  }
-  // Mode 'auto'
-  if (cp.isConnected) {
-    await cp.printCupStickers(txn, items);
-  } else {
-    openCupStickersPrintDialog(txn, items);
-  }
-}
-
-async function connectReceiptPrinter() {
-  try {
-    await window.receiptPrinter.connect();
-  } catch (e) { /* sudah ditangani di service */ }
-}
-
-async function disconnectReceiptPrinter() {
-  try {
-    await window.receiptPrinter.disconnect();
-  } catch (e) { /* ignore */ }
-}
-
-async function connectCupPrinter() {
-  try {
-    await window.cupPrinter.connect();
-  } catch (e) { /* sudah ditangani di service */ }
-}
-
-async function disconnectCupPrinter() {
-  try {
-    await window.cupPrinter.disconnect();
-  } catch (e) { /* ignore */ }
-}
-
-// Alias backward compatibility mengarah ke Printer 1 (Struk)
+// Helper Functions Global untuk UI
 async function connectBluetoothPrinter() {
-  return connectReceiptPrinter();
+  try {
+    await window.bluetoothPrinter.connect();
+  } catch (e) { /* sudah ditangani di service */ }
 }
 
 async function disconnectBluetoothPrinter() {
-  return disconnectReceiptPrinter();
+  try {
+    await window.bluetoothPrinter.disconnect();
+  } catch (e) { /* ignore */ }
 }
 
-window.printReceiptViaBluetoothDirect = async function (txn, items = null) {
-  const rp = window.receiptPrinter || window.bluetoothPrinter;
-  if (!rp) return;
-  await rp.printReceipt(txn, items);
-};
-
-window.printCupViaBluetoothDirect = async function (txn, items = null) {
-  const cp = window.cupPrinter;
-  const rp = window.receiptPrinter;
-  if (cp && cp.connectionType === 'same_as_receipt' && !cp.isConnected && rp && rp.isConnected) {
-    const cfg = getSavedCupLabelConfig();
-    rp.labelWidth = cfg.width;
-    rp.labelHeight = cfg.height;
-    rp.labelGap = cfg.gap;
-    await rp.printCupStickers(txn, items);
-    return;
-  }
-  if (cp) {
-    await cp.printCupStickers(txn, items);
-  }
-};
-
-window.printLastReceiptBluetooth = async function () {
-  const payload = window._lastReceiptPrintPayload;
-  if (!payload || !payload.txn) {
-    showToast('Data struk tidak ditemukan untuk dicetak ulang', 'error');
-    return;
-  }
-  try {
-    await window.printReceiptViaBluetoothDirect(payload.txn, payload.items || null);
-  } catch (e) {
-    console.error('printLastReceiptBluetooth error:', e);
-  }
-};
-
-window.printLastCupBluetooth = async function () {
-  const payload = window._lastCupPrintPayload;
-  if (!payload || !payload.txn) {
-    showToast('Data stiker cup tidak ditemukan untuk dicetak ulang', 'error');
-    return;
-  }
-  try {
-    await window.printCupViaBluetoothDirect(payload.txn, payload.items || null);
-  } catch (e) {
-    console.error('printLastCupBluetooth error:', e);
-  }
-};
-
 async function testPrintBluetooth() {
-  const dummyTxn = {
-    id: 'TXN-TEST-9999',
-    date: new Date().toISOString(),
-    total: 43000,
-    payment_method: 'cash',
-    payment_status: 'Lunas',
-    cash_amount: 50000,
-    cash_change: 7000,
-    notes: 'Uji cetak dialog struk'
-  };
-  const dummyItems = [
-    { name: 'Kopi Susu Sembilan', qty: 1, price: 18000, selected_variants: [{ name: 'Regular' }, { name: 'Normal Ice' }] },
-    { name: 'Hazelnut Latte', qty: 1, price: 25000, selected_variants: [{ name: 'Regular' }], item_note: 'Less sugar' }
-  ];
   try {
-    const rp = window.receiptPrinter || window.bluetoothPrinter;
-    if (rp && (rp.connectionType === 'bluetooth' || (rp.connectionType === 'auto' && rp.isConnected))) {
-      await rp.testPrint();
-    } else {
-      openReceiptPrintDialog(dummyTxn, dummyItems);
-    }
+    await window.bluetoothPrinter.testPrint();
   } catch (e) {
-    console.error('testPrintBluetooth error:', e);
-    const rp = window.receiptPrinter || window.bluetoothPrinter;
-    if (!rp || !rp.isConnected) {
-      showToast('Gagal membuka atau mengirim uji cetak struk', 'error');
+    if (!window.bluetoothPrinter.isConnected) {
+      showToast('Hubungkan printer Bluetooth terlebih dahulu', 'error');
     }
   }
 }
@@ -8309,265 +7460,75 @@ async function printTransactionByIdBluetooth(id) {
       showToast('Gagal mengambil data transaksi!', 'error');
       return;
     }
-    await dispatchReceiptPrint(txn);
+    await window.bluetoothPrinter.printReceipt(txn);
   } catch (e) {
     console.error('Cetak transaksi error:', e);
-    showToast('Terjadi kesalahan saat memproses cetak struk', 'error');
   }
-}
-
-function setReceiptPrinterConn(val) {
-  const allowed = ['auto', 'bluetooth', 'browser'];
-  const safeVal = allowed.includes(val) ? val : 'auto';
-  if (window.receiptPrinter) {
-    window.receiptPrinter.connectionType = safeVal;
-  }
-  localStorage.setItem('ks_receipt_printer_conn', safeVal);
-  showToast('Jalur cetak Printer 1 (Struk) disimpan', 'success');
-}
-
-function setReceiptPrinterMode(mode) {
-  const safeMode = mode === 'tspl' ? 'tspl' : 'escpos';
-  if (window.receiptPrinter) {
-    window.receiptPrinter.commandMode = safeMode;
-  }
-  localStorage.setItem('ks_receipt_printer_mode', safeMode);
-  const dirWrap = document.getElementById('settings-receipt-tspl-dir-wrap');
-  if (dirWrap) {
-    dirWrap.style.display = safeMode === 'tspl' ? 'block' : 'none';
-  }
-  showToast(`Mode Bluetooth Printer Struk diatur ke ${safeMode.toUpperCase()}`, 'success');
-}
-
-function setReceiptTsplDirection(dir) {
-  const safeDir = dir === '1' ? '1' : '0';
-  if (window.receiptPrinter) {
-    window.receiptPrinter.tsplDirection = safeDir;
-  }
-  localStorage.setItem('ks_receipt_printer_tspl_dir', safeDir);
-  showToast(`Arah cetak TSPL Struk: ${safeDir === '1' ? 'Terbalik 180° (DIRECTION 1)' : 'Normal (DIRECTION 0)'}`, 'success');
 }
 
 function setPrinterPaperWidth(width) {
-  const safeW = width === '80' ? '80' : '58';
-  if (window.receiptPrinter) {
-    window.receiptPrinter.paperWidth = safeW;
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.paperWidth = width;
+    localStorage.setItem('ks_printer_paper', width);
+    showToast(`Lebar kertas diatur ke ${width} mm`, 'success');
   }
-  localStorage.setItem('ks_receipt_printer_paper', safeW);
-  localStorage.setItem('ks_printer_paper', safeW);
-  showToast(`Lebar kertas struk diatur ke ${safeW} mm`, 'success');
-}
-
-function setCupPrinterConn(val) {
-  const allowed = ['auto', 'bluetooth', 'browser', 'same_as_receipt'];
-  const safeVal = allowed.includes(val) ? val : 'auto';
-  if (window.cupPrinter) {
-    window.cupPrinter.connectionType = safeVal;
-  }
-  localStorage.setItem('ks_cup_printer_conn', safeVal);
-  showToast('Jalur cetak Printer 2 (Stiker Cup) disimpan', 'success');
-}
-
-function setCupPrinterMode(mode) {
-  const safeMode = mode === 'escpos' ? 'escpos' : 'tspl';
-  if (window.cupPrinter) {
-    window.cupPrinter.commandMode = safeMode;
-  }
-  localStorage.setItem('ks_cup_printer_mode', safeMode);
-  const dirWrap = document.getElementById('settings-cup-tspl-dir-wrap');
-  if (dirWrap) {
-    dirWrap.style.display = safeMode === 'tspl' ? 'block' : 'none';
-  }
-  showToast(`Mode Bluetooth Printer Stiker diatur ke ${safeMode.toUpperCase()}`, 'success');
-}
-
-function setCupTsplDirection(dir) {
-  const safeDir = dir === '1' ? '1' : '0';
-  if (window.cupPrinter) {
-    window.cupPrinter.tsplDirection = safeDir;
-  }
-  localStorage.setItem('ks_cup_printer_tspl_dir', safeDir);
-  localStorage.setItem('ks_tspl_direction', safeDir);
-  showToast(`Arah cetak TSPL Stiker: ${safeDir === '1' ? 'Terbalik 180° (DIRECTION 1)' : 'Normal (DIRECTION 0)'}`, 'success');
-}
-
-// Alias lama agar pemanggil eksternal tetap aman
-function setPrinterCommandMode(mode) {
-  setCupPrinterMode(mode);
-}
-
-function setTsplDirection(dir) {
-  setCupTsplDirection(dir);
-}
-
-function setCupLabelPreset(preset) {
-  const customWrap = document.getElementById('settings-cup-custom-wrap');
-  if (preset === 'custom') {
-    if (customWrap) customWrap.style.display = 'block';
-    localStorage.setItem('ks_cup_label_preset', 'custom');
-    return;
-  }
-
-  const parts = String(preset || '58x40').split('x');
-  const w = parseInt(parts[0], 10);
-  const h = parseInt(parts[1], 10);
-  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
-
-  const currentGap = window.cupPrinter ? window.cupPrinter.labelGap : 2;
-  const gap = h === 0 ? 0 : (currentGap > 0 ? currentGap : 2);
-
-  if (customWrap) customWrap.style.display = 'none';
-  const wEl = document.getElementById('settings-cup-w');
-  const hEl = document.getElementById('settings-cup-h');
-  const gEl = document.getElementById('settings-cup-gap');
-  if (wEl) wEl.value = w;
-  if (hEl) hEl.value = h;
-  if (gEl) gEl.value = gap;
-
-  localStorage.setItem('ks_cup_label_w', String(w));
-  localStorage.setItem('ks_cup_label_h', String(h));
-  localStorage.setItem('ks_cup_label_gap', String(gap));
-  localStorage.setItem('ks_cup_label_preset', preset);
-
-  if (window.cupPrinter) {
-    window.cupPrinter.labelWidth = w;
-    window.cupPrinter.labelHeight = h;
-    window.cupPrinter.labelGap = gap;
-  }
-
-  const labelText = h === 0 ? `${w} mm Continuous` : `${w} x ${h} mm`;
-  showToast(`Ukuran stiker cup diatur ke ${labelText}`, 'success');
-}
-
-function saveCustomCupLabelSize() {
-  const wEl = document.getElementById('settings-cup-w');
-  const hEl = document.getElementById('settings-cup-h');
-  const gEl = document.getElementById('settings-cup-gap');
-
-  const w = parseInt(wEl ? wEl.value : '', 10);
-  const h = parseInt(hEl ? hEl.value : '', 10);
-  const gap = gEl ? parseInt(gEl.value, 10) : 2;
-
-  if (!Number.isFinite(w) || w < 30 || w > 100) {
-    showToast('Lebar stiker harus antara 30 mm s.d. 100 mm', 'error');
-    return;
-  }
-  if (!Number.isFinite(h) || h < 0 || h > 150) {
-    showToast('Tinggi stiker harus antara 0 mm (continuous) s.d. 150 mm', 'error');
-    return;
-  }
-  if (!Number.isFinite(gap) || gap < 0 || gap > 10) {
-    showToast('Jarak gap stiker harus antara 0 mm s.d. 10 mm', 'error');
-    return;
-  }
-
-  localStorage.setItem('ks_cup_label_w', String(w));
-  localStorage.setItem('ks_cup_label_h', String(h));
-  localStorage.setItem('ks_cup_label_gap', String(gap));
-  localStorage.setItem('ks_cup_label_preset', 'custom');
-
-  if (window.cupPrinter) {
-    window.cupPrinter.labelWidth = w;
-    window.cupPrinter.labelHeight = h;
-    window.cupPrinter.labelGap = gap;
-  }
-
-  const labelText = h === 0 ? `${w} mm Continuous` : `${w} x ${h} mm (Gap ${gap} mm)`;
-  showToast(`Ukuran kustom stiker disimpan: ${labelText}`, 'success');
 }
 
 function togglePrinterAutoPrint(enabled) {
-  if (window.receiptPrinter) {
-    window.receiptPrinter.autoPrint = enabled;
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.autoPrint = enabled;
+    localStorage.setItem('ks_printer_autoprint', enabled ? 'true' : 'false');
+    showToast(enabled ? 'Cetak otomatis struk diaktifkan' : 'Cetak otomatis struk dinonaktifkan', 'info');
   }
-  localStorage.setItem('ks_printer_autoprint', enabled ? 'true' : 'false');
-  showToast(enabled ? 'Cetak otomatis struk diaktifkan' : 'Cetak otomatis struk dinonaktifkan', 'info');
 }
 
-function updatePrinterStatusUI(role = 'all') {
-  const updateSingle = (printerObj, badgeId, btnId, connectFnName, disconnectFnName, connectLabel, disconnectLabel, defaultName) => {
-    const badge = document.getElementById(badgeId);
-    const btn = document.getElementById(btnId);
-    const isConnected = !!(printerObj && printerObj.isConnected);
-    const devName = printerObj?.device?.name || (printerObj ? localStorage.getItem(printerObj.storagePrefix + 'name') : '') || defaultName;
+function updatePrinterStatusUI() {
+  const badge = document.getElementById('printer-status-badge');
+  const btn = document.getElementById('btn-printer-connect');
+  const isConnected = window.bluetoothPrinter && window.bluetoothPrinter.isConnected;
+  const devName = window.bluetoothPrinter?.device?.name || localStorage.getItem('ks_printer_name') || 'Thermal Printer';
 
-    if (badge) {
-      badge.className = `badge ${isConnected ? 'badge-green' : 'badge-amber'}`;
-      badge.textContent = isConnected ? `● Terhubung (${devName})` : '○ Belum Terhubung';
-    }
-
-    if (btn) {
-      btn.className = `btn ${isConnected ? 'btn-red' : 'btn-brown'} btn-sm`;
-      btn.setAttribute('onclick', isConnected ? `${disconnectFnName}()` : `${connectFnName}()`);
-      btn.innerHTML = `
-        <i data-lucide="${isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
-        <span>${isConnected ? disconnectLabel : connectLabel}</span>
-      `;
-    }
-  };
-
-  if (role === 'all' || role === 'receipt') {
-    updateSingle(
-      window.receiptPrinter,
-      'receipt-printer-status-badge',
-      'btn-receipt-printer-connect',
-      'connectReceiptPrinter',
-      'disconnectReceiptPrinter',
-      'Konek Bluetooth Struk',
-      'Putuskan Printer Struk',
-      'Printer Struk'
-    );
+  if (badge) {
+    badge.className = `badge ${isConnected ? 'badge-green' : 'badge-amber'}`;
+    badge.textContent = isConnected ? `● Terhubung (${devName})` : '○ Belum Terhubung';
   }
 
-  if (role === 'all' || role === 'cup') {
-    updateSingle(
-      window.cupPrinter,
-      'cup-printer-status-badge',
-      'btn-cup-printer-connect',
-      'connectCupPrinter',
-      'disconnectCupPrinter',
-      'Konek Bluetooth Stiker',
-      'Putuskan Printer Stiker',
-      'Printer Stiker'
-    );
+  if (btn) {
+    btn.className = `btn ${isConnected ? 'btn-red' : 'btn-brown'} btn-sm`;
+    btn.setAttribute('onclick', isConnected ? 'disconnectBluetoothPrinter()' : 'connectBluetoothPrinter()');
+    btn.innerHTML = `
+      <i data-lucide="${isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+      <span>${isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
+    `;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
-
-  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function togglePrinterAutoCup(enabled) {
-  if (window.cupPrinter) {
-    window.cupPrinter.autoCup = enabled;
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.autoCup = enabled;
+    localStorage.setItem('ks_printer_autocup', enabled ? 'true' : 'false');
+    showToast(enabled ? 'Cetak stiker cup otomatis diaktifkan' : 'Cetak stiker cup otomatis dinonaktifkan', 'info');
   }
-  localStorage.setItem('ks_printer_autocup', enabled ? 'true' : 'false');
-  showToast(enabled ? 'Cetak stiker cup otomatis diaktifkan' : 'Cetak stiker cup otomatis dinonaktifkan', 'info');
 }
 
 async function testPrintCupBluetooth() {
-  const dummyTxn = {
-    id: 'TXN-TEST-9999',
-    queue_number: '90',
-    customer_name: 'Budi (Sample)',
-    date: new Date().toISOString(),
-    notes: 'TAKE AWAY',
-    cashier_name: 'Barista Sembilan'
-  };
-  const dummyItems = [
-    { name: 'Kopi Susu Sembilan', qty: 1, selected_variants: [{ name: 'Regular' }, { name: 'Less Ice' }, { name: 'Normal Sugar' }], item_note: 'Gula aren dipisah' },
-    { name: 'Butterscotch Latte', qty: 1, selected_variants: [{ name: 'Large' }, { name: 'Extra Shot' }], item_note: 'Cup takeaway' }
-  ];
   try {
-    const cp = window.cupPrinter;
-    const rp = window.receiptPrinter;
-    if (cp && (cp.connectionType === 'bluetooth' || (cp.connectionType === 'auto' && cp.isConnected))) {
-      await cp.testPrintCup();
-    } else if (cp && cp.connectionType === 'same_as_receipt' && rp && rp.isConnected) {
-      const cfg = getSavedCupLabelConfig();
-      rp.labelWidth = cfg.width;
-      rp.labelHeight = cfg.height;
-      rp.labelGap = cfg.gap;
-      await rp.testPrintCup();
+    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
+      await window.bluetoothPrinter.testPrintCup();
     } else {
+      const dummyTxn = {
+        id: 'TXN-TEST-9999',
+        queue_number: '90',
+        customer_name: 'Budi (Sample)',
+        date: new Date().toISOString(),
+        notes: 'TAKE AWAY',
+        cashier_name: 'Barista Sembilan'
+      };
+      const dummyItems = [
+        { name: 'Kopi Susu Sembilan', qty: 1, selected_variants: [{ name: 'Regular' }, { name: 'Less Ice' }, { name: 'Normal Sugar' }], item_note: 'Gula aren dipisah' },
+        { name: 'Butterscotch Latte', qty: 1, selected_variants: [{ name: 'Large' }, { name: 'Extra Shot' }], item_note: 'Cup takeaway' }
+      ];
       openCupStickersPrintDialog(dummyTxn, dummyItems);
     }
   } catch (e) {
@@ -8575,396 +7536,7 @@ async function testPrintCupBluetooth() {
   }
 }
 
-window.openReceiptPrintDialog = function (txn, items = null) {
-  if (!txn) return;
-  window._lastReceiptPrintPayload = { txn, items };
-
-  let rawItems = items || txn.transaction_items || [];
-  if (typeof rawItems === 'string') {
-    try { rawItems = JSON.parse(rawItems); } catch (e) { rawItems = []; }
-  }
-
-  const normalizedItems = rawItems.map(item => {
-    let name = item.name;
-    if (!name && item.products && item.products.name) name = item.products.name;
-    if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
-    if (!name) name = 'Produk';
-
-    const qty = Math.max(1, parseInt(item.qty, 10) || 1);
-    const price = Number(item.price !== undefined ? item.price : (item.totalPrice !== undefined ? item.totalPrice : 0));
-    const variants = Array.isArray(item.selected_variants)
-      ? item.selected_variants
-      : (Array.isArray(item.variants) ? item.variants : []);
-    const note = item.item_note || item.note || '';
-    const productKey = item.product_id || item.productId || name;
-
-    return { productKey, name, qty, price, selected_variants: variants, item_note: note };
-  });
-
-  const groupedItems = normalizedItems.reduce((acc, item) => {
-    const existing = acc.find(i =>
-      i.productKey === item.productKey &&
-      i.price === item.price &&
-      (i.item_note || '') === (item.item_note || '') &&
-      JSON.stringify(i.selected_variants || []) === JSON.stringify(item.selected_variants || [])
-    );
-    if (existing) {
-      existing.qty += item.qty;
-    } else {
-      acc.push({ ...item });
-    }
-    return acc;
-  }, []);
-
-  const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
-    name: 'KopiSembilan',
-    address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
-    phone: '08132869806'
-  };
-
-  const paperWidth = (window.receiptPrinter?.paperWidth || localStorage.getItem('ks_receipt_printer_paper') || localStorage.getItem('ks_printer_paper') || '58') === '80' ? '80' : '58';
-  const d = txn.date ? new Date(txn.date) : new Date();
-  const tglStr = (typeof getIndoDateTime === 'function')
-    ? getIndoDateTime(d, { dateStyle: 'medium' })
-    : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-  const jamStr = (typeof getIndoTimeString === 'function')
-    ? getIndoTimeString(d)
-    : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-  const isLunas = txn.payment_status === 'Lunas' || !txn.payment_status;
-  const isBelumBayar = txn.payment_status === 'Belum Bayar';
-  const methodStr = String(txn.payment_method || 'TUNAI').toUpperCase();
-  const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : '';
-
-  const popup = window.open('', '_blank', 'width=440,height=660');
-  if (!popup) {
-    showToast('Popup browser diblokir. Izinkan popup untuk mencetak struk.', 'error');
-    return;
-  }
-
-  const buildReceiptPageCss = (w) => {
-    const safeW = w === '80' ? '80' : '58';
-    const hPad = safeW === '80' ? '4mm' : '3mm';
-    const vPad = '2mm';
-    return `@page { size: ${safeW}mm auto; margin: 0; }
-    @media print {
-      html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #ffffff !important;
-        width: 100% !important;
-      }
-      .receipt-paper {
-        width: 100% !important;
-        max-width: ${safeW}mm !important;
-        margin: 0 !important;
-        padding: ${vPad} ${hPad} !important;
-        border: none !important;
-        box-shadow: none !important;
-        border-radius: 0 !important;
-        box-sizing: border-box !important;
-        color: #000000 !important;
-      }
-      .no-print { display: none !important; }
-    }`;
-  };
-
-  let paymentDetailHtml = '';
-  if (txn.payment_method === 'cash' && isLunas) {
-    const paid = txn.cash_amount || txn.total || 0;
-    const change = Math.max(0, (txn.cash_change !== undefined ? txn.cash_change : (paid - (txn.total || 0))));
-    paymentDetailHtml = `
-      <div class="row-line"><span>Bayar (Tunai)</span><span>${fmtRp(paid)}</span></div>
-      <div class="row-line"><span>Kembalian</span><span>${change > 0 ? fmtRp(change) : 'Pas'}</span></div>
-    `;
-  } else if (txn.payment_method === 'split' && isLunas) {
-    const cashPart = Number(txn.cash_amount || 0);
-    const nonCashPart = Math.max(0, Number(txn.total || 0) - cashPart);
-    paymentDetailHtml = `
-      <div class="row-line"><span>Metode Bayar</span><span>SPLIT PAYMENT</span></div>
-      <div class="row-line"><span>- Tunai</span><span>${fmtRp(cashPart)}</span></div>
-      <div class="row-line"><span>- Non-Tunai</span><span>${fmtRp(nonCashPart)}</span></div>
-    `;
-  } else {
-    paymentDetailHtml = `
-      <div class="row-line"><span>Metode Bayar</span><span>${escapePrintHtml(methodStr)}</span></div>
-      ${isBelumBayar ? `<div class="status-unpaid">*** BELUM LUNAS ***</div>` : ''}
-    `;
-  }
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Struk Belanja - ${escapePrintHtml(txn.id || '')}</title>
-  <style id="receipt-base-style">
-    body {
-      font-family: "Courier New", Courier, monospace;
-      background: #f1f5f9;
-      margin: 0;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      color: #000;
-    }
-    .no-print {
-      margin-bottom: 12px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-    }
-    .tip-box {
-      background: #FEF3C7;
-      border: 1px solid #F59E0B;
-      color: #92400E;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 11px;
-      padding: 6px 10px;
-      border-radius: 6px;
-      max-width: 380px;
-      text-align: center;
-      line-height: 1.35;
-    }
-    .btn-size {
-      background: white;
-      border: 1px solid #cbd5e1;
-      color: #374151;
-      padding: 5px 10px;
-      border-radius: 5px;
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .btn-size.active {
-      background: #8B5320;
-      color: white;
-      border-color: #8B5320;
-    }
-    .btn-print {
-      background: #8B5320;
-      color: white;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .btn-bt {
-      background: #1D4ED8;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .receipt-paper {
-      width: ${paperWidth}mm;
-      box-sizing: border-box;
-      background: #ffffff;
-      padding: 2mm ${paperWidth === '80' ? '4mm' : '3mm'};
-      border: 1px dashed #cbd5e1;
-      border-radius: 4px;
-      font-size: 11px;
-      line-height: 1.35;
-      color: #000;
-    }
-    .store-header {
-      text-align: center;
-      margin-bottom: 8px;
-    }
-    .store-name {
-      font-size: 15px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .store-meta {
-      font-size: 9.5px;
-      line-height: 1.25;
-      margin-top: 2px;
-    }
-    .row-line {
-      display: flex;
-      justify-content: space-between;
-      gap: 6px;
-      font-size: 10.5px;
-      margin-bottom: 2px;
-    }
-    .divider {
-      border: none;
-      border-top: 1px dashed #000;
-      margin: 6px 0;
-    }
-    .item-block {
-      margin-bottom: 5px;
-    }
-    .item-name {
-      font-weight: 800;
-      font-size: 11px;
-      word-break: break-word;
-    }
-    .item-sub {
-      padding-left: 6px;
-      font-size: 9.5px;
-    }
-    .total-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      font-weight: 900;
-      margin: 4px 0;
-    }
-    .status-unpaid {
-      text-align: center;
-      font-weight: 900;
-      margin-top: 4px;
-      font-size: 11px;
-      border: 1px solid #000;
-      padding: 2px;
-    }
-    .receipt-note {
-      margin-top: 6px;
-      font-size: 10px;
-      word-break: break-word;
-    }
-    .footer {
-      text-align: center;
-      font-size: 10px;
-      margin-top: 8px;
-    }
-  </style>
-  <style id="receipt-page-style">
-    ${buildReceiptPageCss(paperWidth)}
-  </style>
-</head>
-<body>
-  <div class="no-print">
-    <div class="tip-box">
-      <strong>Tips Print 58mm / Driver OS (USB atau Bluetooth):</strong><br>
-      Pada dialog print pilih Paper Size <strong>${paperWidth}mm</strong>, atur <strong>Margins: None</strong>, dan <strong>Scale: 100%</strong>.
-    </div>
-    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
-      <span style="font-family:sans-serif; font-size:11px; font-weight:700; color:#374151;">Lebar Kertas:</span>
-      <button class="btn-size ${paperWidth === '58' ? 'active' : ''}" onclick="setReceiptWidth('58', this)">58 mm</button>
-      <button class="btn-size ${paperWidth === '80' ? 'active' : ''}" onclick="setReceiptWidth('80', this)">80 mm</button>
-    </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
-      <button class="btn-print" onclick="window.print()">Cetak Struk Sekarang</button>
-      <button type="button" class="btn-bt" onclick="printViaBluetooth()">Cetak via Bluetooth (Printer Struk)</button>
-    </div>
-  </div>
-
-  <div class="receipt-paper" id="receipt-paper">
-    <div class="store-header">
-      <div class="store-name">${escapePrintHtml(store.name || 'KopiSembilan')}</div>
-      ${store.address ? `<div class="store-meta">${escapePrintHtml(store.address)}</div>` : ''}
-      ${store.phone ? `<div class="store-meta">WA: ${escapePrintHtml(store.phone)}</div>` : ''}
-    </div>
-
-    <div class="row-line">
-      <span>Tgl: ${escapePrintHtml(tglStr)}</span>
-      <span>Jam: ${escapePrintHtml(jamStr)}</span>
-    </div>
-    <div class="row-line">
-      <span>ID: ${escapePrintHtml(txn.id || '-')}</span>
-    </div>
-
-    <hr class="divider">
-
-    <div>
-      ${groupedItems.map(i => `
-        <div class="item-block">
-          <div class="item-name">${escapePrintHtml(i.name)}</div>
-          <div class="row-line">
-            <span>${i.qty} x ${fmtRp(i.price)}</span>
-            <span>${fmtRp(i.price * i.qty)}</span>
-          </div>
-          ${i.selected_variants && i.selected_variants.length > 0 ? `<div class="item-sub">- ${escapePrintHtml(i.selected_variants.map(v => v.name).join(', '))}</div>` : ''}
-          ${i.item_note ? `<div class="item-sub">* ${escapePrintHtml(i.item_note)}</div>` : ''}
-        </div>
-      `).join('')}
-    </div>
-
-    <hr class="divider">
-
-    <div class="total-row">
-      <span>TOTAL</span>
-      <span>${fmtRp(txn.total || 0)}</span>
-    </div>
-
-    ${paymentDetailHtml}
-
-    ${cleanNote ? `<div class="receipt-note">Catatan: ${escapePrintHtml(cleanNote)}</div>` : ''}
-
-    <hr class="divider">
-
-    <div class="footer">
-      <div>Terima Kasih Atas Kunjungan Anda</div>
-      <div style="font-weight:900; margin-top:4px; letter-spacing:0.8px;">KOPI SEMBILAN</div>
-    </div>
-  </div>
-
-  <script>
-    function setReceiptWidth(w, btn) {
-      var safeW = w === '80' ? '80' : '58';
-      var hPad = safeW === '80' ? '4mm' : '3mm';
-      var vPad = '2mm';
-      document.querySelectorAll('.btn-size').forEach(function(b) { b.classList.remove('active'); });
-      if (btn) btn.classList.add('active');
-
-      var pageStyle = document.getElementById('receipt-page-style');
-      if (pageStyle) {
-        pageStyle.innerHTML = '@page { size: ' + safeW + 'mm auto; margin: 0; }' +
-          '@media print {' +
-          '  html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; width: 100% !important; }' +
-          '  .receipt-paper { width: 100% !important; max-width: ' + safeW + 'mm !important; margin: 0 !important; padding: ' + vPad + ' ' + hPad + ' !important; border: none !important; box-shadow: none !important; border-radius: 0 !important; box-sizing: border-box !important; color: #000000 !important; }' +
-          '  .no-print { display: none !important; }' +
-          '}';
-      }
-      var paper = document.getElementById('receipt-paper');
-      if (paper) {
-        paper.style.width = safeW + 'mm';
-        paper.style.padding = vPad + ' ' + hPad;
-      }
-      try {
-        localStorage.setItem('ks_receipt_printer_paper', safeW);
-        localStorage.setItem('ks_printer_paper', safeW);
-        if (window.opener && window.opener.receiptPrinter) {
-          window.opener.receiptPrinter.paperWidth = safeW;
-        }
-      } catch (e) {}
-    }
-
-    function printViaBluetooth() {
-      try {
-        if (window.opener && typeof window.opener.printLastReceiptBluetooth === 'function') {
-          window.opener.printLastReceiptBluetooth();
-        }
-      } catch (e) {}
-    }
-
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 350);
-    };
-  </script>
-</body>
-</html>`;
-
-  popup.document.open();
-  popup.document.write(html);
-  popup.document.close();
-};
-
 window.openCupStickersPrintDialog = function (txn, items = null) {
-  window._lastCupPrintPayload = { txn, items };
-
   let txnItems = items || txn.transaction_items || [];
   if (typeof txnItems === 'string') {
     try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
@@ -9012,6 +7584,7 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
   }
 
   const custName = getCustomerNameFromTxn(txn) || '-';
+  const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
   const generalNote = getCleanNote(txn.notes);
 
   let orderType = 'DINE IN';
@@ -9022,23 +7595,20 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     }
   }
 
-  const cupCfg = getSavedCupLabelConfig();
-  const initW = cupCfg.width;
-  const initH = cupCfg.height;
-  const initPreset = cupCfg.preset;
-  const isInitCompact = initH > 0 && initH <= 32;
-  const isInitContinuous = initH <= 0;
+  const popup = window.open('', '_blank', 'width=420,height=600');
+  if (!popup) {
+    showToast('Popup browser diblokir. Izinkan popup untuk mencetak label stiker.', 'error');
+    return;
+  }
 
-  const buildCupPrintCss = (wNum, hNum) => {
-    const isCont = hNum <= 0;
-    const isComp = hNum > 0 && hNum <= 32;
-    const hPad = '2.5mm';
-    const vPad = isComp ? '1.5mm' : '2mm';
-    const pageSize = isCont ? `${wNum}mm auto` : `${wNum}mm ${hNum}mm`;
-    const maxHeightRule = isCont ? 'none' : `${hNum}mm`;
-
-    return `@page {
-      size: ${pageSize};
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Stiker Cup - ${txn.id}</title>
+  <style id="print-page-style">
+    @page {
+      size: 50mm 40mm;
       margin: 0;
     }
     @media print {
@@ -9050,9 +7620,9 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       }
       .cup-label {
         width: 100% !important;
-        max-width: ${wNum}mm !important;
+        max-width: 50mm !important;
         height: auto !important;
-        max-height: ${maxHeightRule} !important;
+        max-height: 40mm !important;
         page-break-after: always !important;
         break-after: page !important;
         page-break-inside: avoid !important;
@@ -9060,17 +7630,11 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
         box-shadow: none !important;
         border: none !important;
         margin: 0 !important;
-        padding: ${vPad} ${hPad} !important;
+        padding: 3px 5px !important;
         box-sizing: border-box !important;
         overflow: hidden !important;
       }
-      .cup-label:last-child {
-        page-break-after: auto !important;
-        break-after: auto !important;
-      }
       body.mode-gabung .cup-label {
-        height: auto !important;
-        max-height: none !important;
         page-break-after: auto !important;
         break-after: auto !important;
         border-bottom: 1.5px dashed #000 !important;
@@ -9079,31 +7643,9 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       }
       body.mode-gabung .cup-label:last-child {
         border-bottom: none !important;
-        margin-bottom: 0 !important;
       }
       .no-print { display: none !important; }
-    }`;
-  };
-
-  const bodyClassList = [];
-  if (isInitCompact) bodyClassList.push('compact-label');
-  if (isInitContinuous) bodyClassList.push('mode-gabung');
-
-  const initHPad = '2.5mm';
-  const initVPad = isInitCompact ? '1.5mm' : '2mm';
-
-  const popup = window.open('', '_blank', 'width=460,height=680');
-  if (!popup) {
-    showToast('Popup browser diblokir. Izinkan popup untuk mencetak label stiker.', 'error');
-    return;
-  }
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Stiker Cup - ${escapePrintHtml(txn.id || '')}</title>
-  <style id="base-style">
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
       background: #f1f5f9;
@@ -9114,11 +7656,11 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       align-items: center;
     }
     .cup-label {
-      width: ${initW}mm;
-      max-height: ${isInitContinuous ? 'none' : `${initH}mm`};
+      width: 50mm;
+      max-height: 40mm;
       box-sizing: border-box;
       background: white;
-      padding: ${initVPad} ${initHPad};
+      padding: 4px 6px;
       margin-bottom: 10px;
       border: 1px dashed #cbd5e1;
       border-radius: 4px;
@@ -9134,7 +7676,6 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       overflow: hidden;
     }
     body.mode-gabung .cup-label {
-      max-height: none;
       margin-bottom: 6px;
       border-bottom: 1.5px dashed #000;
       border-radius: 0;
@@ -9143,99 +7684,51 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     body.mode-gabung .cup-label:last-child {
       border-bottom: 1px dashed #cbd5e1;
     }
-    .cup-top-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 2px;
-    }
-    .cup-queue {
-      font-size: 24px;
-      font-weight: 900;
-      line-height: 1;
-      letter-spacing: -0.5px;
-    }
-    .cup-order-badge {
-      font-size: 8px;
-      font-weight: 800;
-      border: 1px solid #000;
-      padding: 1px 4px;
-      border-radius: 2px;
-      display: inline-block;
-      line-height: 1.1;
-    }
-    .cup-count {
-      font-size: 11px;
-      font-weight: 900;
-      line-height: 1.2;
-      margin-top: 2px;
-    }
-    .cup-time {
-      font-size: 8px;
-      font-weight: 600;
-      color: #222;
-      margin-bottom: 3px;
-      line-height: 1.1;
-    }
-    .cup-customer {
-      font-size: 10.5px;
-      font-weight: 800;
-      border-top: 1px dashed #000;
-      padding-top: 3px;
-      margin-bottom: 3px;
-      line-height: 1.15;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .cup-customer-label {
-      font-weight: 600;
-      font-size: 8.5px;
-      color: #333;
-      text-transform: uppercase;
-    }
-    .product-name {
+    .header-type {
       font-size: 11.5px;
       font-weight: 900;
-      line-height: 1.18;
-      word-break: break-word;
+      text-align: center;
+      border-bottom: 1.5px solid #000;
+      padding-bottom: 1px;
+      letter-spacing: 0.5px;
       margin-bottom: 2px;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      font-weight: 600;
+      margin-top: 1px;
+    }
+    .product-name {
+      font-size: 11px;
+      font-weight: 800;
+      margin-top: 2px;
+      line-height: 1.15;
+      word-break: break-word;
     }
     .variants {
       font-size: 8.5px;
       color: #111;
-      line-height: 1.12;
-      margin-bottom: 2px;
+      margin-top: 1px;
+      line-height: 1.1;
     }
     .note {
-      font-size: 8px;
+      font-size: 8.5px;
       color: #000;
-      font-weight: 700;
-      line-height: 1.12;
+      margin-top: 1px;
+      font-weight: 600;
+      line-height: 1.1;
     }
-    .cup-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-top: 1px solid #000;
-      margin-top: 3px;
-      padding-top: 2px;
-      font-size: 7.5px;
+    .footer-brand {
+      text-align: center;
       font-weight: 800;
+      font-size: 8px;
+      border-top: 1px solid #000;
+      margin-top: 2px;
+      padding-top: 1px;
+      letter-spacing: 0.5px;
     }
-    /* Mode Padat untuk stiker tinggi <= 32mm (mis. 58x30mm / 50x30mm / 40x30mm) */
-    body.compact-label .cup-top-row { margin-bottom: 1px; }
-    body.compact-label .cup-queue { font-size: 17px; }
-    body.compact-label .cup-order-badge { font-size: 7px; padding: 0.5px 3px; }
-    body.compact-label .cup-count { font-size: 9.5px; margin-top: 1px; }
-    body.compact-label .cup-time { font-size: 7px; margin-bottom: 1.5px; }
-    body.compact-label .cup-customer { font-size: 9px; padding-top: 1.5px; margin-bottom: 1.5px; }
-    body.compact-label .cup-customer-label { font-size: 7.5px; }
-    body.compact-label .product-name { font-size: 10px; line-height: 1.1; margin-bottom: 1px; }
-    body.compact-label .variants { font-size: 7.5px; line-height: 1.05; margin-bottom: 1px; }
-    body.compact-label .note { font-size: 7.5px; line-height: 1.05; }
-    body.compact-label .cup-footer { margin-top: 1.5px; padding-top: 1px; font-size: 7px; }
-
     .btn-print {
       background: #8B5320;
       color: white;
@@ -9257,16 +7750,6 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       font-size: 12px;
       cursor: pointer;
     }
-    .btn-bt {
-      background: #1D4ED8;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 12px;
-      cursor: pointer;
-    }
     .btn-size {
       background: white;
       border: 1px solid #cbd5e1;
@@ -9282,26 +7765,6 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       color: white;
       border-color: #8B5320;
     }
-    .custom-dim-wrap {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 11px;
-      color: #374151;
-      background: white;
-      padding: 4px 8px;
-      border-radius: 6px;
-      border: 1px solid #cbd5e1;
-    }
-    .custom-dim-input {
-      width: 44px;
-      padding: 3px 5px;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-      text-align: center;
-    }
     .tip-box {
       background: #FEF3C7;
       border: 1px solid #F59E0B;
@@ -9309,43 +7772,27 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       font-size: 11px;
       padding: 6px 10px;
       border-radius: 6px;
-      margin-bottom: 4px;
-      max-width: 430px;
+      margin-bottom: 8px;
+      max-width: 400px;
       text-align: center;
       line-height: 1.35;
     }
   </style>
-  <style id="print-page-style">
-    ${buildCupPrintCss(initW, initH)}
-  </style>
 </head>
-<body class="${bodyClassList.join(' ')}">
+<body>
   <div class="no-print" style="margin-bottom:12px; display:flex; flex-direction:column; align-items:center; gap:8px;">
     <div class="tip-box">
-      <strong>Info Printer Thermal 58mm (Sharkpos X265L / sejenis):</strong><br>
-      Di dialog print browser, atur <strong>Paper Size / Ukuran Kertas</strong> sesuai ukuran stiker (<span id="active-size-label">${isInitContinuous ? `${initW}mm Continuous` : `${initW}x${initH}mm`}</span>), <strong>Margins = None</strong>, dan <strong>Scale = 100%</strong>.
+      <strong>Catatan:</strong> Jika ukuran kertas di layar print masih A4, pada opsi <strong>Paper size / Ukuran Kertas</strong> di menu print browser, pilih ukuran <strong>50x40mm</strong> atau atur Margins ke <strong>None</strong>.
     </div>
-    <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap; justify-content:center; max-width:440px;">
+    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
       <span style="font-size:11px; font-weight:700; color:#374151;">Pilihan Ukuran Stiker:</span>
-      <button class="btn-size ${initPreset === '58x40' ? 'active' : ''}" data-preset="58x40" onclick="setLabelDimension(58, 40, this, '58x40')">58 x 40 mm</button>
-      <button class="btn-size ${initPreset === '58x30' ? 'active' : ''}" data-preset="58x30" onclick="setLabelDimension(58, 30, this, '58x30')">58 x 30 mm</button>
-      <button class="btn-size ${initPreset === '58x50' ? 'active' : ''}" data-preset="58x50" onclick="setLabelDimension(58, 50, this, '58x50')">58 x 50 mm</button>
-      <button class="btn-size ${initPreset === '50x40' ? 'active' : ''}" data-preset="50x40" onclick="setLabelDimension(50, 40, this, '50x40')">50 x 40 mm</button>
-      <button class="btn-size ${initPreset === '50x30' ? 'active' : ''}" data-preset="50x30" onclick="setLabelDimension(50, 30, this, '50x30')">50 x 30 mm</button>
-      <button class="btn-size ${initPreset === '40x30' ? 'active' : ''}" data-preset="40x30" onclick="setLabelDimension(40, 30, this, '40x30')">40 x 30 mm</button>
-      <button class="btn-size ${initPreset === '58x0' ? 'active' : ''}" data-preset="58x0" onclick="setLabelDimension(58, 0, this, '58x0')">58mm Gulung</button>
-    </div>
-    <div class="custom-dim-wrap">
-      <span style="font-weight:700;">Kustom (mm):</span>
-      <input type="number" id="custom-w" class="custom-dim-input" min="30" max="100" value="${initW}" title="Lebar mm">
-      <span>x</span>
-      <input type="number" id="custom-h" class="custom-dim-input" min="0" max="150" value="${initH}" title="Tinggi mm (0 = gulung continuous)">
-      <button type="button" class="btn-size" onclick="applyCustomDimension()">Pakai</button>
+      <button class="btn-size active" onclick="setLabelDimension('50mm', '40mm', this)">50 x 40 mm</button>
+      <button class="btn-size" onclick="setLabelDimension('50mm', '30mm', this)">50 x 30 mm</button>
+      <button class="btn-size" onclick="setLabelDimension('40mm', '30mm', this)">40 x 30 mm</button>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px;">
       <button class="btn-print" onclick="printSeparated()">Cetak 1 Stiker Per Cup (${totalCups} Lembar)</button>
       <button class="btn-secondary" onclick="printCombined()">Gabung 1 Kertas Panjang</button>
-      <button type="button" class="btn-bt" onclick="printViaBluetooth()">Cetak via Bluetooth (Printer Stiker)</button>
     </div>
   </div>
   <div id="labels-container">
@@ -9353,93 +7800,63 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       <div class="cup-label">
         <div>
           <!-- Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan -->
-          <div class="cup-top-row">
-            <div class="cup-queue">${escapePrintHtml(queueNum)}</div>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+            <div style="font-size:24px; font-weight:900; line-height:1; letter-spacing:-0.5px;">${queueNum}</div>
             <div style="text-align:right;">
-              <span class="cup-order-badge">${escapePrintHtml(orderType)}</span>
-              <div class="cup-count">Cup ${idx + 1}/${totalCups}</div>
+              <span style="font-size:8px; font-weight:800; border:1px solid #000; padding:1px 4px; border-radius:2px; display:inline-block; line-height:1.1;">${orderType}</span>
+              <div style="font-size:11px; font-weight:900; line-height:1.2; margin-top:2px;">Cup ${idx + 1}/${totalCups}</div>
             </div>
           </div>
 
-          <!-- Baris 2: Tanggal & Waktu -->
-          <div class="cup-time">
-            <span>${escapePrintHtml(tglStr)} ${escapePrintHtml(jamStr)}</span>
+          <!-- Baris 2: Tanggal & Waktu (Nama kasir dihapus sesuai permintaan) -->
+          <div style="font-size:8px; font-weight:600; color:#333; margin-bottom:3px; line-height:1.1;">
+            <span>${tglStr} ${jamStr}</span>
           </div>
 
-          <!-- Baris 3: Nama Pelanggan -->
-          <div class="cup-customer">
-            <span class="cup-customer-label">Pelanggan:</span> ${escapePrintHtml(custName)}
+          <!-- Baris 3: Nama Pelanggan (Wajib & Jelas) -->
+          <div style="font-size:10.5px; font-weight:800; border-top:1px dashed #000; padding-top:3px; margin-bottom:3px; line-height:1.2;">
+            <span style="font-weight:600; font-size:8.5px; color:#444; text-transform:uppercase;">Pelanggan:</span> ${custName}
           </div>
 
-          <!-- Baris 4: Nama Produk Minuman -->
-          <div class="product-name">
-            ${escapePrintHtml(cup.name)}
+          <!-- Baris 4: Nama Produk Minuman (Tebal) -->
+          <div class="product-name" style="font-size:11.5px; font-weight:900; line-height:1.2; word-break:break-word; margin-bottom:2px;">
+            ${cup.name}
           </div>
 
-          <!-- Baris 5: Rincian Varian -->
-          ${cup.variants ? `<div class="variants">${escapePrintHtml(cup.variants)}</div>` : ''}
+          <!-- Baris 5: Rincian Varian (Es, Gula, dll) -->
+          ${cup.variants ? `<div class="variants" style="font-size:8.5px; color:#111; line-height:1.15; margin-bottom:2px;">${cup.variants}</div>` : ''}
 
-          <!-- Baris 6: Catatan Barista -->
-          ${(cup.note || generalNote) ? `<div class="note">Catatan: ${escapePrintHtml(cup.note || generalNote)}</div>` : ''}
+          <!-- Baris 6: Catatan Barista (jika ada) -->
+          ${(cup.note || generalNote) ? `<div class="note" style="font-size:8px; font-weight:700; color:#000; line-height:1.15;">Catatan: ${cup.note || generalNote}</div>` : ''}
         </div>
 
         <!-- Baris 7 (Footer): ID Transaksi & Brand Kopi Sembilan -->
-        <div class="cup-footer">
-          <span>#${escapePrintHtml(shortId)}</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #000; margin-top:3px; padding-top:2px; font-size:7.5px; font-weight:800;">
+          <span>#${shortId}</span>
           <span style="letter-spacing:0.5px;">KOPI SEMBILAN</span>
         </div>
       </div>
     `).join('')}
   </div>
   <script>
-    var currentWidth = ${initW};
-    var currentHeight = ${initH};
+    let currentWidth = '50mm';
+    let currentHeight = '40mm';
 
-    function setLabelDimension(width, height, btn, presetName) {
-      var wNum = parseInt(String(width).replace(/[^0-9]/g, ''), 10) || 58;
-      var hRaw = parseInt(String(height).replace(/[^0-9]/g, ''), 10);
-      var hNum = isNaN(hRaw) ? 40 : hRaw;
-
-      currentWidth = wNum;
-      currentHeight = hNum;
-
-      document.querySelectorAll('.btn-size').forEach(function(b) { b.classList.remove('active'); });
+    function setLabelDimension(width, height, btn) {
+      currentWidth = width;
+      currentHeight = height;
+      document.querySelectorAll('.btn-size').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
-
-      var cw = document.getElementById('custom-w');
-      var ch = document.getElementById('custom-h');
-      if (cw) cw.value = wNum;
-      if (ch) ch.value = hNum;
-
-      var isCont = hNum <= 0;
-      var isComp = hNum > 0 && hNum <= 32;
-      var hPad = '2.5mm';
-      var vPad = isComp ? '1.5mm' : '2mm';
-      var pageSize = isCont ? (wNum + 'mm auto') : (wNum + 'mm ' + hNum + 'mm');
-      var maxHeightRule = isCont ? 'none' : (hNum + 'mm');
-
-      document.body.classList.toggle('compact-label', isComp);
-      if (isCont) {
-        document.body.classList.add('mode-gabung');
-      } else {
-        document.body.classList.remove('mode-gabung');
-      }
-
-      var sizeLabel = document.getElementById('active-size-label');
-      if (sizeLabel) {
-        sizeLabel.textContent = isCont ? (wNum + 'mm Continuous') : (wNum + 'x' + hNum + 'mm');
-      }
-
-      var styleEl = document.getElementById('print-page-style');
+      const styleEl = document.getElementById('print-page-style');
       if (styleEl) {
-        styleEl.innerHTML = '@page { size: ' + pageSize + '; margin: 0; }' +
+        styleEl.innerHTML = '@page { size: ' + width + ' ' + height + '; margin: 0; }' +
           '@media print {' +
           '  html, body { margin: 0 !important; padding: 0 !important; background: white !important; width: 100% !important; }' +
           '  .cup-label {' +
           '    width: 100% !important;' +
-          '    max-width: ' + wNum + 'mm !important;' +
+          '    max-width: ' + width + ' !important;' +
           '    height: auto !important;' +
-          '    max-height: ' + maxHeightRule + ' !important;' +
+          '    max-height: ' + height + ' !important;' +
           '    page-break-after: always !important;' +
           '    break-after: page !important;' +
           '    page-break-inside: avoid !important;' +
@@ -9447,80 +7864,35 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
           '    box-shadow: none !important;' +
           '    border: none !important;' +
           '    margin: 0 !important;' +
-          '    padding: ' + vPad + ' ' + hPad + ' !important;' +
+          '    padding: 3px 5px !important;' +
           '    box-sizing: border-box !important;' +
           '    overflow: hidden !important;' +
           '  }' +
-          '  .cup-label:last-child { page-break-after: auto !important; break-after: auto !important; }' +
           '  body.mode-gabung .cup-label {' +
-          '    height: auto !important;' +
-          '    max-height: none !important;' +
           '    page-break-after: auto !important;' +
           '    break-after: auto !important;' +
           '    border-bottom: 1.5px dashed #000 !important;' +
           '    padding-bottom: 6px !important;' +
           '    margin-bottom: 6px !important;' +
           '  }' +
-          '  body.mode-gabung .cup-label:last-child { border-bottom: none !important; margin-bottom: 0 !important; }' +
+          '  body.mode-gabung .cup-label:last-child { border-bottom: none !important; }' +
           '  .no-print { display: none !important; }' +
           '}';
       }
-
-      document.querySelectorAll('.cup-label').forEach(function(el) {
-        el.style.width = wNum + 'mm';
-        el.style.maxHeight = maxHeightRule;
-        el.style.padding = vPad + ' ' + hPad;
+      document.querySelectorAll('.cup-label').forEach(el => {
+        el.style.width = width;
+        el.style.maxHeight = height;
       });
-
-      var resolvedPreset = presetName || (wNum + 'x' + hNum);
-      try {
-        localStorage.setItem('ks_cup_label_w', String(wNum));
-        localStorage.setItem('ks_cup_label_h', String(hNum));
-        localStorage.setItem('ks_cup_label_preset', resolvedPreset);
-        if (window.opener && window.opener.cupPrinter) {
-          window.opener.cupPrinter.labelWidth = wNum;
-          window.opener.cupPrinter.labelHeight = hNum;
-          window.opener.cupPrinter.labelGap = isCont ? 0 : (window.opener.cupPrinter.labelGap || 2);
-        }
-      } catch (e) {}
-    }
-
-    function applyCustomDimension() {
-      var cw = document.getElementById('custom-w');
-      var ch = document.getElementById('custom-h');
-      var wVal = parseInt(cw ? cw.value : '58', 10);
-      var hVal = parseInt(ch ? ch.value : '40', 10);
-      if (isNaN(wVal) || wVal < 30 || wVal > 100) {
-        alert('Lebar stiker harus antara 30 mm sampai 100 mm');
-        return;
-      }
-      if (isNaN(hVal) || hVal < 0 || hVal > 150) {
-        alert('Tinggi stiker harus antara 0 mm (gulung) sampai 150 mm');
-        return;
-      }
-      setLabelDimension(wVal, hVal, null, 'custom');
     }
 
     function printSeparated() {
-      if (currentHeight > 0) {
-        document.body.classList.remove('mode-gabung');
-      }
+      document.body.classList.remove('mode-gabung');
       setTimeout(function() { window.print(); }, 150);
     }
-
     function printCombined() {
       document.body.classList.add('mode-gabung');
       setTimeout(function() { window.print(); }, 150);
     }
-
-    function printViaBluetooth() {
-      try {
-        if (window.opener && typeof window.opener.printLastCupBluetooth === 'function') {
-          window.opener.printLastCupBluetooth();
-        }
-      } catch (e) {}
-    }
-
     window.onload = function() {
       setTimeout(function() {
         window.print();
@@ -9544,7 +7916,11 @@ window.printCupStickersById = async function (id) {
       return;
     }
 
-    await dispatchCupPrint(txn);
+    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
+      await window.bluetoothPrinter.printCupStickers(txn);
+    } else {
+      openCupStickersPrintDialog(txn);
+    }
   } catch (e) {
     console.error('printCupStickersById error:', e);
     showToast('Terjadi kesalahan saat memproses stiker cup', 'error');
