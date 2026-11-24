@@ -1920,8 +1920,8 @@ async function confirmPayment(sendMode = 'none') {
       sendWhatsAppReceipt(phone, txnId, total, cart);
     }
 
-    // Otomatis cetak struk via Bluetooth jika fitur Auto-Print aktif dan printer terhubung
-    if (window.bluetoothPrinter && window.bluetoothPrinter.autoPrint && window.bluetoothPrinter.isConnected) {
+    // Otomatis cetak struk via Bluetooth atau Dialog Browser jika fitur Auto-Print aktif
+    if (window.bluetoothPrinter && window.bluetoothPrinter.autoPrint) {
       const receiptData = {
         id: txnId,
         total: total,
@@ -1935,9 +1935,13 @@ async function confirmPayment(sendMode = 'none') {
         cash_amount: cashAmount,
         cash_change: cashChange
       };
-      window.bluetoothPrinter.printReceipt(receiptData, cart).catch(err => {
-        console.warn('Auto-print Bluetooth gagal:', err);
-      });
+      if (window.bluetoothPrinter.isConnected) {
+        window.bluetoothPrinter.printReceipt(receiptData, cart).catch(err => {
+          console.warn('Auto-print Bluetooth gagal:', err);
+        });
+      } else if (!window.bluetoothPrinter.autoCup && typeof openReceiptPrintDialog === 'function') {
+        openReceiptPrintDialog(receiptData, cart);
+      }
     }
 
     // Otomatis cetak stiker cup jika fitur Auto-Cup aktif
@@ -3141,6 +3145,9 @@ async function deleteUser(id) {
 }
 
 function renderSettings(el) {
+  const cupCfg = getSavedCupLabelConfig();
+  const printerMode = window.bluetoothPrinter?.commandMode || localStorage.getItem('ks_printer_mode') || 'escpos';
+  const tsplDir = window.bluetoothPrinter?.tsplDirection || localStorage.getItem('ks_tspl_direction') || '0';
   el.innerHTML = `
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;" class="responsive-grid">
       <div class="card">
@@ -3228,7 +3235,7 @@ function renderSettings(el) {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer Thermal Bluetooth</h3></div>
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer Thermal (Bluetooth &amp; USB/Browser)</h3></div>
         <div class="card-body">
           <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
@@ -3237,8 +3244,8 @@ function renderSettings(el) {
                 ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? '● Terhubung (' + (window.bluetoothPrinter.device?.name || 'Thermal Printer') + ')' : '○ Belum Terhubung'}
               </span>
             </div>
-            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.4;">
-              Mendukung printer thermal Bluetooth 58mm & 80mm (Iware, Panda, RPP02N, Blueprint, Eppos, POS-58, dll) menggunakan Google Chrome atau Edge.
+            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.45;">
+              Mendukung printer thermal 58mm &amp; 80mm (termasuk <strong>Sharkpos X265L</strong>, Iware, Panda, RPP02N, Blueprint, Eppos, POS-58), mode perintah <strong>ESC/POS &amp; TSPL</strong> via Web Bluetooth (Chrome/Edge), serta fallback cetak <strong>USB / Dialog Browser</strong> otomatis apabila Bluetooth tidak terhubung.
             </p>
           </div>
 
@@ -3256,11 +3263,63 @@ function renderSettings(el) {
           </div>
 
           <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Ukuran Lebar Kertas Struk / Label</label>
+            <label style="font-size:12px; font-weight:600;">Mode Perintah Printer Bluetooth</label>
+            <select class="form-select" id="settings-printer-mode" onchange="setPrinterCommandMode(this.value)" style="font-size:13px;">
+              <option value="escpos" ${printerMode === 'escpos' ? 'selected' : ''}>ESC/POS (Struk Thermal 58mm / 80mm)</option>
+              <option value="tspl" ${printerMode === 'tspl' ? 'selected' : ''}>TSPL (Printer Label Stiker, mis. Sharkpos X265L Mode Label)</option>
+            </select>
+            <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:4px; line-height:1.4;">
+              Untuk Sharkpos X265L dengan kertas stiker gap, pilih TSPL. Jika hasil kosong/simbol aneh, ganti ke ESC/POS atau ubah mode fisik printer (tahan tombol FEED saat menyalakan).
+            </small>
+          </div>
+
+          <div id="settings-tspl-direction-wrap" class="form-group" style="margin-bottom:12px; display:${printerMode === 'tspl' ? 'block' : 'none'};">
+            <label style="font-size:12px; font-weight:600;">Arah Cetak TSPL</label>
+            <select class="form-select" id="settings-tspl-direction" onchange="setTsplDirection(this.value)" style="font-size:13px;">
+              <option value="0" ${tsplDir === '0' ? 'selected' : ''}>Normal — DIRECTION 0</option>
+              <option value="1" ${tsplDir === '1' ? 'selected' : ''}>Terbalik 180° — DIRECTION 1</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:12px; font-weight:600;">Ukuran Kertas Struk / Label</label>
             <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
               <option value="58" ${(window.bluetoothPrinter?.paperWidth || '58') === '58' ? 'selected' : ''}>58 mm (Standar Struk / Label Cup Kecil)</option>
               <option value="80" ${(window.bluetoothPrinter?.paperWidth || '58') === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar)</option>
             </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:12px; font-weight:600;">Ukuran Kertas Stiker Cup</label>
+            <select class="form-select" id="settings-cup-label-size" onchange="setCupLabelPreset(this.value)" style="font-size:13px;">
+              <option value="58x40" ${cupCfg.preset === '58x40' ? 'selected' : ''}>58 x 40 mm (Standar Printer Thermal 58mm)</option>
+              <option value="58x30" ${cupCfg.preset === '58x30' ? 'selected' : ''}>58 x 30 mm (Label 58mm Pendek)</option>
+              <option value="58x50" ${cupCfg.preset === '58x50' ? 'selected' : ''}>58 x 50 mm (Label 58mm Tinggi)</option>
+              <option value="50x40" ${cupCfg.preset === '50x40' ? 'selected' : ''}>50 x 40 mm (Stiker Cup Sedang)</option>
+              <option value="50x30" ${cupCfg.preset === '50x30' ? 'selected' : ''}>50 x 30 mm (Stiker Cup Kecil)</option>
+              <option value="40x30" ${cupCfg.preset === '40x30' ? 'selected' : ''}>40 x 30 mm (Stiker Cup Mini)</option>
+              <option value="58x0" ${cupCfg.preset === '58x0' ? 'selected' : ''}>58 mm Continuous (Kertas Struk Gulung)</option>
+              <option value="custom" ${cupCfg.preset === 'custom' ? 'selected' : ''}>Ukuran Kustom (mm)</option>
+            </select>
+          </div>
+
+          <div id="settings-cup-custom-wrap" style="display:${cupCfg.preset === 'custom' ? 'block' : 'none'}; background:var(--cream); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:8px; align-items:end;">
+              <div>
+                <label style="font-size:11px; font-weight:600; display:block; margin-bottom:3px;">Lebar (mm)</label>
+                <input type="number" class="form-input" id="settings-cup-w" min="30" max="100" value="${cupCfg.width}" style="font-size:12px; padding:6px 8px;">
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:600; display:block; margin-bottom:3px;">Tinggi (mm)</label>
+                <input type="number" class="form-input" id="settings-cup-h" min="0" max="150" value="${cupCfg.height}" title="0 = kertas gulung continuous" style="font-size:12px; padding:6px 8px;">
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:600; display:block; margin-bottom:3px;">Gap (mm)</label>
+                <input type="number" class="form-input" id="settings-cup-gap" min="0" max="10" value="${cupCfg.gap}" style="font-size:12px; padding:6px 8px;">
+              </div>
+              <button type="button" class="btn btn-brown btn-sm" onclick="saveCustomCupLabelSize()" style="height:34px; padding:0 12px; font-size:12px;">Terapkan</button>
+            </div>
+            <small style="font-size:10px; color:var(--text-muted); display:block; margin-top:4px;">Isi Tinggi = 0 untuk kertas gulung continuous tanpa jeda stiker.</small>
           </div>
 
           <div class="form-group" style="margin-bottom:8px;">
@@ -6960,7 +7019,7 @@ function isBeverageCupItem(item) {
 }
 
 // ══════════════════════════════════════════════
-// WEB BLUETOOTH THERMAL PRINTER SERVICE (ESC/POS)
+// WEB BLUETOOTH THERMAL PRINTER SERVICE (ESC/POS & TSPL)
 // ══════════════════════════════════════════════
 
 class BluetoothPrinterService {
@@ -6970,17 +7029,34 @@ class BluetoothPrinterService {
     this.characteristic = null;
     this.isConnected = false;
     this.paperWidth = localStorage.getItem('ks_printer_paper') || '58'; // '58' (32 cols) / '80' (48 cols)
+    this.commandMode = localStorage.getItem('ks_printer_mode') || 'escpos'; // 'escpos' | 'tspl'
+
+    const savedW = parseInt(localStorage.getItem('ks_cup_label_w'), 10);
+    const savedH = parseInt(localStorage.getItem('ks_cup_label_h'), 10);
+    const savedGap = parseInt(localStorage.getItem('ks_cup_label_gap'), 10);
+
+    this.labelWidth = (Number.isFinite(savedW) && savedW >= 30) ? savedW : 58;
+    this.labelHeight = Number.isFinite(savedH) ? savedH : 40;
+    this.labelGap = (Number.isFinite(savedGap) && savedGap >= 0) ? savedGap : 2;
+    this.tsplDirection = localStorage.getItem('ks_tspl_direction') === '1' ? '1' : '0';
+
     this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
     this.autoCup = localStorage.getItem('ks_printer_autocup') === 'true';
 
-    // Service UUIDs yang umum pada printer thermal Bluetooth BLE
+    // Service UUIDs yang umum pada printer thermal & label Bluetooth BLE (Sharkpos X265L, Xprinter, Goojprt, dll)
     this.SERVICE_UUIDS = [
-      '000018f0-0000-1000-8000-00805f9b34fb', // Standard Thermal Printer
-      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent Serial
-      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '000018f0-0000-1000-8000-00805f9b34fb',
+      '0000ffe0-0000-1000-8000-00805f9b34fb',
       '0000fff0-0000-1000-8000-00805f9b34fb',
-      '0000fee7-0000-1000-8000-00805f9b34fb'
+      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '0000ff10-0000-1000-8000-00805f9b34fb',
+      '0000ae30-0000-1000-8000-00805f9b34fb',
+      '0000fee7-0000-1000-8000-00805f9b34fb',
+      '0000fee0-0000-1000-8000-00805f9b34fb',
+      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+      '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+      '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+      'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f'
     ];
   }
 
@@ -6990,7 +7066,7 @@ class BluetoothPrinterService {
 
   async connect() {
     if (!this.isSupported()) {
-      showToast('Browser ini belum mendukung Web Bluetooth. Disarankan menggunakan Google Chrome atau Edge di Android/Laptop.', 'error');
+      showToast('Browser ini belum mendukung Web Bluetooth. Gunakan Google Chrome/Edge atau cetak via Dialog Browser / USB.', 'error');
       throw new Error('Web Bluetooth tidak didukung.');
     }
 
@@ -7013,24 +7089,38 @@ class BluetoothPrinterService {
       showToast(`Menghubungkan ke ${this.device.name || 'Printer'}...`, 'info');
       this.server = await this.device.gatt.connect();
 
-      let foundChar = null;
+      const ignoredServices = ['00001800', '00001801', '0000180a', '0000180f'];
+      const preferredCharFragments = ['2af1', 'ffe1', 'fff2', 'ae01', 'bef8d6c9', '6e400002', '49535343-8841'];
+
+      let preferredChar = null;
+      let fallbackChar = null;
       const services = await this.server.getPrimaryServices();
 
       for (const service of services) {
+        const sUuid = (service.uuid || '').toLowerCase();
+        if (ignoredServices.some(prefix => sUuid.startsWith(prefix))) {
+          continue;
+        }
         try {
           const chars = await service.getCharacteristics();
           for (const char of chars) {
-            if (char.properties.write || char.properties.writeWithoutResponse) {
-              foundChar = char;
-              break;
+            if (char.properties.writeWithoutResponse || char.properties.write) {
+              const cUuid = (char.uuid || '').toLowerCase();
+              if (!preferredChar && preferredCharFragments.some(frag => cUuid.includes(frag))) {
+                preferredChar = char;
+              }
+              if (!fallbackChar) {
+                fallbackChar = char;
+              }
             }
           }
-          if (foundChar) break;
+          if (preferredChar) break;
         } catch (e) {
           console.warn('Gagal membaca karakteristik service printer:', e);
         }
       }
 
+      const foundChar = preferredChar || fallbackChar;
       if (!foundChar) {
         throw new Error('Tidak ditemukan saluran cetak (Write Characteristic) pada perangkat ini.');
       }
@@ -7071,18 +7161,443 @@ class BluetoothPrinterService {
       throw new Error('Printer belum terhubung via Bluetooth.');
     }
 
-    const CHUNK_SIZE = 100;
+    const CHUNK_SIZE = 20;
     const buffer = new Uint8Array(bytes);
 
     for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
       const chunk = buffer.slice(i, i + CHUNK_SIZE);
       if (this.characteristic.properties.writeWithoutResponse) {
-        await this.characteristic.writeValueWithoutResponse(chunk);
+        try {
+          await this.characteristic.writeValueWithoutResponse(chunk);
+        } catch (e) {
+          if (this.characteristic.properties.write) {
+            await this.characteristic.writeValue(chunk);
+          } else {
+            throw e;
+          }
+        }
       } else {
-        await this.characteristic.writeValue(chunk);
+        try {
+          await this.characteristic.writeValue(chunk);
+        } catch (e) {
+          if (this.characteristic.properties.writeWithoutResponse) {
+            await this.characteristic.writeValueWithoutResponse(chunk);
+          } else {
+            throw e;
+          }
+        }
       }
       await new Promise(r => setTimeout(r, 15));
     }
+  }
+
+  sanitizeTsplText(str) {
+    return String(str || '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/"/g, "'")
+      .replace(/[^\x20-\x7E]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  wrapTextLines(str, maxChars, maxLines = 2) {
+    const clean = this.sanitizeTsplText(str);
+    if (!clean) return [];
+    const safeMaxChars = Math.max(4, maxChars || 16);
+    const words = clean.split(' ');
+    const lines = [];
+    let current = '';
+
+    for (let i = 0; i < words.length; i++) {
+      let word = words[i];
+      if (!word) continue;
+
+      if (word.length > safeMaxChars) {
+        if (current) {
+          lines.push(current);
+          current = '';
+          if (lines.length >= maxLines) break;
+        }
+        while (word.length > safeMaxChars && lines.length < maxLines) {
+          lines.push(word.slice(0, safeMaxChars));
+          word = word.slice(safeMaxChars);
+        }
+        if (lines.length >= maxLines) break;
+        current = word;
+        continue;
+      }
+
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= safeMaxChars) {
+        current = candidate;
+      } else {
+        lines.push(current);
+        current = word;
+        if (lines.length >= maxLines) {
+          current = '';
+          break;
+        }
+      }
+    }
+
+    if (current && lines.length < maxLines) {
+      lines.push(current);
+    }
+
+    return lines.slice(0, maxLines);
+  }
+
+  encodeAsciiBytes(str) {
+    const out = [];
+    const s = String(str || '');
+    for (let i = 0; i < s.length; i++) {
+      let code = s.charCodeAt(i);
+      if (code > 127) code = 32;
+      out.push(code);
+    }
+    return out;
+  }
+
+  formatTsplTwoCols(left, right, maxChars) {
+    const l = this.sanitizeTsplText(left);
+    const r = this.sanitizeTsplText(right);
+    const cols = Math.max(12, maxChars || 30);
+    const spacesNeeded = cols - l.length - r.length;
+    if (spacesNeeded > 0) {
+      return l + ' '.repeat(spacesNeeded) + r;
+    }
+    const availLeft = Math.max(1, cols - r.length - 1);
+    return l.slice(0, availLeft) + ' ' + r;
+  }
+
+  buildTsplCupLabel(cup, meta) {
+    const wMm = Math.max(30, parseInt(this.labelWidth, 10) || 58);
+    const isContinuous = !this.labelHeight || parseInt(this.labelHeight, 10) <= 0;
+    const hMm = isContinuous ? 40 : Math.max(25, parseInt(this.labelHeight, 10));
+    const gapMm = isContinuous ? 0 : Math.max(0, parseInt(this.labelGap, 10) || 0);
+    const printableW = Math.min(wMm, 48) * 8; // maks 384 dots untuk printhead 48mm
+    const labelDotsH = hMm * 8;
+    const dir = this.tsplDirection === '1' ? '1' : '0';
+
+    const queueText = this.sanitizeTsplText(meta.queueNum || '01').slice(0, 4);
+    const orderText = `[${this.sanitizeTsplText(meta.orderType || 'DINE IN')}]`;
+    const cupText = `Cup ${meta.cupNum || 1}/${meta.totalCups || 1}`;
+    const timeText = this.sanitizeTsplText(`${meta.tglStr || ''} ${meta.jamStr || ''}`);
+    const custText = `PELANGGAN: ${this.sanitizeTsplText(meta.custName || '-').toUpperCase()}`;
+    const shortIdText = `#${this.sanitizeTsplText(meta.shortId || '-')}`;
+    const brandText = 'KOPI SEMBILAN';
+
+    const lines = [
+      `SIZE ${wMm} mm, ${hMm} mm`,
+      `GAP ${gapMm} mm, 0 mm`,
+      `SPEED 4`,
+      `DENSITY 8`,
+      `DIRECTION ${dir}`,
+      `REFERENCE 0,0`,
+      `CLS`
+    ];
+
+    if (hMm <= 32) {
+      // Mode Compact (mis. 58x30mm / 50x30mm / 40x30mm)
+      const padX = 8;
+      const contentW = printableW - padX * 2;
+      const footerBarY = labelDotsH - 22;
+      const footerTextY = labelDotsH - 16;
+
+      // Baris 1: Queue di kiri (Font 4: 24x32), [ORDER] & Cup X/Y di kanan
+      lines.push(`TEXT ${padX},6,"4",0,1,1,"${queueText}"`);
+      const qWidth = queueText.length * 24 + 8;
+      const orderX = Math.max(padX + qWidth, printableW - padX - orderText.length * 8);
+      const cupX = Math.max(padX + qWidth, printableW - padX - cupText.length * 12);
+      lines.push(`TEXT ${orderX},6,"1",0,1,1,"${orderText}"`);
+      lines.push(`TEXT ${cupX},20,"2",0,1,1,"${cupText}"`);
+
+      // Baris 2: Waktu
+      lines.push(`TEXT ${padX},42,"1",0,1,1,"${timeText.slice(0, Math.floor(contentW / 8))}"`);
+
+      // Garis pemisah atas
+      lines.push(`BAR ${padX},56,${contentW},2`);
+
+      // Baris 3: Pelanggan
+      const maxCustChars = Math.floor(contentW / 12);
+      lines.push(`TEXT ${padX},62,"2",0,1,1,"${custText.slice(0, maxCustChars)}"`);
+
+      // Baris 4: Nama Minuman (Font 3: 16x24, max 2 baris)
+      let curY = 86;
+      const menuLines = this.wrapTextLines(cup.name, Math.floor(contentW / 16), 2);
+      menuLines.forEach(ml => {
+        if (curY + 24 <= footerBarY - 2) {
+          lines.push(`TEXT ${padX},${curY},"3",0,1,1,"${ml}"`);
+          curY += 26;
+        }
+      });
+
+      // Baris 5: Varian (Font 2: 12x20)
+      if (cup.variants && curY + 20 <= footerBarY - 3) {
+        const varLines = this.wrapTextLines(cup.variants, Math.floor(contentW / 12), 1);
+        if (varLines[0]) {
+          lines.push(`TEXT ${padX},${curY},"2",0,1,1,"${varLines[0]}"`);
+          curY += 22;
+        }
+      }
+
+      // Baris 6: Catatan (Font 1: 8x12)
+      if (meta.finalCupNote && curY + 12 <= footerBarY - 3) {
+        const noteLines = this.wrapTextLines(`Catatan: ${meta.finalCupNote}`, Math.floor(contentW / 8), 1);
+        if (noteLines[0]) {
+          lines.push(`TEXT ${padX},${curY},"1",0,1,1,"${noteLines[0]}"`);
+        }
+      }
+
+      // Baris 7: Footer
+      lines.push(`BAR ${padX},${footerBarY},${contentW},2`);
+      lines.push(`TEXT ${padX},${footerTextY},"1",0,1,1,"${shortIdText}"`);
+      const brandX = Math.max(padX + shortIdText.length * 8 + 8, printableW - padX - brandText.length * 8);
+      lines.push(`TEXT ${brandX},${footerTextY},"1",0,1,1,"${brandText}"`);
+    } else {
+      // Mode Standar (mis. 58x40mm / 50x40mm / 58x50mm)
+      const padX = 10;
+      const contentW = printableW - padX * 2;
+      const footerBarY = labelDotsH - 32;
+      const footerTextY = labelDotsH - 24;
+
+      // Baris 1: Queue besar di kiri, [ORDER] & Cup X/Y di kanan
+      const qMulX = queueText.length <= 2 ? 2 : 1;
+      lines.push(`TEXT ${padX},10,"4",0,${qMulX},2,"${queueText}"`);
+      const qWidth = queueText.length * 24 * qMulX + 10;
+      const orderX = Math.max(padX + qWidth, printableW - padX - orderText.length * 12);
+      const cupCharW = (cupText.length * 16 <= printableW - padX - (padX + qWidth)) ? 16 : 12;
+      const cupFont = cupCharW === 16 ? '3' : '2';
+      const cupX = Math.max(padX + qWidth, printableW - padX - cupText.length * cupCharW);
+
+      lines.push(`TEXT ${orderX},12,"2",0,1,1,"${orderText}"`);
+      lines.push(`TEXT ${cupX},40,"${cupFont}",0,1,1,"${cupText}"`);
+
+      // Baris 2: Waktu
+      lines.push(`TEXT ${padX},80,"2",0,1,1,"${timeText.slice(0, Math.floor(contentW / 12))}"`);
+
+      // Garis pemisah atas
+      lines.push(`BAR ${padX},104,${contentW},2`);
+
+      // Baris 3: Pelanggan
+      lines.push(`TEXT ${padX},112,"2",0,1,1,"${custText.slice(0, Math.floor(contentW / 12))}"`);
+
+      // Baris 4: Nama Minuman (Font 3: 16x24, max 2 baris)
+      let curY = 140;
+      const menuLines = this.wrapTextLines(cup.name, Math.floor(contentW / 16), 2);
+      menuLines.forEach(ml => {
+        if (curY + 24 <= footerBarY - 4) {
+          lines.push(`TEXT ${padX},${curY},"3",0,1,1,"${ml}"`);
+          curY += 27;
+        }
+      });
+
+      // Baris 5: Varian (Font 2: 12x20, max 2 baris)
+      if (cup.variants) {
+        const varLines = this.wrapTextLines(cup.variants, Math.floor(contentW / 12), 2);
+        varLines.forEach(vl => {
+          if (curY + 20 <= footerBarY - 4) {
+            lines.push(`TEXT ${padX},${curY},"2",0,1,1,"${vl}"`);
+            curY += 22;
+          }
+        });
+      }
+
+      // Baris 6: Catatan (Font 1: 8x12, max 2 baris)
+      if (meta.finalCupNote) {
+        const noteLines = this.wrapTextLines(`Catatan: ${meta.finalCupNote}`, Math.floor(contentW / 8), 2);
+        noteLines.forEach(nl => {
+          if (curY + 12 <= footerBarY - 4) {
+            lines.push(`TEXT ${padX},${curY},"1",0,1,1,"${nl}"`);
+            curY += 14;
+          }
+        });
+      }
+
+      // Baris 7: Footer
+      lines.push(`BAR ${padX},${footerBarY},${contentW},2`);
+      lines.push(`TEXT ${padX},${footerTextY},"2",0,1,1,"${shortIdText}"`);
+      const brandX = Math.max(padX + shortIdText.length * 12 + 8, printableW - padX - brandText.length * 12);
+      lines.push(`TEXT ${brandX},${footerTextY},"2",0,1,1,"${brandText}"`);
+    }
+
+    lines.push('PRINT 1,1');
+    return lines.join('\r\n') + '\r\n';
+  }
+
+  buildTsplTestLabel() {
+    const wMm = Math.max(30, parseInt(this.labelWidth, 10) || 58);
+    const isContinuous = !this.labelHeight || parseInt(this.labelHeight, 10) <= 0;
+    const hMm = isContinuous ? 40 : Math.max(25, parseInt(this.labelHeight, 10));
+    const gapMm = isContinuous ? 0 : Math.max(0, parseInt(this.labelGap, 10) || 0);
+    const printableW = Math.min(wMm, 48) * 8;
+    const labelDotsH = hMm * 8;
+    const dir = this.tsplDirection === '1' ? '1' : '0';
+    const padX = 10;
+    const contentW = printableW - padX * 2;
+    const sizeText = isContinuous ? `${wMm}mm Continuous` : `${wMm} x ${hMm} mm`;
+    const dateStr = this.sanitizeTsplText(new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }));
+
+    const lines = [
+      `SIZE ${wMm} mm, ${hMm} mm`,
+      `GAP ${gapMm} mm, 0 mm`,
+      `SPEED 4`,
+      `DENSITY 8`,
+      `DIRECTION ${dir}`,
+      `REFERENCE 0,0`,
+      `CLS`,
+      `TEXT ${padX},12,"3",0,1,1,"KOPI SEMBILAN"`,
+      `TEXT ${padX},42,"2",0,1,1,"TEST LABEL [OK]"`,
+      `BAR ${padX},68,${contentW},2`,
+      `TEXT ${padX},78,"2",0,1,1,"Mode: TSPL"`,
+      `TEXT ${padX},104,"2",0,1,1,"Ukuran: ${sizeText}"`,
+      `TEXT ${padX},132,"1",0,1,1,"${dateStr.slice(0, Math.floor(contentW / 8))}"`
+    ];
+
+    if (labelDotsH >= 220) {
+      lines.push(`BAR ${padX},${labelDotsH - 32},${contentW},2`);
+      lines.push(`TEXT ${padX},${labelDotsH - 22},"1",0,1,1,"Web Bluetooth BLE Siap"`);
+    }
+
+    lines.push('PRINT 1,1');
+    return lines.join('\r\n') + '\r\n';
+  }
+
+  buildTsplReceipt(txn, txnItems = []) {
+    const wMm = this.paperWidth === '80' ? 80 : Math.max(30, parseInt(this.labelWidth, 10) || 58);
+    const printableW = Math.min(wMm, this.paperWidth === '80' ? 72 : 48) * 8;
+    const padX = 10;
+    const contentW = printableW - padX * 2;
+    const maxCharsF2 = Math.floor(contentW / 12);
+    const maxCharsF1 = Math.floor(contentW / 8);
+    const dir = this.tsplDirection === '1' ? '1' : '0';
+
+    const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
+      name: 'TOKO KOPI SEMBILAN',
+      address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
+      phone: '085336688839'
+    };
+
+    const cmds = [];
+    let curY = 12;
+
+    const addTextCmd = (font, text, xOffset = padX, xMul = 1, yMul = 1) => {
+      const clean = this.sanitizeTsplText(text);
+      if (!clean) return;
+      const baseH = font === '3' ? 24 : (font === '2' ? 20 : 12);
+      cmds.push(`TEXT ${xOffset},${curY},"${font}",0,${xMul},${yMul},"${clean}"`);
+      curY += baseH * yMul + 4;
+    };
+
+    const addBarCmd = () => {
+      cmds.push(`BAR ${padX},${curY},${contentW},2`);
+      curY += 8;
+    };
+
+    // 1. Header Toko
+    const storeName = this.sanitizeTsplText(store.name || 'TOKO KOPI SEMBILAN').slice(0, Math.floor(contentW / 16));
+    const storeNameX = Math.max(padX, Math.floor((printableW - storeName.length * 16) / 2));
+    addTextCmd('3', storeName, storeNameX);
+
+    if (store.address) {
+      this.wrapTextLines(store.address, maxCharsF1, 3).forEach(line => {
+        const lx = Math.max(padX, Math.floor((printableW - line.length * 8) / 2));
+        addTextCmd('1', line, lx);
+      });
+    }
+    if (store.phone) {
+      const waStr = `WA: ${this.sanitizeTsplText(store.phone)}`;
+      const wx = Math.max(padX, Math.floor((printableW - waStr.length * 8) / 2));
+      addTextCmd('1', waStr, wx);
+    }
+    curY += 6;
+
+    // 2. Info Transaksi (Publik saja: Tgl, Jam, ID)
+    const d = txn.date ? new Date(txn.date) : new Date();
+    const tglStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    addTextCmd('2', this.formatTsplTwoCols(`Tgl: ${tglStr}`, `Jam: ${jamStr}`, maxCharsF2));
+    addTextCmd('2', `ID: ${this.sanitizeTsplText(txn.id || '-')}`.slice(0, maxCharsF2));
+    addBarCmd();
+
+    // 3. Daftar Item Pesanan
+    txnItems.forEach(item => {
+      let name = item.name;
+      if (!name && item.products && item.products.name) name = item.products.name;
+      if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
+      if (!name) name = 'Produk';
+
+      const qty = item.qty || 1;
+      const price = Number(item.price || item.totalPrice || 0);
+      const subtotal = Number(item.totalPrice ? item.totalPrice : price * qty);
+
+      this.wrapTextLines(name, maxCharsF2, 2).forEach(nl => addTextCmd('2', nl));
+      addTextCmd('2', this.formatTsplTwoCols(`  ${qty} x ${fmtRp(price)}`, fmtRp(subtotal), maxCharsF2));
+
+      if (item.selected_variants && Array.isArray(item.selected_variants) && item.selected_variants.length > 0) {
+        const varText = '  - ' + item.selected_variants.map(v => v.name).join(', ');
+        this.wrapTextLines(varText, maxCharsF1, 2).forEach(vl => addTextCmd('1', vl));
+      }
+      if (item.item_note || item.note) {
+        const noteText = '  * ' + (item.item_note || item.note);
+        this.wrapTextLines(noteText, maxCharsF1, 2).forEach(nl => addTextCmd('1', nl));
+      }
+    });
+
+    addBarCmd();
+
+    // 4. Total & Pembayaran
+    const maxCharsF3 = Math.floor(contentW / 16);
+    addTextCmd('3', this.formatTsplTwoCols('TOTAL', fmtRp(txn.total || 0), maxCharsF3));
+
+    const isLunas = txn.payment_status === 'Lunas';
+    const methodStr = String(txn.payment_method || 'TUNAI').toUpperCase();
+
+    if (txn.payment_method === 'cash' && isLunas) {
+      addTextCmd('2', this.formatTsplTwoCols('Bayar (Tunai)', fmtRp(txn.cash_amount || txn.total || 0), maxCharsF2));
+      const kembalian = Math.max(0, (txn.cash_change || (txn.cash_amount ? txn.cash_amount - txn.total : 0)));
+      addTextCmd('2', this.formatTsplTwoCols('Kembalian', kembalian > 0 ? fmtRp(kembalian) : 'Pas', maxCharsF2));
+    } else if (txn.payment_method === 'split' && isLunas) {
+      addTextCmd('2', this.formatTsplTwoCols('Metode Bayar', 'SPLIT PAYMENT', maxCharsF2));
+      addTextCmd('2', this.formatTsplTwoCols('  - Tunai', fmtRp(txn.cash_amount || 0), maxCharsF2));
+      const nonCash = Math.max(0, (Number(txn.total) || 0) - (Number(txn.cash_amount) || 0));
+      addTextCmd('2', this.formatTsplTwoCols('  - Non-Tunai', fmtRp(nonCash), maxCharsF2));
+    } else {
+      addTextCmd('2', this.formatTsplTwoCols('Metode Bayar', methodStr, maxCharsF2));
+      if (!isLunas) {
+        const blm = '*** STATUS: BELUM LUNAS ***';
+        const bx = Math.max(padX, Math.floor((printableW - blm.length * 12) / 2));
+        addTextCmd('2', blm, bx);
+      }
+    }
+
+    const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : (txn.notes || '');
+    if (cleanNote) {
+      curY += 4;
+      this.wrapTextLines('Catatan: ' + cleanNote, maxCharsF1, 3).forEach(nl => addTextCmd('1', nl));
+    }
+
+    addBarCmd();
+
+    // 5. Footer
+    const thx = 'Terima Kasih Atas Kunjungan Anda';
+    this.wrapTextLines(thx, maxCharsF1, 2).forEach(tl => {
+      const tx = Math.max(padX, Math.floor((printableW - tl.length * 8) / 2));
+      addTextCmd('1', tl, tx);
+    });
+
+    const hMm = Math.max(40, Math.ceil((curY + 24) / 8));
+    const header = [
+      `SIZE ${wMm} mm, ${hMm} mm`,
+      `GAP 0 mm, 0 mm`,
+      `SPEED 4`,
+      `DENSITY 8`,
+      `DIRECTION ${dir}`,
+      `REFERENCE 0,0`,
+      `CLS`
+    ];
+
+    return [...header, ...cmds, 'PRINT 1,1'].join('\r\n') + '\r\n';
   }
 
   createEscPosBuilder() {
@@ -7138,6 +7653,13 @@ class BluetoothPrinterService {
       await this.connect();
     }
 
+    if (this.commandMode === 'tspl') {
+      const tsplStr = this.buildTsplTestLabel();
+      await this.writeBytes(this.encodeAsciiBytes(tsplStr));
+      showToast('Uji cetak label (TSPL) berhasil dikirim ke printer!', 'success');
+      return;
+    }
+
     const b = this.createEscPosBuilder();
     b.init();
     b.alignCenter();
@@ -7147,7 +7669,7 @@ class BluetoothPrinterService {
     b.normalSize();
     b.boldOff();
     b.textLine('Uji Coba Printer Bluetooth');
-    b.textLine(new Date().toLocaleDateString('id-ID', { dateStyle: 'full', timeStyle: 'short' }));
+    b.textLine(new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' }));
     b.feed(1);
     b.divider('=');
     b.alignLeft();
@@ -7170,16 +7692,23 @@ class BluetoothPrinterService {
       await this.connect();
     }
 
+    let txnItems = items || txn.transaction_items || [];
+    if (typeof txnItems === 'string') {
+      try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
+    }
+
+    if (this.commandMode === 'tspl') {
+      const tsplStr = this.buildTsplReceipt(txn, txnItems);
+      await this.writeBytes(this.encodeAsciiBytes(tsplStr));
+      showToast('Struk berhasil dicetak ke printer Bluetooth (TSPL)!', 'success');
+      return;
+    }
+
     const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
       name: 'TOKO KOPI SEMBILAN',
       address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
       phone: '085336688839'
     };
-
-    let txnItems = items || txn.transaction_items || [];
-    if (typeof txnItems === 'string') {
-      try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
-    }
 
     const b = this.createEscPosBuilder();
     b.init();
@@ -7263,10 +7792,11 @@ class BluetoothPrinterService {
       }
     }
 
-    if (txn.notes) {
+    const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : (txn.notes || '');
+    if (cleanNote) {
       b.feed(1);
       b.alignLeft();
-      b.textLine('Catatan: ' + txn.notes);
+      b.textLine('Catatan: ' + cleanNote);
     }
 
     b.divider('-');
@@ -7337,7 +7867,6 @@ class BluetoothPrinterService {
     }
 
     const custName = getCustomerNameFromTxn(txn) || '-';
-    const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
     const generalNote = getCleanNote(txn.notes);
 
     let orderType = 'DINE IN';
@@ -7348,56 +7877,73 @@ class BluetoothPrinterService {
       }
     }
 
-    showToast(`Mencetak ${totalCups} stiker cup via Bluetooth...`, 'info');
+    showToast(`Mencetak ${totalCups} stiker cup via Bluetooth${this.commandMode === 'tspl' ? ' (TSPL)' : ''}...`, 'info');
 
     for (let i = 0; i < totalCups; i++) {
       const cup = cups[i];
       const cupNum = i + 1;
-      const b = this.createEscPosBuilder();
-      b.init();
-
-      // Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan
-      b.alignLeft();
-      b.doubleWidthHeight();
-      b.boldOn();
-      b.text(`${queueNum} `);
-      b.normalSize();
-      b.boldOff();
-      b.textLine(`  [${orderType}]  Cup ${cupNum}/${totalCups}`);
-
-      // Baris 2: Waktu (Nama kasir dihapus sesuai permintaan)
-      b.textLine(`${tglStr} ${jamStr}`);
-
-      // Baris 3: Nama Pelanggan (Wajib & Jelas)
-      b.divider('-');
-      b.boldOn();
-      b.textLine(`PELANGGAN: ${custName.toUpperCase()}`);
-      b.boldOff();
-
-      // Baris 4: Nama Minuman (Besar & Tebal)
-      b.doubleHeight();
-      b.boldOn();
-      b.textLine(cup.name);
-      b.normalSize();
-      b.boldOff();
-
-      // Baris 5: Varian
-      if (cup.variants) {
-        b.textLine(cup.variants);
-      }
-      // Baris 6: Catatan
       const finalCupNote = cup.note || generalNote;
-      if (finalCupNote) {
-        b.textLine(`Catatan: ${finalCupNote}`);
+
+      if (this.commandMode === 'tspl') {
+        const tsplLabel = this.buildTsplCupLabel(cup, {
+          queueNum,
+          orderType,
+          cupNum,
+          totalCups,
+          tglStr,
+          jamStr,
+          custName,
+          shortId,
+          finalCupNote
+        });
+        await this.writeBytes(this.encodeAsciiBytes(tsplLabel));
+      } else {
+        const b = this.createEscPosBuilder();
+        b.init();
+
+        // Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan
+        b.alignLeft();
+        b.doubleWidthHeight();
+        b.boldOn();
+        b.text(`${queueNum} `);
+        b.normalSize();
+        b.boldOff();
+        b.textLine(`  [${orderType}]  Cup ${cupNum}/${totalCups}`);
+
+        // Baris 2: Waktu
+        b.textLine(`${tglStr} ${jamStr}`);
+
+        // Baris 3: Nama Pelanggan
+        b.divider('-');
+        b.boldOn();
+        b.textLine(`PELANGGAN: ${custName.toUpperCase()}`);
+        b.boldOff();
+
+        // Baris 4: Nama Minuman (Besar & Tebal)
+        b.doubleHeight();
+        b.boldOn();
+        b.textLine(cup.name);
+        b.normalSize();
+        b.boldOff();
+
+        // Baris 5: Varian
+        if (cup.variants) {
+          b.textLine(cup.variants);
+        }
+        // Baris 6: Catatan
+        if (finalCupNote) {
+          b.textLine(`Catatan: ${finalCupNote}`);
+        }
+
+        // Baris 7: Footer
+        b.divider('-');
+        b.twoColumns(`#${shortId}`, 'KOPI SEMBILAN');
+        b.feed(3);
+        b.cut();
+
+        await this.writeBytes(b.getBytes());
       }
 
-      // Baris 7: Footer
-      b.divider('-');
-      b.twoColumns(`#${shortId}`, 'KOPI SEMBILAN');
-      b.feed(3);
-      b.cut();
-
-      await this.writeBytes(b.getBytes());
       if (i < totalCups - 1) {
         await new Promise(r => setTimeout(r, 250));
       }
@@ -7429,7 +7975,39 @@ class BluetoothPrinterService {
 // Inisialisasi Instance Global
 window.bluetoothPrinter = new BluetoothPrinterService();
 
-// Helper Functions Global untuk UI
+// Helper Functions Global untuk UI & Konfigurasi Printer
+function getSavedCupLabelConfig() {
+  const presets = ['58x40', '58x30', '58x50', '50x40', '50x30', '40x30', '58x0'];
+  const rawW = parseInt(localStorage.getItem('ks_cup_label_w'), 10);
+  const rawH = parseInt(localStorage.getItem('ks_cup_label_h'), 10);
+  const rawGap = parseInt(localStorage.getItem('ks_cup_label_gap'), 10);
+  const savedPreset = localStorage.getItem('ks_cup_label_preset');
+
+  const width = (Number.isFinite(rawW) && rawW >= 30 && rawW <= 100) ? rawW : 58;
+  const height = (Number.isFinite(rawH) && rawH >= 0 && rawH <= 150) ? rawH : 40;
+  const gap = (Number.isFinite(rawGap) && rawGap >= 0 && rawGap <= 10) ? rawGap : (height === 0 ? 0 : 2);
+  const key = `${width}x${height}`;
+  let preset = savedPreset;
+  if (!preset || (preset !== 'custom' && preset !== key)) {
+    preset = presets.includes(key) ? key : 'custom';
+  }
+  return {
+    width,
+    height,
+    gap,
+    preset,
+    isContinuous: height === 0
+  };
+}
+
+function escapePrintHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 async function connectBluetoothPrinter() {
   try {
     await window.bluetoothPrinter.connect();
@@ -7444,10 +8022,29 @@ async function disconnectBluetoothPrinter() {
 
 async function testPrintBluetooth() {
   try {
-    await window.bluetoothPrinter.testPrint();
+    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
+      await window.bluetoothPrinter.testPrint();
+    } else {
+      const dummyTxn = {
+        id: 'TXN-TEST-9999',
+        date: new Date().toISOString(),
+        total: 43000,
+        payment_method: 'cash',
+        payment_status: 'Lunas',
+        cash_amount: 50000,
+        cash_change: 7000,
+        notes: 'Uji cetak dialog struk'
+      };
+      const dummyItems = [
+        { name: 'Kopi Susu Sembilan', qty: 1, price: 18000, selected_variants: [{ name: 'Regular' }, { name: 'Normal Ice' }] },
+        { name: 'Hazelnut Latte', qty: 1, price: 25000, selected_variants: [{ name: 'Regular' }], item_note: 'Less sugar' }
+      ];
+      openReceiptPrintDialog(dummyTxn, dummyItems);
+    }
   } catch (e) {
-    if (!window.bluetoothPrinter.isConnected) {
-      showToast('Hubungkan printer Bluetooth terlebih dahulu', 'error');
+    console.error('testPrintBluetooth error:', e);
+    if (!window.bluetoothPrinter || !window.bluetoothPrinter.isConnected) {
+      showToast('Gagal membuka dialog uji cetak struk', 'error');
     }
   }
 }
@@ -7460,18 +8057,122 @@ async function printTransactionByIdBluetooth(id) {
       showToast('Gagal mengambil data transaksi!', 'error');
       return;
     }
-    await window.bluetoothPrinter.printReceipt(txn);
+    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
+      await window.bluetoothPrinter.printReceipt(txn);
+    } else {
+      openReceiptPrintDialog(txn);
+    }
   } catch (e) {
     console.error('Cetak transaksi error:', e);
+    showToast('Terjadi kesalahan saat memproses cetak struk', 'error');
   }
 }
 
 function setPrinterPaperWidth(width) {
+  const safeW = width === '80' ? '80' : '58';
   if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.paperWidth = width;
-    localStorage.setItem('ks_printer_paper', width);
-    showToast(`Lebar kertas diatur ke ${width} mm`, 'success');
+    window.bluetoothPrinter.paperWidth = safeW;
   }
+  localStorage.setItem('ks_printer_paper', safeW);
+  showToast(`Lebar kertas struk diatur ke ${safeW} mm`, 'success');
+}
+
+function setPrinterCommandMode(mode) {
+  const safeMode = mode === 'tspl' ? 'tspl' : 'escpos';
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.commandMode = safeMode;
+  }
+  localStorage.setItem('ks_printer_mode', safeMode);
+  const dirWrap = document.getElementById('settings-tspl-direction-wrap');
+  if (dirWrap) {
+    dirWrap.style.display = safeMode === 'tspl' ? 'block' : 'none';
+  }
+  showToast(`Mode perintah printer diatur ke ${safeMode.toUpperCase()}`, 'success');
+}
+
+function setTsplDirection(dir) {
+  const safeDir = dir === '1' ? '1' : '0';
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.tsplDirection = safeDir;
+  }
+  localStorage.setItem('ks_tspl_direction', safeDir);
+  showToast(`Arah cetak TSPL diatur ke ${safeDir === '1' ? 'Terbalik 180° (DIRECTION 1)' : 'Normal (DIRECTION 0)'}`, 'success');
+}
+
+function setCupLabelPreset(preset) {
+  const customWrap = document.getElementById('settings-cup-custom-wrap');
+  if (preset === 'custom') {
+    if (customWrap) customWrap.style.display = 'block';
+    localStorage.setItem('ks_cup_label_preset', 'custom');
+    return;
+  }
+
+  const parts = String(preset || '58x40').split('x');
+  const w = parseInt(parts[0], 10);
+  const h = parseInt(parts[1], 10);
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+
+  const currentGap = window.bluetoothPrinter ? window.bluetoothPrinter.labelGap : 2;
+  const gap = h === 0 ? 0 : (currentGap > 0 ? currentGap : 2);
+
+  if (customWrap) customWrap.style.display = 'none';
+  const wEl = document.getElementById('settings-cup-w');
+  const hEl = document.getElementById('settings-cup-h');
+  const gEl = document.getElementById('settings-cup-gap');
+  if (wEl) wEl.value = w;
+  if (hEl) hEl.value = h;
+  if (gEl) gEl.value = gap;
+
+  localStorage.setItem('ks_cup_label_w', String(w));
+  localStorage.setItem('ks_cup_label_h', String(h));
+  localStorage.setItem('ks_cup_label_gap', String(gap));
+  localStorage.setItem('ks_cup_label_preset', preset);
+
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.labelWidth = w;
+    window.bluetoothPrinter.labelHeight = h;
+    window.bluetoothPrinter.labelGap = gap;
+  }
+
+  const labelText = h === 0 ? `${w} mm Continuous` : `${w} x ${h} mm`;
+  showToast(`Ukuran stiker cup diatur ke ${labelText}`, 'success');
+}
+
+function saveCustomCupLabelSize() {
+  const wEl = document.getElementById('settings-cup-w');
+  const hEl = document.getElementById('settings-cup-h');
+  const gEl = document.getElementById('settings-cup-gap');
+
+  const w = parseInt(wEl ? wEl.value : '', 10);
+  const h = parseInt(hEl ? hEl.value : '', 10);
+  const gap = gEl ? parseInt(gEl.value, 10) : 2;
+
+  if (!Number.isFinite(w) || w < 30 || w > 100) {
+    showToast('Lebar stiker harus antara 30 mm s.d. 100 mm', 'error');
+    return;
+  }
+  if (!Number.isFinite(h) || h < 0 || h > 150) {
+    showToast('Tinggi stiker harus antara 0 mm (continuous) s.d. 150 mm', 'error');
+    return;
+  }
+  if (!Number.isFinite(gap) || gap < 0 || gap > 10) {
+    showToast('Jarak gap stiker harus antara 0 mm s.d. 10 mm', 'error');
+    return;
+  }
+
+  localStorage.setItem('ks_cup_label_w', String(w));
+  localStorage.setItem('ks_cup_label_h', String(h));
+  localStorage.setItem('ks_cup_label_gap', String(gap));
+  localStorage.setItem('ks_cup_label_preset', 'custom');
+
+  if (window.bluetoothPrinter) {
+    window.bluetoothPrinter.labelWidth = w;
+    window.bluetoothPrinter.labelHeight = h;
+    window.bluetoothPrinter.labelGap = gap;
+  }
+
+  const labelText = h === 0 ? `${w} mm Continuous` : `${w} x ${h} mm (Gap ${gap} mm)`;
+  showToast(`Ukuran kustom stiker disimpan: ${labelText}`, 'success');
 }
 
 function togglePrinterAutoPrint(enabled) {
@@ -7536,6 +8237,369 @@ async function testPrintCupBluetooth() {
   }
 }
 
+window.openReceiptPrintDialog = function (txn, items = null) {
+  if (!txn) return;
+  let rawItems = items || txn.transaction_items || [];
+  if (typeof rawItems === 'string') {
+    try { rawItems = JSON.parse(rawItems); } catch (e) { rawItems = []; }
+  }
+
+  const normalizedItems = rawItems.map(item => {
+    let name = item.name;
+    if (!name && item.products && item.products.name) name = item.products.name;
+    if (!name && typeof getProductNameFromItem === 'function') name = getProductNameFromItem(item);
+    if (!name) name = 'Produk';
+
+    const qty = Math.max(1, parseInt(item.qty, 10) || 1);
+    const price = Number(item.price !== undefined ? item.price : (item.totalPrice !== undefined ? item.totalPrice : 0));
+    const variants = Array.isArray(item.selected_variants)
+      ? item.selected_variants
+      : (Array.isArray(item.variants) ? item.variants : []);
+    const note = item.item_note || item.note || '';
+    const productKey = item.product_id || item.productId || name;
+
+    return { productKey, name, qty, price, selected_variants: variants, item_note: note };
+  });
+
+  const groupedItems = normalizedItems.reduce((acc, item) => {
+    const existing = acc.find(i =>
+      i.productKey === item.productKey &&
+      i.price === item.price &&
+      (i.item_note || '') === (item.item_note || '') &&
+      JSON.stringify(i.selected_variants || []) === JSON.stringify(item.selected_variants || [])
+    );
+    if (existing) {
+      existing.qty += item.qty;
+    } else {
+      acc.push({ ...item });
+    }
+    return acc;
+  }, []);
+
+  const store = (typeof storeInfo !== 'undefined') ? storeInfo : {
+    name: 'KopiSembilan',
+    address: 'Jl. Pemuda Kutorejo Gg. II No.230, Tuban',
+    phone: '08132869806'
+  };
+
+  const paperWidth = (window.bluetoothPrinter?.paperWidth || localStorage.getItem('ks_printer_paper') || '58') === '80' ? '80' : '58';
+  const d = txn.date ? new Date(txn.date) : new Date();
+  const tglStr = (typeof getIndoDateTime === 'function')
+    ? getIndoDateTime(d, { dateStyle: 'medium' })
+    : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  const jamStr = (typeof getIndoTimeString === 'function')
+    ? getIndoTimeString(d)
+    : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+  const isLunas = txn.payment_status === 'Lunas' || !txn.payment_status;
+  const isBelumBayar = txn.payment_status === 'Belum Bayar';
+  const methodStr = String(txn.payment_method || 'TUNAI').toUpperCase();
+  const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : '';
+
+  const popup = window.open('', '_blank', 'width=420,height=640');
+  if (!popup) {
+    showToast('Popup browser diblokir. Izinkan popup untuk mencetak struk.', 'error');
+    return;
+  }
+
+  const buildReceiptPageCss = (w) => {
+    const safeW = w === '80' ? '80' : '58';
+    const hPad = safeW === '80' ? '5mm' : '4.5mm';
+    const vPad = safeW === '80' ? '3mm' : '2mm';
+    return `@page { size: ${safeW}mm auto; margin: 0; }
+    @media print {
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        width: ${safeW}mm !important;
+      }
+      .receipt-paper {
+        width: ${safeW}mm !important;
+        max-width: ${safeW}mm !important;
+        margin: 0 !important;
+        padding: ${vPad} ${hPad} !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        box-sizing: border-box !important;
+        color: #000000 !important;
+      }
+      .no-print { display: none !important; }
+    }`;
+  };
+
+  let paymentDetailHtml = '';
+  if (txn.payment_method === 'cash' && isLunas) {
+    const paid = txn.cash_amount || txn.total || 0;
+    const change = Math.max(0, (txn.cash_change !== undefined ? txn.cash_change : (paid - (txn.total || 0))));
+    paymentDetailHtml = `
+      <div class="row-line"><span>Bayar (Tunai)</span><span>${fmtRp(paid)}</span></div>
+      <div class="row-line"><span>Kembalian</span><span>${change > 0 ? fmtRp(change) : 'Pas'}</span></div>
+    `;
+  } else if (txn.payment_method === 'split' && isLunas) {
+    const cashPart = Number(txn.cash_amount || 0);
+    const nonCashPart = Math.max(0, Number(txn.total || 0) - cashPart);
+    paymentDetailHtml = `
+      <div class="row-line"><span>Metode Bayar</span><span>SPLIT PAYMENT</span></div>
+      <div class="row-line"><span>- Tunai</span><span>${fmtRp(cashPart)}</span></div>
+      <div class="row-line"><span>- Non-Tunai</span><span>${fmtRp(nonCashPart)}</span></div>
+    `;
+  } else {
+    paymentDetailHtml = `
+      <div class="row-line"><span>Metode Bayar</span><span>${escapePrintHtml(methodStr)}</span></div>
+      ${isBelumBayar ? `<div class="status-unpaid">*** BELUM LUNAS ***</div>` : ''}
+    `;
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Struk Belanja - ${escapePrintHtml(txn.id || '')}</title>
+  <style id="receipt-base-style">
+    body {
+      font-family: "Courier New", Courier, monospace;
+      background: #f1f5f9;
+      margin: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #000;
+    }
+    .no-print {
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .tip-box {
+      background: #FEF3C7;
+      border: 1px solid #F59E0B;
+      color: #92400E;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      max-width: 360px;
+      text-align: center;
+      line-height: 1.35;
+    }
+    .btn-size {
+      background: white;
+      border: 1px solid #cbd5e1;
+      color: #374151;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-size.active {
+      background: #8B5320;
+      color: white;
+      border-color: #8B5320;
+    }
+    .btn-print {
+      background: #8B5320;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .receipt-paper {
+      width: ${paperWidth}mm;
+      box-sizing: border-box;
+      background: #ffffff;
+      padding: ${paperWidth === '80' ? '3mm 5mm' : '2mm 4.5mm'};
+      border: 1px dashed #cbd5e1;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #000;
+    }
+    .store-header {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .store-name {
+      font-size: 15px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .store-meta {
+      font-size: 9.5px;
+      line-height: 1.25;
+      margin-top: 2px;
+    }
+    .row-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 10.5px;
+      margin-bottom: 2px;
+    }
+    .divider {
+      border: none;
+      border-top: 1px dashed #000;
+      margin: 6px 0;
+    }
+    .item-block {
+      margin-bottom: 5px;
+    }
+    .item-name {
+      font-weight: 800;
+      font-size: 11px;
+      word-break: break-word;
+    }
+    .item-sub {
+      padding-left: 6px;
+      font-size: 9.5px;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 900;
+      margin: 4px 0;
+    }
+    .status-unpaid {
+      text-align: center;
+      font-weight: 900;
+      margin-top: 4px;
+      font-size: 11px;
+      border: 1px solid #000;
+      padding: 2px;
+    }
+    .receipt-note {
+      margin-top: 6px;
+      font-size: 10px;
+      word-break: break-word;
+    }
+    .footer {
+      text-align: center;
+      font-size: 10px;
+      margin-top: 8px;
+    }
+  </style>
+  <style id="receipt-page-style">
+    ${buildReceiptPageCss(paperWidth)}
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <div class="tip-box">
+      <strong>Tips Print 58mm / Sharkpos X265L (USB/Bluetooth):</strong><br>
+      Pada dialog print pilih Paper Size <strong>58mm</strong>, atur <strong>Margins: None</strong>, dan <strong>Scale: 100%</strong>.
+    </div>
+    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
+      <span style="font-family:sans-serif; font-size:11px; font-weight:700; color:#374151;">Lebar Kertas:</span>
+      <button class="btn-size ${paperWidth === '58' ? 'active' : ''}" onclick="setReceiptWidth('58', this)">58 mm</button>
+      <button class="btn-size ${paperWidth === '80' ? 'active' : ''}" onclick="setReceiptWidth('80', this)">80 mm</button>
+    </div>
+    <button class="btn-print" onclick="window.print()">Cetak Struk Sekarang</button>
+  </div>
+
+  <div class="receipt-paper" id="receipt-paper">
+    <div class="store-header">
+      <div class="store-name">${escapePrintHtml(store.name || 'KopiSembilan')}</div>
+      ${store.address ? `<div class="store-meta">${escapePrintHtml(store.address)}</div>` : ''}
+      ${store.phone ? `<div class="store-meta">WA: ${escapePrintHtml(store.phone)}</div>` : ''}
+    </div>
+
+    <div class="row-line">
+      <span>Tgl: ${escapePrintHtml(tglStr)}</span>
+      <span>Jam: ${escapePrintHtml(jamStr)}</span>
+    </div>
+    <div class="row-line">
+      <span>ID: ${escapePrintHtml(txn.id || '-')}</span>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      ${groupedItems.map(i => `
+        <div class="item-block">
+          <div class="item-name">${escapePrintHtml(i.name)}</div>
+          <div class="row-line">
+            <span>${i.qty} x ${fmtRp(i.price)}</span>
+            <span>${fmtRp(i.price * i.qty)}</span>
+          </div>
+          ${i.selected_variants && i.selected_variants.length > 0 ? `<div class="item-sub">- ${escapePrintHtml(i.selected_variants.map(v => v.name).join(', '))}</div>` : ''}
+          ${i.item_note ? `<div class="item-sub">* ${escapePrintHtml(i.item_note)}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+
+    <hr class="divider">
+
+    <div class="total-row">
+      <span>TOTAL</span>
+      <span>${fmtRp(txn.total || 0)}</span>
+    </div>
+
+    ${paymentDetailHtml}
+
+    ${cleanNote ? `<div class="receipt-note">Catatan: ${escapePrintHtml(cleanNote)}</div>` : ''}
+
+    <hr class="divider">
+
+    <div class="footer">
+      <div>Terima Kasih Atas Kunjungan Anda</div>
+      <div style="font-weight:900; margin-top:4px; letter-spacing:0.8px;">KOPI SEMBILAN</div>
+    </div>
+  </div>
+
+  <script>
+    function setReceiptWidth(w, btn) {
+      var safeW = w === '80' ? '80' : '58';
+      var hPad = safeW === '80' ? '5mm' : '4.5mm';
+      var vPad = safeW === '80' ? '3mm' : '2mm';
+      document.querySelectorAll('.btn-size').forEach(function(b) { b.classList.remove('active'); });
+      if (btn) btn.classList.add('active');
+
+      var pageStyle = document.getElementById('receipt-page-style');
+      if (pageStyle) {
+        pageStyle.innerHTML = '@page { size: ' + safeW + 'mm auto; margin: 0; }' +
+          '@media print {' +
+          '  html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; width: ' + safeW + 'mm !important; }' +
+          '  .receipt-paper { width: ' + safeW + 'mm !important; max-width: ' + safeW + 'mm !important; margin: 0 !important; padding: ' + vPad + ' ' + hPad + ' !important; border: none !important; box-shadow: none !important; border-radius: 0 !important; box-sizing: border-box !important; color: #000000 !important; }' +
+          '  .no-print { display: none !important; }' +
+          '}';
+      }
+      var paper = document.getElementById('receipt-paper');
+      if (paper) {
+        paper.style.width = safeW + 'mm';
+        paper.style.padding = vPad + ' ' + hPad;
+      }
+      try {
+        localStorage.setItem('ks_printer_paper', safeW);
+        if (window.opener && window.opener.bluetoothPrinter) {
+          window.opener.bluetoothPrinter.paperWidth = safeW;
+        }
+      } catch (e) {}
+    }
+
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 350);
+    };
+  </script>
+</body>
+</html>`;
+
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+};
+
 window.openCupStickersPrintDialog = function (txn, items = null) {
   let txnItems = items || txn.transaction_items || [];
   if (typeof txnItems === 'string') {
@@ -7584,7 +8648,6 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
   }
 
   const custName = getCustomerNameFromTxn(txn) || '-';
-  const cashierDisplay = txn.cashier_name ? txn.cashier_name : (getActiveCashierName() || '');
   const generalNote = getCleanNote(txn.notes);
 
   let orderType = 'DINE IN';
@@ -7595,7 +8658,77 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     }
   }
 
-  const popup = window.open('', '_blank', 'width=420,height=600');
+  const cupCfg = getSavedCupLabelConfig();
+  const initW = cupCfg.width;
+  const initH = cupCfg.height;
+  const initPreset = cupCfg.preset;
+  const isInitCompact = initH > 0 && initH <= 32;
+  const isInitContinuous = initH <= 0;
+
+  const buildCupPrintCss = (wNum, hNum) => {
+    const isCont = hNum <= 0;
+    const isComp = hNum > 0 && hNum <= 32;
+    const hPad = wNum >= 54 ? '4.5mm' : '2.5mm';
+    const vPad = isComp ? '1.5mm' : '2mm';
+    const pageSize = isCont ? `${wNum}mm auto` : `${wNum}mm ${hNum}mm`;
+    const maxHeightRule = isCont ? 'none' : `${hNum}mm`;
+
+    return `@page {
+      size: ${pageSize};
+      margin: 0;
+    }
+    @media print {
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+        width: ${wNum}mm !important;
+      }
+      .cup-label {
+        width: ${wNum}mm !important;
+        max-width: ${wNum}mm !important;
+        height: ${isCont ? 'auto' : `${hNum}mm`} !important;
+        max-height: ${maxHeightRule} !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: ${vPad} ${hPad} !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+      }
+      .cup-label:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+      body.mode-gabung .cup-label {
+        height: auto !important;
+        max-height: none !important;
+        page-break-after: auto !important;
+        break-after: auto !important;
+        border-bottom: 1.5px dashed #000 !important;
+        padding-bottom: 6px !important;
+        margin-bottom: 6px !important;
+      }
+      body.mode-gabung .cup-label:last-child {
+        border-bottom: none !important;
+        margin-bottom: 0 !important;
+      }
+      .no-print { display: none !important; }
+    }`;
+  };
+
+  const bodyClassList = [];
+  if (isInitCompact) bodyClassList.push('compact-label');
+  if (isInitContinuous) bodyClassList.push('mode-gabung');
+
+  const initHPad = initW >= 54 ? '4.5mm' : '2.5mm';
+  const initVPad = isInitCompact ? '1.5mm' : '2mm';
+
+  const popup = window.open('', '_blank', 'width=460,height=660');
   if (!popup) {
     showToast('Popup browser diblokir. Izinkan popup untuk mencetak label stiker.', 'error');
     return;
@@ -7605,47 +8738,8 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Stiker Cup - ${txn.id}</title>
-  <style id="print-page-style">
-    @page {
-      size: 50mm 40mm;
-      margin: 0;
-    }
-    @media print {
-      html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        background: white !important;
-        width: 100% !important;
-      }
-      .cup-label {
-        width: 100% !important;
-        max-width: 50mm !important;
-        height: auto !important;
-        max-height: 40mm !important;
-        page-break-after: always !important;
-        break-after: page !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-        box-shadow: none !important;
-        border: none !important;
-        margin: 0 !important;
-        padding: 3px 5px !important;
-        box-sizing: border-box !important;
-        overflow: hidden !important;
-      }
-      body.mode-gabung .cup-label {
-        page-break-after: auto !important;
-        break-after: auto !important;
-        border-bottom: 1.5px dashed #000 !important;
-        padding-bottom: 6px !important;
-        margin-bottom: 6px !important;
-      }
-      body.mode-gabung .cup-label:last-child {
-        border-bottom: none !important;
-      }
-      .no-print { display: none !important; }
-    }
+  <title>Stiker Cup - ${escapePrintHtml(txn.id || '')}</title>
+  <style id="base-style">
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
       background: #f1f5f9;
@@ -7656,11 +8750,11 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       align-items: center;
     }
     .cup-label {
-      width: 50mm;
-      max-height: 40mm;
+      width: ${initW}mm;
+      max-height: ${isInitContinuous ? 'none' : `${initH}mm`};
       box-sizing: border-box;
       background: white;
-      padding: 4px 6px;
+      padding: ${initVPad} ${initHPad};
       margin-bottom: 10px;
       border: 1px dashed #cbd5e1;
       border-radius: 4px;
@@ -7676,6 +8770,7 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       overflow: hidden;
     }
     body.mode-gabung .cup-label {
+      max-height: none;
       margin-bottom: 6px;
       border-bottom: 1.5px dashed #000;
       border-radius: 0;
@@ -7684,51 +8779,99 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     body.mode-gabung .cup-label:last-child {
       border-bottom: 1px dashed #cbd5e1;
     }
-    .header-type {
-      font-size: 11.5px;
-      font-weight: 900;
-      text-align: center;
-      border-bottom: 1.5px solid #000;
-      padding-bottom: 1px;
-      letter-spacing: 0.5px;
-      margin-bottom: 2px;
-    }
-    .meta-row {
+    .cup-top-row {
       display: flex;
       justify-content: space-between;
-      font-size: 9px;
+      align-items: flex-start;
+      margin-bottom: 2px;
+    }
+    .cup-queue {
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.5px;
+    }
+    .cup-order-badge {
+      font-size: 8px;
+      font-weight: 800;
+      border: 1px solid #000;
+      padding: 1px 4px;
+      border-radius: 2px;
+      display: inline-block;
+      line-height: 1.1;
+    }
+    .cup-count {
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1.2;
+      margin-top: 2px;
+    }
+    .cup-time {
+      font-size: 8px;
       font-weight: 600;
-      margin-top: 1px;
+      color: #222;
+      margin-bottom: 3px;
+      line-height: 1.1;
+    }
+    .cup-customer {
+      font-size: 10.5px;
+      font-weight: 800;
+      border-top: 1px dashed #000;
+      padding-top: 3px;
+      margin-bottom: 3px;
+      line-height: 1.15;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cup-customer-label {
+      font-weight: 600;
+      font-size: 8.5px;
+      color: #333;
+      text-transform: uppercase;
     }
     .product-name {
-      font-size: 11px;
-      font-weight: 800;
-      margin-top: 2px;
-      line-height: 1.15;
+      font-size: 11.5px;
+      font-weight: 900;
+      line-height: 1.18;
       word-break: break-word;
+      margin-bottom: 2px;
     }
     .variants {
       font-size: 8.5px;
       color: #111;
-      margin-top: 1px;
-      line-height: 1.1;
+      line-height: 1.12;
+      margin-bottom: 2px;
     }
     .note {
-      font-size: 8.5px;
-      color: #000;
-      margin-top: 1px;
-      font-weight: 600;
-      line-height: 1.1;
-    }
-    .footer-brand {
-      text-align: center;
-      font-weight: 800;
       font-size: 8px;
-      border-top: 1px solid #000;
-      margin-top: 2px;
-      padding-top: 1px;
-      letter-spacing: 0.5px;
+      color: #000;
+      font-weight: 700;
+      line-height: 1.12;
     }
+    .cup-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid #000;
+      margin-top: 3px;
+      padding-top: 2px;
+      font-size: 7.5px;
+      font-weight: 800;
+    }
+    /* Mode Padat untuk stiker tinggi <= 32mm (mis. 58x30mm / 50x30mm / 40x30mm) */
+    body.compact-label .cup-top-row { margin-bottom: 1px; }
+    body.compact-label .cup-queue { font-size: 17px; }
+    body.compact-label .cup-order-badge { font-size: 7px; padding: 0.5px 3px; }
+    body.compact-label .cup-count { font-size: 9.5px; margin-top: 1px; }
+    body.compact-label .cup-time { font-size: 7px; margin-bottom: 1.5px; }
+    body.compact-label .cup-customer { font-size: 9px; padding-top: 1.5px; margin-bottom: 1.5px; }
+    body.compact-label .cup-customer-label { font-size: 7.5px; }
+    body.compact-label .product-name { font-size: 10px; line-height: 1.1; margin-bottom: 1px; }
+    body.compact-label .variants { font-size: 7.5px; line-height: 1.05; margin-bottom: 1px; }
+    body.compact-label .note { font-size: 7.5px; line-height: 1.05; }
+    body.compact-label .cup-footer { margin-top: 1.5px; padding-top: 1px; font-size: 7px; }
+
     .btn-print {
       background: #8B5320;
       color: white;
@@ -7765,6 +8908,26 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       color: white;
       border-color: #8B5320;
     }
+    .custom-dim-wrap {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #374151;
+      background: white;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+    }
+    .custom-dim-input {
+      width: 44px;
+      padding: 3px 5px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+    }
     .tip-box {
       background: #FEF3C7;
       border: 1px solid #F59E0B;
@@ -7772,23 +8935,38 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       font-size: 11px;
       padding: 6px 10px;
       border-radius: 6px;
-      margin-bottom: 8px;
-      max-width: 400px;
+      margin-bottom: 4px;
+      max-width: 430px;
       text-align: center;
       line-height: 1.35;
     }
   </style>
+  <style id="print-page-style">
+    ${buildCupPrintCss(initW, initH)}
+  </style>
 </head>
-<body>
+<body class="${bodyClassList.join(' ')}">
   <div class="no-print" style="margin-bottom:12px; display:flex; flex-direction:column; align-items:center; gap:8px;">
     <div class="tip-box">
-      <strong>Catatan:</strong> Jika ukuran kertas di layar print masih A4, pada opsi <strong>Paper size / Ukuran Kertas</strong> di menu print browser, pilih ukuran <strong>50x40mm</strong> atau atur Margins ke <strong>None</strong>.
+      <strong>Info Printer Thermal 58mm (Sharkpos X265L / sejenis):</strong><br>
+      Di dialog print browser, atur <strong>Paper Size / Ukuran Kertas</strong> sesuai ukuran stiker (<span id="active-size-label">${isInitContinuous ? `${initW}mm Continuous` : `${initW}x${initH}mm`}</span>), <strong>Margins = None</strong>, dan <strong>Scale = 100%</strong>.
     </div>
-    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
+    <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap; justify-content:center; max-width:440px;">
       <span style="font-size:11px; font-weight:700; color:#374151;">Pilihan Ukuran Stiker:</span>
-      <button class="btn-size active" onclick="setLabelDimension('50mm', '40mm', this)">50 x 40 mm</button>
-      <button class="btn-size" onclick="setLabelDimension('50mm', '30mm', this)">50 x 30 mm</button>
-      <button class="btn-size" onclick="setLabelDimension('40mm', '30mm', this)">40 x 30 mm</button>
+      <button class="btn-size ${initPreset === '58x40' ? 'active' : ''}" data-preset="58x40" onclick="setLabelDimension(58, 40, this, '58x40')">58 x 40 mm</button>
+      <button class="btn-size ${initPreset === '58x30' ? 'active' : ''}" data-preset="58x30" onclick="setLabelDimension(58, 30, this, '58x30')">58 x 30 mm</button>
+      <button class="btn-size ${initPreset === '58x50' ? 'active' : ''}" data-preset="58x50" onclick="setLabelDimension(58, 50, this, '58x50')">58 x 50 mm</button>
+      <button class="btn-size ${initPreset === '50x40' ? 'active' : ''}" data-preset="50x40" onclick="setLabelDimension(50, 40, this, '50x40')">50 x 40 mm</button>
+      <button class="btn-size ${initPreset === '50x30' ? 'active' : ''}" data-preset="50x30" onclick="setLabelDimension(50, 30, this, '50x30')">50 x 30 mm</button>
+      <button class="btn-size ${initPreset === '40x30' ? 'active' : ''}" data-preset="40x30" onclick="setLabelDimension(40, 30, this, '40x30')">40 x 30 mm</button>
+      <button class="btn-size ${initPreset === '58x0' ? 'active' : ''}" data-preset="58x0" onclick="setLabelDimension(58, 0, this, '58x0')">58mm Gulung</button>
+    </div>
+    <div class="custom-dim-wrap">
+      <span style="font-weight:700;">Kustom (mm):</span>
+      <input type="number" id="custom-w" class="custom-dim-input" min="30" max="100" value="${initW}" title="Lebar mm">
+      <span>x</span>
+      <input type="number" id="custom-h" class="custom-dim-input" min="0" max="150" value="${initH}" title="Tinggi mm (0 = gulung continuous)">
+      <button type="button" class="btn-size" onclick="applyCustomDimension()">Pakai</button>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px;">
       <button class="btn-print" onclick="printSeparated()">Cetak 1 Stiker Per Cup (${totalCups} Lembar)</button>
@@ -7800,63 +8978,93 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       <div class="cup-label">
         <div>
           <!-- Baris 1: Nomor Urut Besar di Kiri, Tipe Order & Cup X/Y di Kanan -->
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
-            <div style="font-size:24px; font-weight:900; line-height:1; letter-spacing:-0.5px;">${queueNum}</div>
+          <div class="cup-top-row">
+            <div class="cup-queue">${escapePrintHtml(queueNum)}</div>
             <div style="text-align:right;">
-              <span style="font-size:8px; font-weight:800; border:1px solid #000; padding:1px 4px; border-radius:2px; display:inline-block; line-height:1.1;">${orderType}</span>
-              <div style="font-size:11px; font-weight:900; line-height:1.2; margin-top:2px;">Cup ${idx + 1}/${totalCups}</div>
+              <span class="cup-order-badge">${escapePrintHtml(orderType)}</span>
+              <div class="cup-count">Cup ${idx + 1}/${totalCups}</div>
             </div>
           </div>
 
-          <!-- Baris 2: Tanggal & Waktu (Nama kasir dihapus sesuai permintaan) -->
-          <div style="font-size:8px; font-weight:600; color:#333; margin-bottom:3px; line-height:1.1;">
-            <span>${tglStr} ${jamStr}</span>
+          <!-- Baris 2: Tanggal & Waktu -->
+          <div class="cup-time">
+            <span>${escapePrintHtml(tglStr)} ${escapePrintHtml(jamStr)}</span>
           </div>
 
-          <!-- Baris 3: Nama Pelanggan (Wajib & Jelas) -->
-          <div style="font-size:10.5px; font-weight:800; border-top:1px dashed #000; padding-top:3px; margin-bottom:3px; line-height:1.2;">
-            <span style="font-weight:600; font-size:8.5px; color:#444; text-transform:uppercase;">Pelanggan:</span> ${custName}
+          <!-- Baris 3: Nama Pelanggan -->
+          <div class="cup-customer">
+            <span class="cup-customer-label">Pelanggan:</span> ${escapePrintHtml(custName)}
           </div>
 
-          <!-- Baris 4: Nama Produk Minuman (Tebal) -->
-          <div class="product-name" style="font-size:11.5px; font-weight:900; line-height:1.2; word-break:break-word; margin-bottom:2px;">
-            ${cup.name}
+          <!-- Baris 4: Nama Produk Minuman -->
+          <div class="product-name">
+            ${escapePrintHtml(cup.name)}
           </div>
 
-          <!-- Baris 5: Rincian Varian (Es, Gula, dll) -->
-          ${cup.variants ? `<div class="variants" style="font-size:8.5px; color:#111; line-height:1.15; margin-bottom:2px;">${cup.variants}</div>` : ''}
+          <!-- Baris 5: Rincian Varian -->
+          ${cup.variants ? `<div class="variants">${escapePrintHtml(cup.variants)}</div>` : ''}
 
-          <!-- Baris 6: Catatan Barista (jika ada) -->
-          ${(cup.note || generalNote) ? `<div class="note" style="font-size:8px; font-weight:700; color:#000; line-height:1.15;">Catatan: ${cup.note || generalNote}</div>` : ''}
+          <!-- Baris 6: Catatan Barista -->
+          ${(cup.note || generalNote) ? `<div class="note">Catatan: ${escapePrintHtml(cup.note || generalNote)}</div>` : ''}
         </div>
 
         <!-- Baris 7 (Footer): ID Transaksi & Brand Kopi Sembilan -->
-        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #000; margin-top:3px; padding-top:2px; font-size:7.5px; font-weight:800;">
-          <span>#${shortId}</span>
+        <div class="cup-footer">
+          <span>#${escapePrintHtml(shortId)}</span>
           <span style="letter-spacing:0.5px;">KOPI SEMBILAN</span>
         </div>
       </div>
     `).join('')}
   </div>
   <script>
-    let currentWidth = '50mm';
-    let currentHeight = '40mm';
+    var currentWidth = ${initW};
+    var currentHeight = ${initH};
 
-    function setLabelDimension(width, height, btn) {
-      currentWidth = width;
-      currentHeight = height;
-      document.querySelectorAll('.btn-size').forEach(b => b.classList.remove('active'));
+    function setLabelDimension(width, height, btn, presetName) {
+      var wNum = parseInt(String(width).replace(/[^0-9]/g, ''), 10) || 58;
+      var hRaw = parseInt(String(height).replace(/[^0-9]/g, ''), 10);
+      var hNum = isNaN(hRaw) ? 40 : hRaw;
+
+      currentWidth = wNum;
+      currentHeight = hNum;
+
+      document.querySelectorAll('.btn-size').forEach(function(b) { b.classList.remove('active'); });
       if (btn) btn.classList.add('active');
-      const styleEl = document.getElementById('print-page-style');
+
+      var cw = document.getElementById('custom-w');
+      var ch = document.getElementById('custom-h');
+      if (cw) cw.value = wNum;
+      if (ch) ch.value = hNum;
+
+      var isCont = hNum <= 0;
+      var isComp = hNum > 0 && hNum <= 32;
+      var hPad = wNum >= 54 ? '4.5mm' : '2.5mm';
+      var vPad = isComp ? '1.5mm' : '2mm';
+      var pageSize = isCont ? (wNum + 'mm auto') : (wNum + 'mm ' + hNum + 'mm');
+      var maxHeightRule = isCont ? 'none' : (hNum + 'mm');
+
+      document.body.classList.toggle('compact-label', isComp);
+      if (isCont) {
+        document.body.classList.add('mode-gabung');
+      } else {
+        document.body.classList.remove('mode-gabung');
+      }
+
+      var sizeLabel = document.getElementById('active-size-label');
+      if (sizeLabel) {
+        sizeLabel.textContent = isCont ? (wNum + 'mm Continuous') : (wNum + 'x' + hNum + 'mm');
+      }
+
+      var styleEl = document.getElementById('print-page-style');
       if (styleEl) {
-        styleEl.innerHTML = '@page { size: ' + width + ' ' + height + '; margin: 0; }' +
+        styleEl.innerHTML = '@page { size: ' + pageSize + '; margin: 0; }' +
           '@media print {' +
-          '  html, body { margin: 0 !important; padding: 0 !important; background: white !important; width: 100% !important; }' +
+          '  html, body { margin: 0 !important; padding: 0 !important; background: white !important; width: ' + wNum + 'mm !important; }' +
           '  .cup-label {' +
-          '    width: 100% !important;' +
-          '    max-width: ' + width + ' !important;' +
-          '    height: auto !important;' +
-          '    max-height: ' + height + ' !important;' +
+          '    width: ' + wNum + 'mm !important;' +
+          '    max-width: ' + wNum + 'mm !important;' +
+          '    height: ' + (isCont ? 'auto' : (hNum + 'mm')) + ' !important;' +
+          '    max-height: ' + maxHeightRule + ' !important;' +
           '    page-break-after: always !important;' +
           '    break-after: page !important;' +
           '    page-break-inside: avoid !important;' +
@@ -7864,35 +9072,71 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
           '    box-shadow: none !important;' +
           '    border: none !important;' +
           '    margin: 0 !important;' +
-          '    padding: 3px 5px !important;' +
+          '    padding: ' + vPad + ' ' + hPad + ' !important;' +
           '    box-sizing: border-box !important;' +
           '    overflow: hidden !important;' +
           '  }' +
+          '  .cup-label:last-child { page-break-after: auto !important; break-after: auto !important; }' +
           '  body.mode-gabung .cup-label {' +
+          '    height: auto !important;' +
+          '    max-height: none !important;' +
           '    page-break-after: auto !important;' +
           '    break-after: auto !important;' +
           '    border-bottom: 1.5px dashed #000 !important;' +
           '    padding-bottom: 6px !important;' +
           '    margin-bottom: 6px !important;' +
           '  }' +
-          '  body.mode-gabung .cup-label:last-child { border-bottom: none !important; }' +
+          '  body.mode-gabung .cup-label:last-child { border-bottom: none !important; margin-bottom: 0 !important; }' +
           '  .no-print { display: none !important; }' +
           '}';
       }
-      document.querySelectorAll('.cup-label').forEach(el => {
-        el.style.width = width;
-        el.style.maxHeight = height;
+
+      document.querySelectorAll('.cup-label').forEach(function(el) {
+        el.style.width = wNum + 'mm';
+        el.style.maxHeight = maxHeightRule;
+        el.style.padding = vPad + ' ' + hPad;
       });
+
+      var resolvedPreset = presetName || (wNum + 'x' + hNum);
+      try {
+        localStorage.setItem('ks_cup_label_w', String(wNum));
+        localStorage.setItem('ks_cup_label_h', String(hNum));
+        localStorage.setItem('ks_cup_label_preset', resolvedPreset);
+        if (window.opener && window.opener.bluetoothPrinter) {
+          window.opener.bluetoothPrinter.labelWidth = wNum;
+          window.opener.bluetoothPrinter.labelHeight = hNum;
+        }
+      } catch (e) {}
+    }
+
+    function applyCustomDimension() {
+      var cw = document.getElementById('custom-w');
+      var ch = document.getElementById('custom-h');
+      var wVal = parseInt(cw ? cw.value : '58', 10);
+      var hVal = parseInt(ch ? ch.value : '40', 10);
+      if (isNaN(wVal) || wVal < 30 || wVal > 100) {
+        alert('Lebar stiker harus antara 30 mm sampai 100 mm');
+        return;
+      }
+      if (isNaN(hVal) || hVal < 0 || hVal > 150) {
+        alert('Tinggi stiker harus antara 0 mm (gulung) sampai 150 mm');
+        return;
+      }
+      setLabelDimension(wVal, hVal, null, 'custom');
     }
 
     function printSeparated() {
-      document.body.classList.remove('mode-gabung');
+      if (currentHeight > 0) {
+        document.body.classList.remove('mode-gabung');
+      }
       setTimeout(function() { window.print(); }, 150);
     }
+
     function printCombined() {
       document.body.classList.add('mode-gabung');
       setTimeout(function() { window.print(); }, 150);
     }
+
     window.onload = function() {
       setTimeout(function() {
         window.print();
