@@ -1920,8 +1920,17 @@ async function confirmPayment(sendMode = 'none') {
       sendWhatsAppReceipt(phone, txnId, total, cart);
     }
 
-    // Otomatis cetak struk via Bluetooth atau Dialog Browser jika fitur Auto-Print aktif
-    if (window.bluetoothPrinter && window.bluetoothPrinter.autoPrint) {
+    const rp = window.receiptPrinter || window.bluetoothPrinter;
+    const cp = window.cupPrinter;
+    const cartSnapshot = cart.map(c => ({ ...c }));
+    const cupWillOpenPopup = !!(cp && cp.autoCup && (
+      cp.connectionType === 'browser' ||
+      (cp.connectionType === 'auto' && !cp.isConnected) ||
+      (cp.connectionType === 'same_as_receipt' && (!rp || !rp.isConnected))
+    ));
+
+    // Otomatis cetak struk via Printer 1 (Struk) jika Auto-Print aktif
+    if (rp && rp.autoPrint) {
       const receiptData = {
         id: txnId,
         total: total,
@@ -1935,17 +1944,17 @@ async function confirmPayment(sendMode = 'none') {
         cash_amount: cashAmount,
         cash_change: cashChange
       };
-      if (window.bluetoothPrinter.isConnected) {
-        window.bluetoothPrinter.printReceipt(receiptData, cart).catch(err => {
-          console.warn('Auto-print Bluetooth gagal:', err);
+      if (rp.connectionType === 'bluetooth' || (rp.connectionType === 'auto' && rp.isConnected)) {
+        rp.printReceipt(receiptData, cartSnapshot).catch(err => {
+          console.warn('Auto-print struk Bluetooth gagal:', err);
         });
-      } else if (!window.bluetoothPrinter.autoCup && typeof openReceiptPrintDialog === 'function') {
-        openReceiptPrintDialog(receiptData, cart);
+      } else if (!cupWillOpenPopup && typeof openReceiptPrintDialog === 'function') {
+        openReceiptPrintDialog(receiptData, cartSnapshot);
       }
     }
 
-    // Otomatis cetak stiker cup jika fitur Auto-Cup aktif
-    if (window.bluetoothPrinter && window.bluetoothPrinter.autoCup) {
+    // Otomatis cetak stiker cup via Printer 2 (Stiker Cup) jika Auto-Cup aktif
+    if (cp && cp.autoCup) {
       const cupData = {
         id: txnId,
         date: now,
@@ -1954,12 +1963,10 @@ async function confirmPayment(sendMode = 'none') {
         customer_phone: phone,
         cashier_name: getActiveCashierName()
       };
-      if (window.bluetoothPrinter.isConnected) {
-        window.bluetoothPrinter.printCupStickers(cupData, cart).catch(err => {
-          console.warn('Auto-print stiker cup Bluetooth gagal:', err);
+      if (typeof dispatchCupPrint === 'function') {
+        dispatchCupPrint(cupData, cartSnapshot).catch(err => {
+          console.warn('Auto-print stiker cup gagal:', err);
         });
-      } else if (typeof openCupStickersPrintDialog === 'function') {
-        openCupStickersPrintDialog(cupData, cart);
       }
     }
 
@@ -3145,9 +3152,23 @@ async function deleteUser(id) {
 }
 
 function renderSettings(el) {
+  const rp = window.receiptPrinter || window.bluetoothPrinter;
+  const cp = window.cupPrinter;
   const cupCfg = getSavedCupLabelConfig();
-  const printerMode = window.bluetoothPrinter?.commandMode || localStorage.getItem('ks_printer_mode') || 'escpos';
-  const tsplDir = window.bluetoothPrinter?.tsplDirection || localStorage.getItem('ks_tspl_direction') || '0';
+
+  const rConnected = !!(rp && rp.isConnected);
+  const rName = rp?.device?.name || localStorage.getItem('ks_receipt_printer_name') || 'Printer Struk';
+  const rConn = rp?.connectionType || localStorage.getItem('ks_receipt_printer_conn') || 'auto';
+  const rMode = rp?.commandMode || localStorage.getItem('ks_receipt_printer_mode') || 'escpos';
+  const rTsplDir = rp?.tsplDirection || localStorage.getItem('ks_receipt_printer_tspl_dir') || '0';
+  const rPaper = rp?.paperWidth || localStorage.getItem('ks_receipt_printer_paper') || localStorage.getItem('ks_printer_paper') || '58';
+
+  const cConnected = !!(cp && cp.isConnected);
+  const cName = cp?.device?.name || localStorage.getItem('ks_cup_printer_name') || 'Printer Stiker';
+  const cConn = cp?.connectionType || localStorage.getItem('ks_cup_printer_conn') || 'auto';
+  const cMode = cp?.commandMode || localStorage.getItem('ks_cup_printer_mode') || 'tspl';
+  const cTsplDir = cp?.tsplDirection || localStorage.getItem('ks_cup_printer_tspl_dir') || '0';
+
   el.innerHTML = `
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;" class="responsive-grid">
       <div class="card">
@@ -3235,27 +3256,91 @@ function renderSettings(el) {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer Thermal (Bluetooth &amp; USB/Browser)</h3></div>
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="printer" style="width:18px;height:18px;color:var(--accent);"></i> Printer 1: Struk Belanja</h3></div>
         <div class="card-body">
           <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
-              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER:</span>
-              <span id="printer-status-badge" class="badge ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'badge-green' : 'badge-amber'}">
-                ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? '● Terhubung (' + (window.bluetoothPrinter.device?.name || 'Thermal Printer') + ')' : '○ Belum Terhubung'}
+              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER STRUK:</span>
+              <span id="receipt-printer-status-badge" class="badge ${rConnected ? 'badge-green' : 'badge-amber'}">
+                ${rConnected ? '● Terhubung (' + escapePrintHtml(rName) + ')' : '○ Belum Terhubung'}
               </span>
             </div>
             <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.45;">
-              Mendukung printer thermal 58mm &amp; 80mm (termasuk <strong>Sharkpos X265L</strong>, Iware, Panda, RPP02N, Blueprint, Eppos, POS-58), mode perintah <strong>ESC/POS &amp; TSPL</strong> via Web Bluetooth (Chrome/Edge), serta fallback cetak <strong>USB / Dialog Browser</strong> otomatis apabila Bluetooth tidak terhubung.
+              Khusus untuk mencetak <strong>struk belanja pelanggan</strong> (58mm / 80mm). Terpisah dari printer stiker cup agar kedua printer bisa jalan bersamaan tanpa saling mengganggu.
             </p>
           </div>
 
           <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
-            <button id="btn-printer-connect" class="btn ${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 140px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'disconnectBluetoothPrinter()' : 'connectBluetoothPrinter()'}">
-              <i data-lucide="${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
-              <span>${window.bluetoothPrinter && window.bluetoothPrinter.isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
+            <button id="btn-receipt-printer-connect" class="btn ${rConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 150px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${rConnected ? 'disconnectReceiptPrinter()' : 'connectReceiptPrinter()'}">
+              <i data-lucide="${rConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+              <span>${rConnected ? 'Putuskan Printer Struk' : 'Konek Bluetooth Struk'}</span>
             </button>
             <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintBluetooth()">
               <i data-lucide="printer" style="width:14px;height:14px;"></i> Uji Cetak Struk
+            </button>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:12px; font-weight:600;">Jalur Cetak Struk</label>
+            <select class="form-select" id="settings-receipt-conn" onchange="setReceiptPrinterConn(this.value)" style="font-size:13px;">
+              <option value="auto" ${rConn === 'auto' ? 'selected' : ''}>Otomatis (Bluetooth jika terhubung, atau USB/Browser)</option>
+              <option value="bluetooth" ${rConn === 'bluetooth' ? 'selected' : ''}>Bluetooth Langsung (Web Bluetooth Chrome/Edge)</option>
+              <option value="browser" ${rConn === 'browser' ? 'selected' : ''}>USB / Dialog Print Browser (MacBook / Safari / Driver OS)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:12px; font-weight:600;">Mode Perintah Bluetooth</label>
+            <select class="form-select" id="settings-receipt-mode" onchange="setReceiptPrinterMode(this.value)" style="font-size:13px;">
+              <option value="escpos" ${rMode === 'escpos' ? 'selected' : ''}>ESC/POS (Standar Struk Thermal 58mm / 80mm)</option>
+              <option value="tspl" ${rMode === 'tspl' ? 'selected' : ''}>TSPL (Mode Label)</option>
+            </select>
+          </div>
+
+          <div id="settings-receipt-tspl-dir-wrap" class="form-group" style="margin-bottom:12px; display:${rMode === 'tspl' ? 'block' : 'none'};">
+            <label style="font-size:12px; font-weight:600;">Arah Cetak TSPL (Struk)</label>
+            <select class="form-select" id="settings-receipt-tspl-dir" onchange="setReceiptTsplDirection(this.value)" style="font-size:13px;">
+              <option value="0" ${rTsplDir === '0' ? 'selected' : ''}>Normal — DIRECTION 0</option>
+              <option value="1" ${rTsplDir === '1' ? 'selected' : ''}>Terbalik 180° — DIRECTION 1</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:12px; font-weight:600;">Ukuran Kertas Struk</label>
+            <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
+              <option value="58" ${rPaper === '58' ? 'selected' : ''}>58 mm (Standar Struk Kecil)</option>
+              <option value="80" ${rPaper === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
+              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${rp?.autoPrint ? 'checked' : ''}>
+              Cetak struk belanja otomatis setiap transaksi selesai
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3 style="display:flex;align-items:center;gap:8px;"><i data-lucide="tag" style="width:18px;height:18px;color:var(--accent);"></i> Printer 2: Stiker Cup / Label</h3></div>
+        <div class="card-body">
+          <div style="background:var(--cream); padding:12px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+              <span style="font-size:12px; font-weight:700; color:var(--brown-800);">STATUS PRINTER STIKER:</span>
+              <span id="cup-printer-status-badge" class="badge ${cConnected ? 'badge-green' : 'badge-amber'}">
+                ${cConnected ? '● Terhubung (' + escapePrintHtml(cName) + ')' : '○ Belum Terhubung'}
+              </span>
+            </div>
+            <p style="font-size:11px; color:var(--text-muted); margin:0; line-height:1.45;">
+              Khusus untuk mencetak <strong>stiker cup minuman</strong> (termasuk <strong>Sharkpos X265L 58mm</strong>). Gunakan mode <strong>TSPL</strong> untuk stiker ber-gap via Bluetooth atau jalur <strong>USB / Dialog Browser</strong>.
+            </p>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+            <button id="btn-cup-printer-connect" class="btn ${cConnected ? 'btn-red' : 'btn-brown'} btn-sm" style="flex:1 1 150px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="${cConnected ? 'disconnectCupPrinter()' : 'connectCupPrinter()'}">
+              <i data-lucide="${cConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+              <span>${cConnected ? 'Putuskan Printer Stiker' : 'Konek Bluetooth Stiker'}</span>
             </button>
             <button class="btn btn-outline btn-sm" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="testPrintCupBluetooth()">
               <i data-lucide="tag" style="width:14px;height:14px;color:var(--accent);"></i> Uji Stiker Cup
@@ -3263,29 +3348,31 @@ function renderSettings(el) {
           </div>
 
           <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Mode Perintah Printer Bluetooth</label>
-            <select class="form-select" id="settings-printer-mode" onchange="setPrinterCommandMode(this.value)" style="font-size:13px;">
-              <option value="escpos" ${printerMode === 'escpos' ? 'selected' : ''}>ESC/POS (Struk Thermal 58mm / 80mm)</option>
-              <option value="tspl" ${printerMode === 'tspl' ? 'selected' : ''}>TSPL (Printer Label Stiker, mis. Sharkpos X265L Mode Label)</option>
-            </select>
-            <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:4px; line-height:1.4;">
-              Untuk Sharkpos X265L dengan kertas stiker gap, pilih TSPL. Jika hasil kosong/simbol aneh, ganti ke ESC/POS atau ubah mode fisik printer (tahan tombol FEED saat menyalakan).
-            </small>
-          </div>
-
-          <div id="settings-tspl-direction-wrap" class="form-group" style="margin-bottom:12px; display:${printerMode === 'tspl' ? 'block' : 'none'};">
-            <label style="font-size:12px; font-weight:600;">Arah Cetak TSPL</label>
-            <select class="form-select" id="settings-tspl-direction" onchange="setTsplDirection(this.value)" style="font-size:13px;">
-              <option value="0" ${tsplDir === '0' ? 'selected' : ''}>Normal — DIRECTION 0</option>
-              <option value="1" ${tsplDir === '1' ? 'selected' : ''}>Terbalik 180° — DIRECTION 1</option>
+            <label style="font-size:12px; font-weight:600;">Jalur Cetak Stiker Cup</label>
+            <select class="form-select" id="settings-cup-conn" onchange="setCupPrinterConn(this.value)" style="font-size:13px;">
+              <option value="auto" ${cConn === 'auto' ? 'selected' : ''}>Otomatis (Bluetooth Stiker jika terhubung, atau USB/Browser)</option>
+              <option value="bluetooth" ${cConn === 'bluetooth' ? 'selected' : ''}>Bluetooth Langsung (Web Bluetooth Chrome/Edge)</option>
+              <option value="browser" ${cConn === 'browser' ? 'selected' : ''}>USB / Dialog Print Browser (MacBook / Safari / Driver OS)</option>
+              <option value="same_as_receipt" ${cConn === 'same_as_receipt' ? 'selected' : ''}>Gunakan Printer 1 (Struk) — Jika Hanya Punya 1 Printer</option>
             </select>
           </div>
 
           <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:12px; font-weight:600;">Ukuran Kertas Struk / Label</label>
-            <select class="form-select" id="settings-printer-paper" onchange="setPrinterPaperWidth(this.value)" style="font-size:13px;">
-              <option value="58" ${(window.bluetoothPrinter?.paperWidth || '58') === '58' ? 'selected' : ''}>58 mm (Standar Struk / Label Cup Kecil)</option>
-              <option value="80" ${(window.bluetoothPrinter?.paperWidth || '58') === '80' ? 'selected' : ''}>80 mm (Standar Struk Besar)</option>
+            <label style="font-size:12px; font-weight:600;">Mode Perintah Bluetooth</label>
+            <select class="form-select" id="settings-cup-mode" onchange="setCupPrinterMode(this.value)" style="font-size:13px;">
+              <option value="tspl" ${cMode === 'tspl' ? 'selected' : ''}>TSPL (Printer Label Stiker, mis. Sharkpos X265L Mode Label)</option>
+              <option value="escpos" ${cMode === 'escpos' ? 'selected' : ''}>ESC/POS (Kertas Gulung / Sharkpos Mode Receipt)</option>
+            </select>
+            <small style="font-size:11px; color:var(--text-muted); display:block; margin-top:4px; line-height:1.4;">
+              Jika printer Sharkpos tidak merespons di TSPL, ganti ke ESC/POS atau ubah mode fisik printer (tahan tombol FEED saat menyalakan).
+            </small>
+          </div>
+
+          <div id="settings-cup-tspl-dir-wrap" class="form-group" style="margin-bottom:12px; display:${cMode === 'tspl' ? 'block' : 'none'};">
+            <label style="font-size:12px; font-weight:600;">Arah Cetak TSPL (Stiker)</label>
+            <select class="form-select" id="settings-cup-tspl-dir" onchange="setCupTsplDirection(this.value)" style="font-size:13px;">
+              <option value="0" ${cTsplDir === '0' ? 'selected' : ''}>Normal — DIRECTION 0</option>
+              <option value="1" ${cTsplDir === '1' ? 'selected' : ''}>Terbalik 180° — DIRECTION 1</option>
             </select>
           </div>
 
@@ -3322,16 +3409,9 @@ function renderSettings(el) {
             <small style="font-size:10px; color:var(--text-muted); display:block; margin-top:4px;">Isi Tinggi = 0 untuk kertas gulung continuous tanpa jeda stiker.</small>
           </div>
 
-          <div class="form-group" style="margin-bottom:8px;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
-              <input type="checkbox" id="settings-printer-autoprint" onchange="togglePrinterAutoPrint(this.checked)" ${(window.bluetoothPrinter?.autoPrint) ? 'checked' : ''}>
-              Cetak struk belanja otomatis setiap transaksi selesai
-            </label>
-          </div>
-
           <div class="form-group" style="margin-bottom:0;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
-              <input type="checkbox" id="settings-printer-autocup" onchange="togglePrinterAutoCup(this.checked)" ${(window.bluetoothPrinter?.autoCup) ? 'checked' : ''}>
+              <input type="checkbox" id="settings-printer-autocup" onchange="togglePrinterAutoCup(this.checked)" ${cp?.autoCup ? 'checked' : ''}>
               Cetak stiker cup otomatis per pesanan saat checkout selesai
             </label>
             <small style="font-size:11px; color:var(--text-muted); display:block; margin-left:22px; margin-top:2px;">
@@ -7023,25 +7103,46 @@ function isBeverageCupItem(item) {
 // ══════════════════════════════════════════════
 
 class BluetoothPrinterService {
-  constructor() {
+  constructor(role = 'receipt') {
+    this.role = role === 'cup' ? 'cup' : 'receipt';
+    this.roleLabel = this.role === 'cup' ? 'Printer Stiker Cup' : 'Printer Struk';
+    this.storagePrefix = this.role === 'cup' ? 'ks_cup_printer_' : 'ks_receipt_printer_';
+
     this.device = null;
     this.server = null;
     this.characteristic = null;
     this.isConnected = false;
-    this.paperWidth = localStorage.getItem('ks_printer_paper') || '58'; // '58' (32 cols) / '80' (48 cols)
-    this.commandMode = localStorage.getItem('ks_printer_mode') || 'escpos'; // 'escpos' | 'tspl'
 
-    const savedW = parseInt(localStorage.getItem('ks_cup_label_w'), 10);
-    const savedH = parseInt(localStorage.getItem('ks_cup_label_h'), 10);
-    const savedGap = parseInt(localStorage.getItem('ks_cup_label_gap'), 10);
+    if (this.role === 'cup') {
+      this.paperWidth = localStorage.getItem('ks_cup_printer_paper') || '58';
+      this.commandMode = localStorage.getItem('ks_cup_printer_mode') || localStorage.getItem('ks_printer_mode') || 'tspl';
+      this.connectionType = localStorage.getItem('ks_cup_printer_conn') || 'auto'; // 'auto' | 'bluetooth' | 'browser' | 'same_as_receipt'
+      const savedDir = localStorage.getItem('ks_cup_printer_tspl_dir') ?? localStorage.getItem('ks_tspl_direction');
+      this.tsplDirection = savedDir === '1' ? '1' : '0';
 
-    this.labelWidth = (Number.isFinite(savedW) && savedW >= 30) ? savedW : 58;
-    this.labelHeight = Number.isFinite(savedH) ? savedH : 40;
-    this.labelGap = (Number.isFinite(savedGap) && savedGap >= 0) ? savedGap : 2;
-    this.tsplDirection = localStorage.getItem('ks_tspl_direction') === '1' ? '1' : '0';
+      const savedW = parseInt(localStorage.getItem('ks_cup_label_w'), 10);
+      const savedH = parseInt(localStorage.getItem('ks_cup_label_h'), 10);
+      const savedGap = parseInt(localStorage.getItem('ks_cup_label_gap'), 10);
 
-    this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
-    this.autoCup = localStorage.getItem('ks_printer_autocup') === 'true';
+      this.labelWidth = (Number.isFinite(savedW) && savedW >= 30 && savedW <= 100) ? savedW : 58;
+      this.labelHeight = (Number.isFinite(savedH) && savedH >= 0 && savedH <= 150) ? savedH : 40;
+      this.labelGap = (Number.isFinite(savedGap) && savedGap >= 0 && savedGap <= 10) ? savedGap : (this.labelHeight === 0 ? 0 : 2);
+
+      this.autoPrint = false;
+      this.autoCup = localStorage.getItem('ks_printer_autocup') === 'true';
+    } else {
+      this.paperWidth = localStorage.getItem('ks_receipt_printer_paper') || localStorage.getItem('ks_printer_paper') || '58';
+      this.commandMode = localStorage.getItem('ks_receipt_printer_mode') || 'escpos'; // tidak mewarisi ks_printer_mode lama agar struk tetap ESC/POS
+      this.connectionType = localStorage.getItem('ks_receipt_printer_conn') || 'auto'; // 'auto' | 'bluetooth' | 'browser'
+      this.tsplDirection = localStorage.getItem('ks_receipt_printer_tspl_dir') === '1' ? '1' : '0';
+
+      this.labelWidth = parseInt(this.paperWidth, 10) || 58;
+      this.labelHeight = 40;
+      this.labelGap = 2;
+
+      this.autoPrint = localStorage.getItem('ks_printer_autoprint') === 'true';
+      this.autoCup = false;
+    }
 
     // Service UUIDs yang umum pada printer thermal & label Bluetooth BLE (Sharkpos X265L, Xprinter, Goojprt, dll)
     this.SERVICE_UUIDS = [
@@ -7066,12 +7167,19 @@ class BluetoothPrinterService {
 
   async connect() {
     if (!this.isSupported()) {
-      showToast('Browser ini belum mendukung Web Bluetooth. Gunakan Google Chrome/Edge atau cetak via Dialog Browser / USB.', 'error');
+      showToast('Browser ini belum mendukung Web Bluetooth. Gunakan Google Chrome/Edge atau pilih jalur cetak USB / Dialog Browser.', 'error');
       throw new Error('Web Bluetooth tidak didukung.');
     }
 
     try {
-      showToast('Mencari printer Bluetooth di sekitar...', 'info');
+      // Putuskan device lama milik instance ini saja (tidak mengganggu instance printer lainnya)
+      if (this.device && this.device.gatt && this.device.gatt.connected) {
+        try {
+          await this.device.gatt.disconnect();
+        } catch (e) { /* ignore */ }
+      }
+
+      showToast(`Pilih ${this.roleLabel} pada daftar Bluetooth...`, 'info');
 
       this.device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
@@ -7082,11 +7190,11 @@ class BluetoothPrinterService {
         this.isConnected = false;
         this.characteristic = null;
         this.server = null;
-        updatePrinterStatusUI();
-        showToast('Koneksi printer Bluetooth terputus', 'info');
+        updatePrinterStatusUI(this.role);
+        showToast(`Koneksi ${this.roleLabel} Bluetooth terputus`, 'info');
       });
 
-      showToast(`Menghubungkan ke ${this.device.name || 'Printer'}...`, 'info');
+      showToast(`Menghubungkan ${this.roleLabel} (${this.device.name || 'Printer'})...`, 'info');
       this.server = await this.device.gatt.connect();
 
       const ignoredServices = ['00001800', '00001801', '0000180a', '0000180f'];
@@ -7094,7 +7202,23 @@ class BluetoothPrinterService {
 
       let preferredChar = null;
       let fallbackChar = null;
-      const services = await this.server.getPrimaryServices();
+      let services = [];
+
+      try {
+        services = await this.server.getPrimaryServices();
+      } catch (e) {
+        console.warn('getPrimaryServices gagal, mencoba fallback per-UUID:', e);
+      }
+
+      if (!services || services.length === 0) {
+        services = [];
+        for (const uuid of this.SERVICE_UUIDS) {
+          try {
+            const svc = await this.server.getPrimaryService(uuid);
+            if (svc) services.push(svc);
+          } catch (e) { /* UUID tidak tersedia di perangkat ini */ }
+        }
+      }
 
       for (const service of services) {
         const sUuid = (service.uuid || '').toLowerCase();
@@ -7122,23 +7246,23 @@ class BluetoothPrinterService {
 
       const foundChar = preferredChar || fallbackChar;
       if (!foundChar) {
-        throw new Error('Tidak ditemukan saluran cetak (Write Characteristic) pada perangkat ini.');
+        throw new Error(`Tidak ditemukan saluran cetak (Write Characteristic) pada ${this.roleLabel}.`);
       }
 
       this.characteristic = foundChar;
       this.isConnected = true;
-      localStorage.setItem('ks_printer_name', this.device.name || 'Thermal Printer');
-      updatePrinterStatusUI();
-      showToast(`Printer ${this.device.name || ''} berhasil terhubung!`, 'success');
+      localStorage.setItem(this.storagePrefix + 'name', this.device.name || this.roleLabel);
+      updatePrinterStatusUI(this.role);
+      showToast(`${this.roleLabel} (${this.device.name || 'Printer'}) berhasil terhubung!`, 'success');
       return true;
     } catch (error) {
       this.isConnected = false;
       this.characteristic = null;
       this.server = null;
-      updatePrinterStatusUI();
+      updatePrinterStatusUI(this.role);
       if (error.name !== 'NotFoundError') {
         console.error('Bluetooth connect error:', error);
-        showToast(error.message || 'Gagal menghubungkan ke printer Bluetooth', 'error');
+        showToast(error.message || `Gagal menghubungkan ${this.roleLabel}`, 'error');
       }
       throw error;
     }
@@ -7151,9 +7275,9 @@ class BluetoothPrinterService {
     this.isConnected = false;
     this.characteristic = null;
     this.server = null;
-    localStorage.removeItem('ks_printer_name');
-    updatePrinterStatusUI();
-    showToast('Printer Bluetooth berhasil diputuskan', 'info');
+    localStorage.removeItem(this.storagePrefix + 'name');
+    updatePrinterStatusUI(this.role);
+    showToast(`${this.roleLabel} Bluetooth berhasil diputuskan`, 'info');
   }
 
   async writeBytes(bytes) {
@@ -7271,10 +7395,15 @@ class BluetoothPrinterService {
   }
 
   buildTsplCupLabel(cup, meta) {
-    const wMm = Math.max(30, parseInt(this.labelWidth, 10) || 58);
-    const isContinuous = !this.labelHeight || parseInt(this.labelHeight, 10) <= 0;
-    const hMm = isContinuous ? 40 : Math.max(25, parseInt(this.labelHeight, 10));
-    const gapMm = isContinuous ? 0 : Math.max(0, parseInt(this.labelGap, 10) || 0);
+    const savedCfg = (typeof getSavedCupLabelConfig === 'function') ? getSavedCupLabelConfig() : { width: 58, height: 40, gap: 2 };
+    const rawW = (this.role === 'cup' && Number.isFinite(parseInt(this.labelWidth, 10))) ? parseInt(this.labelWidth, 10) : savedCfg.width;
+    const rawH = (this.role === 'cup' && Number.isFinite(parseInt(this.labelHeight, 10))) ? parseInt(this.labelHeight, 10) : savedCfg.height;
+    const rawGap = (this.role === 'cup' && Number.isFinite(parseInt(this.labelGap, 10))) ? parseInt(this.labelGap, 10) : savedCfg.gap;
+
+    const wMm = Math.max(30, rawW || 58);
+    const isContinuous = !rawH || rawH <= 0;
+    const hMm = isContinuous ? 40 : Math.max(25, rawH);
+    const gapMm = isContinuous ? 0 : Math.max(0, rawGap || 0);
     const printableW = Math.min(wMm, 48) * 8; // maks 384 dots untuk printhead 48mm
     const labelDotsH = hMm * 8;
     const dir = this.tsplDirection === '1' ? '1' : '0';
@@ -7972,8 +8101,11 @@ class BluetoothPrinterService {
   }
 }
 
-// Inisialisasi Instance Global
-window.bluetoothPrinter = new BluetoothPrinterService();
+// Inisialisasi 2 Instance Global Terpisah (Printer 1 Struk & Printer 2 Stiker Cup)
+window.receiptPrinter = new BluetoothPrinterService('receipt');
+window.cupPrinter = new BluetoothPrinterService('cup');
+// Alias backward compatibility mengarah ke Printer 1 (Struk)
+window.bluetoothPrinter = window.receiptPrinter;
 
 // Helper Functions Global untuk UI & Konfigurasi Printer
 function getSavedCupLabelConfig() {
@@ -8008,43 +8140,163 @@ function escapePrintHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-async function connectBluetoothPrinter() {
+async function dispatchReceiptPrint(txn, items = null) {
+  const rp = window.receiptPrinter || window.bluetoothPrinter;
+  if (!rp || rp.connectionType === 'browser') {
+    openReceiptPrintDialog(txn, items);
+    return;
+  }
+  if (rp.connectionType === 'bluetooth') {
+    await rp.printReceipt(txn, items);
+    return;
+  }
+  // Mode 'auto'
+  if (rp.isConnected) {
+    await rp.printReceipt(txn, items);
+  } else {
+    openReceiptPrintDialog(txn, items);
+  }
+}
+
+async function dispatchCupPrint(txn, items = null) {
+  const cp = window.cupPrinter;
+  if (!cp || cp.connectionType === 'browser') {
+    openCupStickersPrintDialog(txn, items);
+    return;
+  }
+  if (cp.connectionType === 'bluetooth') {
+    await cp.printCupStickers(txn, items);
+    return;
+  }
+  if (cp.connectionType === 'same_as_receipt') {
+    const rp = window.receiptPrinter;
+    if (rp && rp.isConnected) {
+      const cfg = getSavedCupLabelConfig();
+      rp.labelWidth = cfg.width;
+      rp.labelHeight = cfg.height;
+      rp.labelGap = cfg.gap;
+      await rp.printCupStickers(txn, items);
+    } else {
+      openCupStickersPrintDialog(txn, items);
+    }
+    return;
+  }
+  // Mode 'auto'
+  if (cp.isConnected) {
+    await cp.printCupStickers(txn, items);
+  } else {
+    openCupStickersPrintDialog(txn, items);
+  }
+}
+
+async function connectReceiptPrinter() {
   try {
-    await window.bluetoothPrinter.connect();
+    await window.receiptPrinter.connect();
   } catch (e) { /* sudah ditangani di service */ }
 }
 
-async function disconnectBluetoothPrinter() {
+async function disconnectReceiptPrinter() {
   try {
-    await window.bluetoothPrinter.disconnect();
+    await window.receiptPrinter.disconnect();
   } catch (e) { /* ignore */ }
 }
 
-async function testPrintBluetooth() {
+async function connectCupPrinter() {
   try {
-    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
-      await window.bluetoothPrinter.testPrint();
+    await window.cupPrinter.connect();
+  } catch (e) { /* sudah ditangani di service */ }
+}
+
+async function disconnectCupPrinter() {
+  try {
+    await window.cupPrinter.disconnect();
+  } catch (e) { /* ignore */ }
+}
+
+// Alias backward compatibility mengarah ke Printer 1 (Struk)
+async function connectBluetoothPrinter() {
+  return connectReceiptPrinter();
+}
+
+async function disconnectBluetoothPrinter() {
+  return disconnectReceiptPrinter();
+}
+
+window.printReceiptViaBluetoothDirect = async function (txn, items = null) {
+  const rp = window.receiptPrinter || window.bluetoothPrinter;
+  if (!rp) return;
+  await rp.printReceipt(txn, items);
+};
+
+window.printCupViaBluetoothDirect = async function (txn, items = null) {
+  const cp = window.cupPrinter;
+  const rp = window.receiptPrinter;
+  if (cp && cp.connectionType === 'same_as_receipt' && !cp.isConnected && rp && rp.isConnected) {
+    const cfg = getSavedCupLabelConfig();
+    rp.labelWidth = cfg.width;
+    rp.labelHeight = cfg.height;
+    rp.labelGap = cfg.gap;
+    await rp.printCupStickers(txn, items);
+    return;
+  }
+  if (cp) {
+    await cp.printCupStickers(txn, items);
+  }
+};
+
+window.printLastReceiptBluetooth = async function () {
+  const payload = window._lastReceiptPrintPayload;
+  if (!payload || !payload.txn) {
+    showToast('Data struk tidak ditemukan untuk dicetak ulang', 'error');
+    return;
+  }
+  try {
+    await window.printReceiptViaBluetoothDirect(payload.txn, payload.items || null);
+  } catch (e) {
+    console.error('printLastReceiptBluetooth error:', e);
+  }
+};
+
+window.printLastCupBluetooth = async function () {
+  const payload = window._lastCupPrintPayload;
+  if (!payload || !payload.txn) {
+    showToast('Data stiker cup tidak ditemukan untuk dicetak ulang', 'error');
+    return;
+  }
+  try {
+    await window.printCupViaBluetoothDirect(payload.txn, payload.items || null);
+  } catch (e) {
+    console.error('printLastCupBluetooth error:', e);
+  }
+};
+
+async function testPrintBluetooth() {
+  const dummyTxn = {
+    id: 'TXN-TEST-9999',
+    date: new Date().toISOString(),
+    total: 43000,
+    payment_method: 'cash',
+    payment_status: 'Lunas',
+    cash_amount: 50000,
+    cash_change: 7000,
+    notes: 'Uji cetak dialog struk'
+  };
+  const dummyItems = [
+    { name: 'Kopi Susu Sembilan', qty: 1, price: 18000, selected_variants: [{ name: 'Regular' }, { name: 'Normal Ice' }] },
+    { name: 'Hazelnut Latte', qty: 1, price: 25000, selected_variants: [{ name: 'Regular' }], item_note: 'Less sugar' }
+  ];
+  try {
+    const rp = window.receiptPrinter || window.bluetoothPrinter;
+    if (rp && (rp.connectionType === 'bluetooth' || (rp.connectionType === 'auto' && rp.isConnected))) {
+      await rp.testPrint();
     } else {
-      const dummyTxn = {
-        id: 'TXN-TEST-9999',
-        date: new Date().toISOString(),
-        total: 43000,
-        payment_method: 'cash',
-        payment_status: 'Lunas',
-        cash_amount: 50000,
-        cash_change: 7000,
-        notes: 'Uji cetak dialog struk'
-      };
-      const dummyItems = [
-        { name: 'Kopi Susu Sembilan', qty: 1, price: 18000, selected_variants: [{ name: 'Regular' }, { name: 'Normal Ice' }] },
-        { name: 'Hazelnut Latte', qty: 1, price: 25000, selected_variants: [{ name: 'Regular' }], item_note: 'Less sugar' }
-      ];
       openReceiptPrintDialog(dummyTxn, dummyItems);
     }
   } catch (e) {
     console.error('testPrintBluetooth error:', e);
-    if (!window.bluetoothPrinter || !window.bluetoothPrinter.isConnected) {
-      showToast('Gagal membuka dialog uji cetak struk', 'error');
+    const rp = window.receiptPrinter || window.bluetoothPrinter;
+    if (!rp || !rp.isConnected) {
+      showToast('Gagal membuka atau mengirim uji cetak struk', 'error');
     }
   }
 }
@@ -8057,46 +8309,95 @@ async function printTransactionByIdBluetooth(id) {
       showToast('Gagal mengambil data transaksi!', 'error');
       return;
     }
-    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
-      await window.bluetoothPrinter.printReceipt(txn);
-    } else {
-      openReceiptPrintDialog(txn);
-    }
+    await dispatchReceiptPrint(txn);
   } catch (e) {
     console.error('Cetak transaksi error:', e);
     showToast('Terjadi kesalahan saat memproses cetak struk', 'error');
   }
 }
 
+function setReceiptPrinterConn(val) {
+  const allowed = ['auto', 'bluetooth', 'browser'];
+  const safeVal = allowed.includes(val) ? val : 'auto';
+  if (window.receiptPrinter) {
+    window.receiptPrinter.connectionType = safeVal;
+  }
+  localStorage.setItem('ks_receipt_printer_conn', safeVal);
+  showToast('Jalur cetak Printer 1 (Struk) disimpan', 'success');
+}
+
+function setReceiptPrinterMode(mode) {
+  const safeMode = mode === 'tspl' ? 'tspl' : 'escpos';
+  if (window.receiptPrinter) {
+    window.receiptPrinter.commandMode = safeMode;
+  }
+  localStorage.setItem('ks_receipt_printer_mode', safeMode);
+  const dirWrap = document.getElementById('settings-receipt-tspl-dir-wrap');
+  if (dirWrap) {
+    dirWrap.style.display = safeMode === 'tspl' ? 'block' : 'none';
+  }
+  showToast(`Mode Bluetooth Printer Struk diatur ke ${safeMode.toUpperCase()}`, 'success');
+}
+
+function setReceiptTsplDirection(dir) {
+  const safeDir = dir === '1' ? '1' : '0';
+  if (window.receiptPrinter) {
+    window.receiptPrinter.tsplDirection = safeDir;
+  }
+  localStorage.setItem('ks_receipt_printer_tspl_dir', safeDir);
+  showToast(`Arah cetak TSPL Struk: ${safeDir === '1' ? 'Terbalik 180° (DIRECTION 1)' : 'Normal (DIRECTION 0)'}`, 'success');
+}
+
 function setPrinterPaperWidth(width) {
   const safeW = width === '80' ? '80' : '58';
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.paperWidth = safeW;
+  if (window.receiptPrinter) {
+    window.receiptPrinter.paperWidth = safeW;
   }
+  localStorage.setItem('ks_receipt_printer_paper', safeW);
   localStorage.setItem('ks_printer_paper', safeW);
   showToast(`Lebar kertas struk diatur ke ${safeW} mm`, 'success');
 }
 
-function setPrinterCommandMode(mode) {
-  const safeMode = mode === 'tspl' ? 'tspl' : 'escpos';
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.commandMode = safeMode;
+function setCupPrinterConn(val) {
+  const allowed = ['auto', 'bluetooth', 'browser', 'same_as_receipt'];
+  const safeVal = allowed.includes(val) ? val : 'auto';
+  if (window.cupPrinter) {
+    window.cupPrinter.connectionType = safeVal;
   }
-  localStorage.setItem('ks_printer_mode', safeMode);
-  const dirWrap = document.getElementById('settings-tspl-direction-wrap');
+  localStorage.setItem('ks_cup_printer_conn', safeVal);
+  showToast('Jalur cetak Printer 2 (Stiker Cup) disimpan', 'success');
+}
+
+function setCupPrinterMode(mode) {
+  const safeMode = mode === 'escpos' ? 'escpos' : 'tspl';
+  if (window.cupPrinter) {
+    window.cupPrinter.commandMode = safeMode;
+  }
+  localStorage.setItem('ks_cup_printer_mode', safeMode);
+  const dirWrap = document.getElementById('settings-cup-tspl-dir-wrap');
   if (dirWrap) {
     dirWrap.style.display = safeMode === 'tspl' ? 'block' : 'none';
   }
-  showToast(`Mode perintah printer diatur ke ${safeMode.toUpperCase()}`, 'success');
+  showToast(`Mode Bluetooth Printer Stiker diatur ke ${safeMode.toUpperCase()}`, 'success');
+}
+
+function setCupTsplDirection(dir) {
+  const safeDir = dir === '1' ? '1' : '0';
+  if (window.cupPrinter) {
+    window.cupPrinter.tsplDirection = safeDir;
+  }
+  localStorage.setItem('ks_cup_printer_tspl_dir', safeDir);
+  localStorage.setItem('ks_tspl_direction', safeDir);
+  showToast(`Arah cetak TSPL Stiker: ${safeDir === '1' ? 'Terbalik 180° (DIRECTION 1)' : 'Normal (DIRECTION 0)'}`, 'success');
+}
+
+// Alias lama agar pemanggil eksternal tetap aman
+function setPrinterCommandMode(mode) {
+  setCupPrinterMode(mode);
 }
 
 function setTsplDirection(dir) {
-  const safeDir = dir === '1' ? '1' : '0';
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.tsplDirection = safeDir;
-  }
-  localStorage.setItem('ks_tspl_direction', safeDir);
-  showToast(`Arah cetak TSPL diatur ke ${safeDir === '1' ? 'Terbalik 180° (DIRECTION 1)' : 'Normal (DIRECTION 0)'}`, 'success');
+  setCupTsplDirection(dir);
 }
 
 function setCupLabelPreset(preset) {
@@ -8112,7 +8413,7 @@ function setCupLabelPreset(preset) {
   const h = parseInt(parts[1], 10);
   if (!Number.isFinite(w) || !Number.isFinite(h)) return;
 
-  const currentGap = window.bluetoothPrinter ? window.bluetoothPrinter.labelGap : 2;
+  const currentGap = window.cupPrinter ? window.cupPrinter.labelGap : 2;
   const gap = h === 0 ? 0 : (currentGap > 0 ? currentGap : 2);
 
   if (customWrap) customWrap.style.display = 'none';
@@ -8128,10 +8429,10 @@ function setCupLabelPreset(preset) {
   localStorage.setItem('ks_cup_label_gap', String(gap));
   localStorage.setItem('ks_cup_label_preset', preset);
 
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.labelWidth = w;
-    window.bluetoothPrinter.labelHeight = h;
-    window.bluetoothPrinter.labelGap = gap;
+  if (window.cupPrinter) {
+    window.cupPrinter.labelWidth = w;
+    window.cupPrinter.labelHeight = h;
+    window.cupPrinter.labelGap = gap;
   }
 
   const labelText = h === 0 ? `${w} mm Continuous` : `${w} x ${h} mm`;
@@ -8165,10 +8466,10 @@ function saveCustomCupLabelSize() {
   localStorage.setItem('ks_cup_label_gap', String(gap));
   localStorage.setItem('ks_cup_label_preset', 'custom');
 
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.labelWidth = w;
-    window.bluetoothPrinter.labelHeight = h;
-    window.bluetoothPrinter.labelGap = gap;
+  if (window.cupPrinter) {
+    window.cupPrinter.labelWidth = w;
+    window.cupPrinter.labelHeight = h;
+    window.cupPrinter.labelGap = gap;
   }
 
   const labelText = h === 0 ? `${w} mm Continuous` : `${w} x ${h} mm (Gap ${gap} mm)`;
@@ -8176,60 +8477,97 @@ function saveCustomCupLabelSize() {
 }
 
 function togglePrinterAutoPrint(enabled) {
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.autoPrint = enabled;
-    localStorage.setItem('ks_printer_autoprint', enabled ? 'true' : 'false');
-    showToast(enabled ? 'Cetak otomatis struk diaktifkan' : 'Cetak otomatis struk dinonaktifkan', 'info');
+  if (window.receiptPrinter) {
+    window.receiptPrinter.autoPrint = enabled;
   }
+  localStorage.setItem('ks_printer_autoprint', enabled ? 'true' : 'false');
+  showToast(enabled ? 'Cetak otomatis struk diaktifkan' : 'Cetak otomatis struk dinonaktifkan', 'info');
 }
 
-function updatePrinterStatusUI() {
-  const badge = document.getElementById('printer-status-badge');
-  const btn = document.getElementById('btn-printer-connect');
-  const isConnected = window.bluetoothPrinter && window.bluetoothPrinter.isConnected;
-  const devName = window.bluetoothPrinter?.device?.name || localStorage.getItem('ks_printer_name') || 'Thermal Printer';
+function updatePrinterStatusUI(role = 'all') {
+  const updateSingle = (printerObj, badgeId, btnId, connectFnName, disconnectFnName, connectLabel, disconnectLabel, defaultName) => {
+    const badge = document.getElementById(badgeId);
+    const btn = document.getElementById(btnId);
+    const isConnected = !!(printerObj && printerObj.isConnected);
+    const devName = printerObj?.device?.name || (printerObj ? localStorage.getItem(printerObj.storagePrefix + 'name') : '') || defaultName;
 
-  if (badge) {
-    badge.className = `badge ${isConnected ? 'badge-green' : 'badge-amber'}`;
-    badge.textContent = isConnected ? `● Terhubung (${devName})` : '○ Belum Terhubung';
+    if (badge) {
+      badge.className = `badge ${isConnected ? 'badge-green' : 'badge-amber'}`;
+      badge.textContent = isConnected ? `● Terhubung (${devName})` : '○ Belum Terhubung';
+    }
+
+    if (btn) {
+      btn.className = `btn ${isConnected ? 'btn-red' : 'btn-brown'} btn-sm`;
+      btn.setAttribute('onclick', isConnected ? `${disconnectFnName}()` : `${connectFnName}()`);
+      btn.innerHTML = `
+        <i data-lucide="${isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
+        <span>${isConnected ? disconnectLabel : connectLabel}</span>
+      `;
+    }
+  };
+
+  if (role === 'all' || role === 'receipt') {
+    updateSingle(
+      window.receiptPrinter,
+      'receipt-printer-status-badge',
+      'btn-receipt-printer-connect',
+      'connectReceiptPrinter',
+      'disconnectReceiptPrinter',
+      'Konek Bluetooth Struk',
+      'Putuskan Printer Struk',
+      'Printer Struk'
+    );
   }
 
-  if (btn) {
-    btn.className = `btn ${isConnected ? 'btn-red' : 'btn-brown'} btn-sm`;
-    btn.setAttribute('onclick', isConnected ? 'disconnectBluetoothPrinter()' : 'connectBluetoothPrinter()');
-    btn.innerHTML = `
-      <i data-lucide="${isConnected ? 'bluetooth-off' : 'bluetooth'}" style="width:14px;height:14px;"></i>
-      <span>${isConnected ? 'Putuskan Koneksi' : 'Konek Printer Bluetooth'}</span>
-    `;
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+  if (role === 'all' || role === 'cup') {
+    updateSingle(
+      window.cupPrinter,
+      'cup-printer-status-badge',
+      'btn-cup-printer-connect',
+      'connectCupPrinter',
+      'disconnectCupPrinter',
+      'Konek Bluetooth Stiker',
+      'Putuskan Printer Stiker',
+      'Printer Stiker'
+    );
   }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function togglePrinterAutoCup(enabled) {
-  if (window.bluetoothPrinter) {
-    window.bluetoothPrinter.autoCup = enabled;
-    localStorage.setItem('ks_printer_autocup', enabled ? 'true' : 'false');
-    showToast(enabled ? 'Cetak stiker cup otomatis diaktifkan' : 'Cetak stiker cup otomatis dinonaktifkan', 'info');
+  if (window.cupPrinter) {
+    window.cupPrinter.autoCup = enabled;
   }
+  localStorage.setItem('ks_printer_autocup', enabled ? 'true' : 'false');
+  showToast(enabled ? 'Cetak stiker cup otomatis diaktifkan' : 'Cetak stiker cup otomatis dinonaktifkan', 'info');
 }
 
 async function testPrintCupBluetooth() {
+  const dummyTxn = {
+    id: 'TXN-TEST-9999',
+    queue_number: '90',
+    customer_name: 'Budi (Sample)',
+    date: new Date().toISOString(),
+    notes: 'TAKE AWAY',
+    cashier_name: 'Barista Sembilan'
+  };
+  const dummyItems = [
+    { name: 'Kopi Susu Sembilan', qty: 1, selected_variants: [{ name: 'Regular' }, { name: 'Less Ice' }, { name: 'Normal Sugar' }], item_note: 'Gula aren dipisah' },
+    { name: 'Butterscotch Latte', qty: 1, selected_variants: [{ name: 'Large' }, { name: 'Extra Shot' }], item_note: 'Cup takeaway' }
+  ];
   try {
-    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
-      await window.bluetoothPrinter.testPrintCup();
+    const cp = window.cupPrinter;
+    const rp = window.receiptPrinter;
+    if (cp && (cp.connectionType === 'bluetooth' || (cp.connectionType === 'auto' && cp.isConnected))) {
+      await cp.testPrintCup();
+    } else if (cp && cp.connectionType === 'same_as_receipt' && rp && rp.isConnected) {
+      const cfg = getSavedCupLabelConfig();
+      rp.labelWidth = cfg.width;
+      rp.labelHeight = cfg.height;
+      rp.labelGap = cfg.gap;
+      await rp.testPrintCup();
     } else {
-      const dummyTxn = {
-        id: 'TXN-TEST-9999',
-        queue_number: '90',
-        customer_name: 'Budi (Sample)',
-        date: new Date().toISOString(),
-        notes: 'TAKE AWAY',
-        cashier_name: 'Barista Sembilan'
-      };
-      const dummyItems = [
-        { name: 'Kopi Susu Sembilan', qty: 1, selected_variants: [{ name: 'Regular' }, { name: 'Less Ice' }, { name: 'Normal Sugar' }], item_note: 'Gula aren dipisah' },
-        { name: 'Butterscotch Latte', qty: 1, selected_variants: [{ name: 'Large' }, { name: 'Extra Shot' }], item_note: 'Cup takeaway' }
-      ];
       openCupStickersPrintDialog(dummyTxn, dummyItems);
     }
   } catch (e) {
@@ -8239,6 +8577,8 @@ async function testPrintCupBluetooth() {
 
 window.openReceiptPrintDialog = function (txn, items = null) {
   if (!txn) return;
+  window._lastReceiptPrintPayload = { txn, items };
+
   let rawItems = items || txn.transaction_items || [];
   if (typeof rawItems === 'string') {
     try { rawItems = JSON.parse(rawItems); } catch (e) { rawItems = []; }
@@ -8282,7 +8622,7 @@ window.openReceiptPrintDialog = function (txn, items = null) {
     phone: '08132869806'
   };
 
-  const paperWidth = (window.bluetoothPrinter?.paperWidth || localStorage.getItem('ks_printer_paper') || '58') === '80' ? '80' : '58';
+  const paperWidth = (window.receiptPrinter?.paperWidth || localStorage.getItem('ks_receipt_printer_paper') || localStorage.getItem('ks_printer_paper') || '58') === '80' ? '80' : '58';
   const d = txn.date ? new Date(txn.date) : new Date();
   const tglStr = (typeof getIndoDateTime === 'function')
     ? getIndoDateTime(d, { dateStyle: 'medium' })
@@ -8296,7 +8636,7 @@ window.openReceiptPrintDialog = function (txn, items = null) {
   const methodStr = String(txn.payment_method || 'TUNAI').toUpperCase();
   const cleanNote = (typeof getCleanNote === 'function') ? getCleanNote(txn.notes) : '';
 
-  const popup = window.open('', '_blank', 'width=420,height=640');
+  const popup = window.open('', '_blank', 'width=440,height=660');
   if (!popup) {
     showToast('Popup browser diblokir. Izinkan popup untuk mencetak struk.', 'error');
     return;
@@ -8304,18 +8644,18 @@ window.openReceiptPrintDialog = function (txn, items = null) {
 
   const buildReceiptPageCss = (w) => {
     const safeW = w === '80' ? '80' : '58';
-    const hPad = safeW === '80' ? '5mm' : '4.5mm';
-    const vPad = safeW === '80' ? '3mm' : '2mm';
+    const hPad = safeW === '80' ? '4mm' : '3mm';
+    const vPad = '2mm';
     return `@page { size: ${safeW}mm auto; margin: 0; }
     @media print {
       html, body {
         margin: 0 !important;
         padding: 0 !important;
         background: #ffffff !important;
-        width: ${safeW}mm !important;
+        width: 100% !important;
       }
       .receipt-paper {
-        width: ${safeW}mm !important;
+        width: 100% !important;
         max-width: ${safeW}mm !important;
         margin: 0 !important;
         padding: ${vPad} ${hPad} !important;
@@ -8383,7 +8723,7 @@ window.openReceiptPrintDialog = function (txn, items = null) {
       font-size: 11px;
       padding: 6px 10px;
       border-radius: 6px;
-      max-width: 360px;
+      max-width: 380px;
       text-align: center;
       line-height: 1.35;
     }
@@ -8406,7 +8746,17 @@ window.openReceiptPrintDialog = function (txn, items = null) {
       background: #8B5320;
       color: white;
       border: none;
-      padding: 8px 16px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-bt {
+      background: #1D4ED8;
+      color: white;
+      border: none;
+      padding: 8px 12px;
       border-radius: 6px;
       font-weight: 700;
       font-size: 12px;
@@ -8416,7 +8766,7 @@ window.openReceiptPrintDialog = function (txn, items = null) {
       width: ${paperWidth}mm;
       box-sizing: border-box;
       background: #ffffff;
-      padding: ${paperWidth === '80' ? '3mm 5mm' : '2mm 4.5mm'};
+      padding: 2mm ${paperWidth === '80' ? '4mm' : '3mm'};
       border: 1px dashed #cbd5e1;
       border-radius: 4px;
       font-size: 11px;
@@ -8495,15 +8845,18 @@ window.openReceiptPrintDialog = function (txn, items = null) {
 <body>
   <div class="no-print">
     <div class="tip-box">
-      <strong>Tips Print 58mm / Sharkpos X265L (USB/Bluetooth):</strong><br>
-      Pada dialog print pilih Paper Size <strong>58mm</strong>, atur <strong>Margins: None</strong>, dan <strong>Scale: 100%</strong>.
+      <strong>Tips Print 58mm / Driver OS (USB atau Bluetooth):</strong><br>
+      Pada dialog print pilih Paper Size <strong>${paperWidth}mm</strong>, atur <strong>Margins: None</strong>, dan <strong>Scale: 100%</strong>.
     </div>
     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
       <span style="font-family:sans-serif; font-size:11px; font-weight:700; color:#374151;">Lebar Kertas:</span>
       <button class="btn-size ${paperWidth === '58' ? 'active' : ''}" onclick="setReceiptWidth('58', this)">58 mm</button>
       <button class="btn-size ${paperWidth === '80' ? 'active' : ''}" onclick="setReceiptWidth('80', this)">80 mm</button>
     </div>
-    <button class="btn-print" onclick="window.print()">Cetak Struk Sekarang</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+      <button class="btn-print" onclick="window.print()">Cetak Struk Sekarang</button>
+      <button type="button" class="btn-bt" onclick="printViaBluetooth()">Cetak via Bluetooth (Printer Struk)</button>
+    </div>
   </div>
 
   <div class="receipt-paper" id="receipt-paper">
@@ -8559,8 +8912,8 @@ window.openReceiptPrintDialog = function (txn, items = null) {
   <script>
     function setReceiptWidth(w, btn) {
       var safeW = w === '80' ? '80' : '58';
-      var hPad = safeW === '80' ? '5mm' : '4.5mm';
-      var vPad = safeW === '80' ? '3mm' : '2mm';
+      var hPad = safeW === '80' ? '4mm' : '3mm';
+      var vPad = '2mm';
       document.querySelectorAll('.btn-size').forEach(function(b) { b.classList.remove('active'); });
       if (btn) btn.classList.add('active');
 
@@ -8568,8 +8921,8 @@ window.openReceiptPrintDialog = function (txn, items = null) {
       if (pageStyle) {
         pageStyle.innerHTML = '@page { size: ' + safeW + 'mm auto; margin: 0; }' +
           '@media print {' +
-          '  html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; width: ' + safeW + 'mm !important; }' +
-          '  .receipt-paper { width: ' + safeW + 'mm !important; max-width: ' + safeW + 'mm !important; margin: 0 !important; padding: ' + vPad + ' ' + hPad + ' !important; border: none !important; box-shadow: none !important; border-radius: 0 !important; box-sizing: border-box !important; color: #000000 !important; }' +
+          '  html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; width: 100% !important; }' +
+          '  .receipt-paper { width: 100% !important; max-width: ' + safeW + 'mm !important; margin: 0 !important; padding: ' + vPad + ' ' + hPad + ' !important; border: none !important; box-shadow: none !important; border-radius: 0 !important; box-sizing: border-box !important; color: #000000 !important; }' +
           '  .no-print { display: none !important; }' +
           '}';
       }
@@ -8579,9 +8932,18 @@ window.openReceiptPrintDialog = function (txn, items = null) {
         paper.style.padding = vPad + ' ' + hPad;
       }
       try {
+        localStorage.setItem('ks_receipt_printer_paper', safeW);
         localStorage.setItem('ks_printer_paper', safeW);
-        if (window.opener && window.opener.bluetoothPrinter) {
-          window.opener.bluetoothPrinter.paperWidth = safeW;
+        if (window.opener && window.opener.receiptPrinter) {
+          window.opener.receiptPrinter.paperWidth = safeW;
+        }
+      } catch (e) {}
+    }
+
+    function printViaBluetooth() {
+      try {
+        if (window.opener && typeof window.opener.printLastReceiptBluetooth === 'function') {
+          window.opener.printLastReceiptBluetooth();
         }
       } catch (e) {}
     }
@@ -8601,6 +8963,8 @@ window.openReceiptPrintDialog = function (txn, items = null) {
 };
 
 window.openCupStickersPrintDialog = function (txn, items = null) {
+  window._lastCupPrintPayload = { txn, items };
+
   let txnItems = items || txn.transaction_items || [];
   if (typeof txnItems === 'string') {
     try { txnItems = JSON.parse(txnItems); } catch (e) { txnItems = []; }
@@ -8668,7 +9032,7 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
   const buildCupPrintCss = (wNum, hNum) => {
     const isCont = hNum <= 0;
     const isComp = hNum > 0 && hNum <= 32;
-    const hPad = wNum >= 54 ? '4.5mm' : '2.5mm';
+    const hPad = '2.5mm';
     const vPad = isComp ? '1.5mm' : '2mm';
     const pageSize = isCont ? `${wNum}mm auto` : `${wNum}mm ${hNum}mm`;
     const maxHeightRule = isCont ? 'none' : `${hNum}mm`;
@@ -8682,12 +9046,12 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
         margin: 0 !important;
         padding: 0 !important;
         background: white !important;
-        width: ${wNum}mm !important;
+        width: 100% !important;
       }
       .cup-label {
-        width: ${wNum}mm !important;
+        width: 100% !important;
         max-width: ${wNum}mm !important;
-        height: ${isCont ? 'auto' : `${hNum}mm`} !important;
+        height: auto !important;
         max-height: ${maxHeightRule} !important;
         page-break-after: always !important;
         break-after: page !important;
@@ -8725,10 +9089,10 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
   if (isInitCompact) bodyClassList.push('compact-label');
   if (isInitContinuous) bodyClassList.push('mode-gabung');
 
-  const initHPad = initW >= 54 ? '4.5mm' : '2.5mm';
+  const initHPad = '2.5mm';
   const initVPad = isInitCompact ? '1.5mm' : '2mm';
 
-  const popup = window.open('', '_blank', 'width=460,height=660');
+  const popup = window.open('', '_blank', 'width=460,height=680');
   if (!popup) {
     showToast('Popup browser diblokir. Izinkan popup untuk mencetak label stiker.', 'error');
     return;
@@ -8893,6 +9257,16 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       font-size: 12px;
       cursor: pointer;
     }
+    .btn-bt {
+      background: #1D4ED8;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+    }
     .btn-size {
       background: white;
       border: 1px solid #cbd5e1;
@@ -8971,6 +9345,7 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
     <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px;">
       <button class="btn-print" onclick="printSeparated()">Cetak 1 Stiker Per Cup (${totalCups} Lembar)</button>
       <button class="btn-secondary" onclick="printCombined()">Gabung 1 Kertas Panjang</button>
+      <button type="button" class="btn-bt" onclick="printViaBluetooth()">Cetak via Bluetooth (Printer Stiker)</button>
     </div>
   </div>
   <div id="labels-container">
@@ -9038,7 +9413,7 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
 
       var isCont = hNum <= 0;
       var isComp = hNum > 0 && hNum <= 32;
-      var hPad = wNum >= 54 ? '4.5mm' : '2.5mm';
+      var hPad = '2.5mm';
       var vPad = isComp ? '1.5mm' : '2mm';
       var pageSize = isCont ? (wNum + 'mm auto') : (wNum + 'mm ' + hNum + 'mm');
       var maxHeightRule = isCont ? 'none' : (hNum + 'mm');
@@ -9059,11 +9434,11 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       if (styleEl) {
         styleEl.innerHTML = '@page { size: ' + pageSize + '; margin: 0; }' +
           '@media print {' +
-          '  html, body { margin: 0 !important; padding: 0 !important; background: white !important; width: ' + wNum + 'mm !important; }' +
+          '  html, body { margin: 0 !important; padding: 0 !important; background: white !important; width: 100% !important; }' +
           '  .cup-label {' +
-          '    width: ' + wNum + 'mm !important;' +
+          '    width: 100% !important;' +
           '    max-width: ' + wNum + 'mm !important;' +
-          '    height: ' + (isCont ? 'auto' : (hNum + 'mm')) + ' !important;' +
+          '    height: auto !important;' +
           '    max-height: ' + maxHeightRule + ' !important;' +
           '    page-break-after: always !important;' +
           '    break-after: page !important;' +
@@ -9102,9 +9477,10 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
         localStorage.setItem('ks_cup_label_w', String(wNum));
         localStorage.setItem('ks_cup_label_h', String(hNum));
         localStorage.setItem('ks_cup_label_preset', resolvedPreset);
-        if (window.opener && window.opener.bluetoothPrinter) {
-          window.opener.bluetoothPrinter.labelWidth = wNum;
-          window.opener.bluetoothPrinter.labelHeight = hNum;
+        if (window.opener && window.opener.cupPrinter) {
+          window.opener.cupPrinter.labelWidth = wNum;
+          window.opener.cupPrinter.labelHeight = hNum;
+          window.opener.cupPrinter.labelGap = isCont ? 0 : (window.opener.cupPrinter.labelGap || 2);
         }
       } catch (e) {}
     }
@@ -9137,6 +9513,14 @@ window.openCupStickersPrintDialog = function (txn, items = null) {
       setTimeout(function() { window.print(); }, 150);
     }
 
+    function printViaBluetooth() {
+      try {
+        if (window.opener && typeof window.opener.printLastCupBluetooth === 'function') {
+          window.opener.printLastCupBluetooth();
+        }
+      } catch (e) {}
+    }
+
     window.onload = function() {
       setTimeout(function() {
         window.print();
@@ -9160,11 +9544,7 @@ window.printCupStickersById = async function (id) {
       return;
     }
 
-    if (window.bluetoothPrinter && window.bluetoothPrinter.isConnected) {
-      await window.bluetoothPrinter.printCupStickers(txn);
-    } else {
-      openCupStickersPrintDialog(txn);
-    }
+    await dispatchCupPrint(txn);
   } catch (e) {
     console.error('printCupStickersById error:', e);
     showToast('Terjadi kesalahan saat memproses stiker cup', 'error');
